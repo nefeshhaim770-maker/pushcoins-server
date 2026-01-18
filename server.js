@@ -47,7 +47,7 @@ app.post('/verify-auth', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
-// פונקציית תרומה מעודכנת עם חילוץ טוקן מדויק
+// תרומה וסליקה עם חילוץ טוקן משופר
 app.post('/donate', async (req, res) => {
     const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note } = req.body;
     try {
@@ -71,7 +71,6 @@ app.post('/donate', async (req, res) => {
             console.log("💳 שימוש בטוקן שמור:", user.token);
             tranData.Token = user.token; 
         } else if (ccDetails) {
-            console.log("💳 שימוש בפרטי אשראי מלאים");
             tranData.CreditNum = ccDetails.num; 
             tranData.Expiry = ccDetails.exp; 
             tranData.Cvv2 = ccDetails.cvv;
@@ -91,10 +90,9 @@ app.post('/donate', async (req, res) => {
         const resData = response.data;
         console.log("📩 תגובה מלאה מקשר:", JSON.stringify(resData));
 
-        // חילוץ טוקן משדה Token הראשי כפי שמופיע בדוגמה שלך
+        // חילוץ טוקן מהשדה הראשי ב-JSON
         const rToken = resData.Token || resData.RequestResult?.Token;
         if (rToken) {
-            console.log("🔑 נמצא טוקן בתגובה:", rToken);
             user.token = rToken;
             if (!useToken && ccDetails) user.lastCardDigits = ccDetails.num.slice(-4);
         }
@@ -108,11 +106,11 @@ app.post('/donate', async (req, res) => {
             await user.save();
             res.json({ success: true, user });
         } else {
-            await user.save(); // שומרים את הטוקן גם אם העסקה נדחתה בסירוב (Code 4) כדי שיהיה מעודכן
+            // שמירת הטוקן גם אם העסקה נדחתה כדי לרענן את הנתונים
+            await user.save();
             res.status(400).json({ success: false, error: resData.RequestResult?.Description || "העסקה נדחתה" }); 
         }
     } catch (e) { 
-        console.error("Donate Error:", e.message);
         res.status(500).json({ success: false, error: "שגיאת תקשורת" }); 
     }
 });
