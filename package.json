@@ -1,7 +1,6 @@
 {
   "name": "pushcoins-server",
   "version": "1.0.0",
-  "description": "PushCoins Backend Server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
