@@ -42,9 +42,7 @@ app.post('/donate', async (req, res) => {
             FirstName: (fullName || "T").split(" ")[0],
             LastName: (fullName || "T").split(" ").slice(1).join(" ") || ".",
             Mail: email || "a@a.com",
-            // השדה המנצח שמצאנו ב-CURL!
-            Id: tz || "", 
-            UniqNum: tz || "", 
+            Id: tz || "", // השדה שעבד לת"ז
             ParamJ: "J4", TransactionType: "debit"
         };
 
@@ -63,26 +61,34 @@ app.post('/donate', async (req, res) => {
             format: "json"
         });
 
-        console.log("KESHER RESPONSE:", JSON.stringify(response.data));
+        const resData = response.data;
+        // לוג לבדיקה - מה קשר החזירו לנו
+        console.log("FULL KESHER DATA:", JSON.stringify(resData));
 
-        if (response.data.RequestResult?.Status === true) {
+        // בדיקת סטטוס (Status נמצא לפעמים בתוך RequestResult או ישירות ב-resData)
+        const isSuccess = resData.RequestResult?.Status === true || resData.Status === true;
+
+        if (isSuccess) {
             user.totalDonated += parseInt(amount);
             user.name = fullName; user.email = email; user.tz = tz;
             
-            // חילוץ טוקן מהתגובה
-            const rToken = response.data.RequestResult.Token || response.data.RequestResult.CardId;
-            if (rToken) user.token = rToken;
+            // חילוץ טוקן לפי הלוג החדש ששלחת (214949.png)
+            const rToken = resData.Token || resData.RequestResult?.Token;
             
-            if (!useToken && ccDetails) user.lastCardDigits = ccDetails.num.slice(-4);
+            if (rToken) {
+                console.log("SUCCESS: Saving Token:", rToken);
+                user.token = rToken;
+                if (!useToken && ccDetails) user.lastCardDigits = ccDetails.num.slice(-4);
+            }
             
             await user.save();
-            // החזרת המשתמש המעודכן לאפליקציה
             res.json({ success: true, newTotal: user.totalDonated, user: user });
         } else {
-            res.status(400).json({ success: false, error: response.data.RequestResult?.Description });
+            const errorMsg = resData.RequestResult?.Description || "העסקה נדחתה";
+            res.status(400).json({ success: false, error: errorMsg });
         }
     } catch (e) { 
-        console.error(e.message);
+        console.error("DONATE ERROR:", e.message);
         res.status(500).json({ success: false, error: "שגיאת שרת - נסה שוב בעוד דקה" }); 
     }
 });
