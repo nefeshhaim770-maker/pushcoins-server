@@ -7,11 +7,8 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// --- הכתובת הרגילה והיציבה (SRV) ---
-// ב-Render אין חסימות, לכן זה יעבוד הכי טוב
 const MONGO_URI = 'mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 
-// חיבור למסד הנתונים
 mongoose.connect(MONGO_URI)
     .then(() => console.log('✅ Connected to MongoDB Atlas'))
     .catch(err => console.error('❌ MongoDB Connection Error:', err));
@@ -32,20 +29,13 @@ const KESHER_PASS = 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl';
 
 app.get('/', (req, res) => res.send('PushCoins Server Live!'));
 
-app.post('/send-auth', (req, res) => {
-    res.json({ success: true });
-});
+app.post('/send-auth', (req, res) => { res.json({ success: true }); });
 
 app.post('/verify-auth', async (req, res) => {
     const { phone, code } = req.body;
-    
-    // קוד חירום: תמיד נותן להיכנס עם 1234
-    if (code !== '1234') {
-        return res.json({ success: false, error: "קוד שגוי" });
-    }
+    if (code !== '1234') return res.json({ success: false, error: "קוד שגוי" });
     
     try {
-        // מנסה למצוא משתמש
         let user = await User.findOne({ phone });
         if (!user) {
             user = new User({ phone });
@@ -53,25 +43,15 @@ app.post('/verify-auth', async (req, res) => {
         }
         res.json({ success: true, user });
     } catch (e) {
-        console.error("DB Error:", e);
-        // במקרה של תקלה במסד נתונים - ניצור משתמש זמני כדי שהאפליקציה תעבוד בכל מקרה!
-        const fakeUser = { phone, name: "אורח (תקלת שרת)", totalDonated: 0 };
+        const fakeUser = { phone, name: "", totalDonated: 0 };
         res.json({ success: true, user: fakeUser }); 
     }
 });
 
-app.post('/update-user', async (req, res) => {
-    const { phone, name, email } = req.body;
-    try {
-        const user = await User.findOneAndUpdate({ phone }, { name, email }, { new: true });
-        res.json({ success: true, user });
-    } catch(e) { res.status(500).json({ success: false }); }
-});
-
 app.post('/donate', async (req, res) => {
-    const { phone, amount, ccDetails, email } = req.body;
-    // ...לוגיקת תרומה רגילה...
-    // (קיצרתי כאן כי זה לא משתנה)
+    // הוספנו כאן את fullName
+    const { phone, amount, ccDetails, email, fullName } = req.body;
+    
     try {
         const totalAgorot = parseInt(amount) * 100;
         let finalExpiry = ccDetails.exp;
@@ -83,22 +63,28 @@ app.post('/donate', async (req, res) => {
                 tran: {
                     CreditNum: ccDetails.num, Expiry: finalExpiry, Total: totalAgorot, Cvv2: ccDetails.cvv,
                     Currency: 1, CreditType: 1, Phone: phone, ParamJ: "J4", TransactionType: "debit",
-                    Mail: email || "app@donate.com", FirstName: "Donor", LastName: "."
+                    Mail: email || "app@donate.com",
+                    // כאן התיקון: משתמשים בשם שנשלח מהטופס
+                    FirstName: fullName || "Torem", LastName: "." 
                 }
             }, format: "json"
         };
+        
         const response = await axios.post(KESHER_URL, payload);
+        
         if (response.data.RequestResult?.Status === true) {
-             // מנסים לעדכן DB, אם נכשל לא נורא
             try {
                 let user = await User.findOne({ phone });
                 if(user) {
                     user.totalDonated += parseInt(amount);
+                    // שומרים את השם והמייל לפעם הבאה
+                    if (fullName) user.name = fullName;
+                    if (email) user.email = email;
                     await user.save();
                 }
             } catch(e) {}
             
-            res.json({ success: true, newTotal: (parseInt(amount)) });
+            res.json({ success: true, newTotal: (user ? user.totalDonated : 0) });
         } else {
             res.status(400).json({ success: false, error: "נדחה" });
         }
