@@ -8,8 +8,9 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+// חיבור למסד הנתונים
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
-    .then(() => console.log('✅ Connected to MongoDB'))
+    .then(() => console.log('✅ MongoDB Connected'))
     .catch(err => console.error('❌ DB Error:', err));
 
 const userSchema = new mongoose.Schema({
@@ -22,7 +23,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// שימוש בסיסמה מהצילום ששלחת
+// הגדרת המייל עם הסיסמה שנוצרה
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -31,7 +32,7 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-app.get('/', (req, res) => res.send('Server is Up'));
+app.get('/', (req, res) => res.send('PushCoins Server is Running'));
 
 app.post('/send-auth', async (req, res) => {
     const { email } = req.body;
@@ -95,4 +96,4 @@ app.post('/donate', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Port ${PORT}`));
+app.listen(PORT, () => console.log(`✅ Server live on port ${PORT}`));
