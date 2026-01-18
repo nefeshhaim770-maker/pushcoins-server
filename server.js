@@ -53,8 +53,9 @@ app.post('/donate', async (req, res) => {
         let tranData = {
             Total: parseFloat(amount),
             Currency: 1, 
-            CreditType: 1, 
-            Phone: phone || user.phone || "0500000000",
+            CreditType: 10, // עסקת תשלומים לפי הדוגמה שלך
+            NumPayment: "12", // מספר תשלומים קבוע
+            Phone: phone || user.phone || "0500500500",
             FirstName: (fullName || user.name || "שם").split(" ")[0],
             LastName: (fullName || user.name || "משפחה").split(" ").slice(1).join(" ") || "משפחה",
             Mail: email || user.email || "no-email@test.com", 
@@ -66,11 +67,11 @@ app.post('/donate', async (req, res) => {
         if (useToken && user.token) {
             console.log("💳 שימוש בטוקן שמור:", user.token);
             tranData.Token = user.token;
-            // הוספת תוקף גם לטוקן - קריטי למניעת "טוקן שגוי"
-            if (ccDetails?.exp) tranData.Expiry = ccDetails.exp;
+            // חלק מהמסופים דורשים תוקף גם בחיוב טוקן
+            if (user.lastExpiry) tranData.Expiry = user.lastExpiry; 
         } else if (ccDetails) {
             tranData.CreditNum = ccDetails.num; 
-            tranData.Expiry = ccDetails.exp; 
+            tranData.Expiry = ccDetails.exp;
             tranData.Cvv2 = ccDetails.cvv;
         }
 
@@ -89,17 +90,21 @@ app.post('/donate', async (req, res) => {
             if (phone) user.phone = phone;
             if (note) user.notes.push(note);
             
+            // שמירת הטוקן רק אם הוא קיים בתגובה
             const rToken = resData.Token || resData.RequestResult?.Token;
             if (rToken) {
                 user.token = rToken;
-                if (!useToken && ccDetails) user.lastCardDigits = ccDetails.num.slice(-4);
+                if (!useToken && ccDetails) {
+                    user.lastCardDigits = ccDetails.num.slice(-4);
+                    user.lastExpiry = ccDetails.exp; // שמירת תוקף לחיובים הבאים
+                }
             }
             await user.save();
             res.json({ success: true, user });
         } else { 
             res.status(400).json({ success: false, error: resData.RequestResult?.Description || "נדחה" }); 
         }
-    } catch (e) { res.status(500).json({ success: false }); }
+    } catch (e) { res.status(500).json({ success: false, error: "שגיאת שרת" }); }
 });
 
 const PORT = process.env.PORT || 10000;
