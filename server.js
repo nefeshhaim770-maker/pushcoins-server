@@ -7,8 +7,9 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+// חיבור למסד הנתונים
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
-    .then(() => console.log('✅ Connected to MongoDB'))
+    .then(() => console.log('✅ MongoDB Connected'))
     .catch(err => console.error(err));
 
 const userSchema = new mongoose.Schema({
@@ -17,7 +18,6 @@ const userSchema = new mongoose.Schema({
     name: String,
     tz: String,
     totalDonated: { type: Number, default: 0 },
-    // שמירת היסטוריית תרומות מפורטת
     donationsHistory: [{
         amount: Number,
         date: { type: Date, default: Date.now },
@@ -25,7 +25,7 @@ const userSchema = new mongoose.Schema({
     }],
     token: { type: String, default: "" },
     lastCardDigits: String,
-    lastExpiry: String,
+    lastExpiry: String, // חובה לחיובים חוזרים
     tempCode: String
 });
 const User = mongoose.model('User', userSchema);
@@ -59,18 +59,23 @@ app.post('/donate', async (req, res) => {
 
         let tranData = {
             Total: parseFloat(amount),
-            Currency: 1, CreditType: 10, NumPayment: "12",
+            Currency: 1, 
+            CreditType: 10, 
+            NumPayment: "12",
             Phone: phone || user.phone || "0500000000",
             FirstName: (fullName || user.name || "שם").split(" ")[0],
             LastName: (fullName || user.name || "משפחה").split(" ").slice(1).join(" ") || "משפחה",
             Mail: email || user.email || "no-email@test.com",
-            ParamJ: "J4", TransactionType: "debit", ProjectNumber: "00001",
-            customerRef: user._id.toString()
+            ParamJ: "J4", 
+            TransactionType: "debit", 
+            ProjectNumber: "00001",
+            // תיקון קריטי: מזהה לקוח חיצוני
+            customerRef: user._id.toString() 
         };
 
         if (useToken && user.token) {
             tranData.Token = user.token;
-            tranData.Expiry = user.lastExpiry;
+            tranData.Expiry = user.lastExpiry; // שליחת תוקף חובה
         } else if (ccDetails) {
             tranData.CreditNum = ccDetails.num;
             tranData.Expiry = ccDetails.exp;
@@ -84,14 +89,9 @@ app.post('/donate', async (req, res) => {
 
         const resData = response.data;
         if (resData.RequestResult?.Status === true || resData.Status === true) {
-            // עדכון היסטוריה וסכום כללי
             user.totalDonated += parseFloat(amount);
             user.donationsHistory.push({ amount: parseFloat(amount), note: note || "", date: new Date() });
             
-            if (fullName) user.name = fullName;
-            if (tz) user.tz = tz;
-            if (phone) user.phone = phone;
-
             const rToken = resData.Token || resData.RequestResult?.Token;
             if (rToken) {
                 user.token = rToken;
