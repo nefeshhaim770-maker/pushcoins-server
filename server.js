@@ -7,6 +7,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+// חיבור למסד הנתונים
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
     .then(() => console.log('✅ Connected to MongoDB'))
     .catch(err => console.error(err));
@@ -25,7 +26,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// ... (פונקציות update-code ו-verify-auth ללא שינוי)
+// ... (פונקציות ה-update-code וה-verify-auth נשארות ללא שינוי)
 
 app.post('/donate', async (req, res) => {
     const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note } = req.body;
@@ -45,14 +46,14 @@ app.post('/donate', async (req, res) => {
             ParamJ: "J4", 
             TransactionType: "debit",
             ProjectNumber: "00001",
-            // שדה החובה החדש לפי התיעוד ששלחת
+            // התיקון הקריטי: הוספת מזהה הלקוח לפי התיעוד
             customerRef: user._id.toString() 
         };
 
         if (useToken && user.token) {
             console.log("💳 שימוש בטוקן שמור:", user.token);
             tranData.Token = user.token;
-            // חובה לשלוח תוקף גם עם טוקן בעסקאות תשלומים
+            // התיעוד מציין שפרמטרי השליחה לטוקן זהים לפרמטרים בדף התשלום
             if (user.lastExpiry) tranData.Expiry = user.lastExpiry;
         } else if (ccDetails) {
             tranData.CreditNum = ccDetails.num; 
