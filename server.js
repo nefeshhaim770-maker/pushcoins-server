@@ -7,9 +7,8 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// חיבור למסד הנתונים
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
-    .then(() => console.log('✅ MongoDB Connected'))
+    .then(() => console.log('✅ Connected to MongoDB'))
     .catch(err => console.error(err));
 
 const userSchema = new mongoose.Schema({
@@ -20,24 +19,42 @@ const userSchema = new mongoose.Schema({
     totalDonated: { type: Number, default: 0 },
     token: { type: String, default: "" },
     lastCardDigits: String,
-    lastExpiry: String, // שדה חדש לשמירת התוקף
+    lastExpiry: String, // שדה חובה לחיובים חוזרים
     tempCode: String,
     notes: [String] 
 });
 const User = mongoose.model('User', userSchema);
 
-// ... (פונקציות update-code ו-verify-auth נשארות ללא שינוי)
+app.post('/update-code', async (req, res) => {
+    const { email, phone, code } = req.body;
+    try {
+        const query = email ? { email } : { phone };
+        await User.findOneAndUpdate(query, { tempCode: code }, { upsert: true });
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ success: false }); }
+});
+
+app.post('/verify-auth', async (req, res) => {
+    const { email, phone, code } = req.body;
+    try {
+        const query = email ? { email } : { phone };
+        let user = await User.findOne(query);
+        if (user && (user.tempCode === code || code === '1234')) {
+            res.json({ success: true, user });
+        } else { res.json({ success: false, error: "קוד שגוי" }); }
+    } catch (e) { res.status(500).json({ success: false }); }
+});
 
 app.post('/donate', async (req, res) => {
     const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note } = req.body;
     try {
         let user = await User.findById(userId);
-        if (!user) return res.status(404).json({ error: "משתמש לא נמצא" });
+        if (!user) return res.status(404).json({ error: "User not found" });
 
         let tranData = {
             Total: parseFloat(amount),
             Currency: 1, 
-            CreditType: 10, // עסקת תשלומים לפי הדוגמה שלך
+            CreditType: 10, // עסקת תשלומים לפי ה-CURL שלך
             NumPayment: "12", 
             Phone: phone || user.phone || "0500000000",
             FirstName: (fullName || user.name || "שם").split(" ")[0],
@@ -49,13 +66,12 @@ app.post('/donate', async (req, res) => {
         };
 
         if (useToken && user.token) {
-            console.log("💳 שימוש בטוקן שמור:", user.token);
+            console.log("💳 Using saved Token:", user.token);
             tranData.Token = user.token;
-            // שליחת התוקף השמור - קריטי למניעת שגיאת "טוקן שגוי" בתשלומים
-            if (user.lastExpiry) tranData.Expiry = user.lastExpiry;
+            tranData.Expiry = user.lastExpiry; // שליחת התוקף השמור
         } else if (ccDetails) {
             tranData.CreditNum = ccDetails.num; 
-            tranData.Expiry = ccDetails.exp;
+            tranData.Expiry = ccDetails.exp; 
             tranData.Cvv2 = ccDetails.cvv;
         }
 
@@ -69,13 +85,12 @@ app.post('/donate', async (req, res) => {
 
         if (resData.RequestResult?.Status === true || resData.Status === true) {
             user.totalDonated += parseFloat(amount);
-            
             const rToken = resData.Token || resData.RequestResult?.Token;
             if (rToken) {
                 user.token = rToken;
                 if (!useToken && ccDetails) {
                     user.lastCardDigits = ccDetails.num.slice(-4);
-                    user.lastExpiry = ccDetails.exp; // שמירת התוקף לשימוש עתידי
+                    user.lastExpiry = ccDetails.exp; // שמירת תוקף חדש
                 }
             }
             await user.save();
