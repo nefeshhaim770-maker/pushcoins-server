@@ -8,10 +8,9 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// חיבור למסד הנתונים
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
     .then(() => console.log('✅ MongoDB Connected'))
-    .catch(err => console.error('❌ DB Error:', err));
+    .catch(err => console.error(err));
 
 const userSchema = new mongoose.Schema({
     email: { type: String, unique: true },
@@ -23,29 +22,22 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// הגדרת שליחת מייל בפורט 587 (הכי יציב בשרתי ענן)
+// הגדרת המייל המעודכנת למניעת Timeout
 const transporter = nodemailer.createTransport({
     host: "smtp.gmail.com",
-    port: 587,
-    secure: false, 
+    port: 465,
+    secure: true,
     auth: {
         user: 'nefeshhaim770@gmail.com',
-        pass: 'gmoe trle sydr tfnw' 
-    },
-    tls: {
-        rejectUnauthorized: false 
+        pass: 'gmoe trle sydr tfnw' //
     }
 });
-
-app.get('/', (req, res) => res.send('Server is Up'));
 
 app.post('/send-auth', async (req, res) => {
     const { email } = req.body;
     const code = Math.floor(1000 + Math.random() * 9000).toString();
     try {
-        // שמירת המשתמש או יצירה אם לא קיים
         await User.findOneAndUpdate({ email }, { tempCode: code }, { upsert: true });
-        
         await transporter.sendMail({
             from: '"PushCoins" <nefeshhaim770@gmail.com>',
             to: email,
@@ -54,8 +46,8 @@ app.post('/send-auth', async (req, res) => {
         });
         res.json({ success: true });
     } catch (e) {
-        console.error("Mail Error:", e);
-        res.status(500).json({ success: false, error: e.message });
+        console.error("Mail Error:", e.message); // זה ידפיס ללוג אם יש שוב Timeout
+        res.status(500).json({ success: false, error: "שגיאת חיבור למייל" });
     }
 });
 
@@ -63,7 +55,6 @@ app.post('/verify-auth', async (req, res) => {
     const { email, code } = req.body;
     try {
         let user = await User.findOne({ email });
-        // קוד 1234 נשאר לגיבוי למקרה שהמייל מתעכב
         if (user && (user.tempCode === code || code === '1234')) {
             res.json({ success: true, user });
         } else { res.json({ success: false, error: "קוד שגוי" }); }
@@ -72,7 +63,6 @@ app.post('/verify-auth', async (req, res) => {
 
 app.post('/donate', async (req, res) => {
     const { email, amount, ccDetails, fullName, tz, useToken, phone } = req.body;
-    const KESHER_URL = 'https://kesherhk.info/ConnectToKesher/ConnectToKesher';
     try {
         let user = await User.findOne({ email });
         let tranData = {
@@ -88,23 +78,25 @@ app.post('/donate', async (req, res) => {
             if (exp.length === 4) exp = exp.substring(2,4) + exp.substring(0,2);
             tranData.CreditNum = ccDetails.num; tranData.Expiry = exp; tranData.Cvv2 = ccDetails.cvv;
         }
-        const response = await axios.post(KESHER_URL, {
+        const response = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
             Json: { userName: '2181420WS2087', password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', func: "SendTransaction", format: "json", tran: tranData },
             format: "json"
         });
-        if (response.data.RequestResult?.Status === true || response.data.Status === true) {
+        
+        const resData = response.data;
+        if (resData.RequestResult?.Status === true || resData.Status === true) {
             user.totalDonated += parseInt(amount);
             user.name = fullName; user.tz = tz; user.phone = phone || user.phone;
-            const rToken = response.data.Token || response.data.RequestResult?.Token;
-            if (rToken) { 
-                user.token = rToken; 
-                if (!useToken) user.lastCardDigits = ccDetails.num.slice(-4); 
+            // חילוץ טוקן מהמבנה שראינו בלוג
+            const rToken = resData.Token || resData.RequestResult?.Token;
+            if (rToken) {
+                user.token = rToken;
+                if (!useToken) user.lastCardDigits = ccDetails.num.slice(-4);
             }
             await user.save();
             res.json({ success: true, user });
-        } else { res.status(400).json({ success: false }); }
+        } else { res.status(400).json({ success: false, error: resData.RequestResult?.Description }); }
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`✅ Live on port ${PORT}`));
+app.listen(10000);
