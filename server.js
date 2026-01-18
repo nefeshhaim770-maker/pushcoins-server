@@ -7,19 +7,20 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// חיבור למסד הנתונים - הנתונים שלך נשמרים כאן לנצח
+// חיבור למסד הנתונים
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
-    .then(() => console.log('✅ MongoDB Connected'))
-    .catch(err => console.error('❌ Connection error', err));
+    .then(() => console.log('✅ Connected to DB'))
+    .catch(err => console.error('❌ DB Error', err));
 
+// מודל משתמש פשוט וגמיש
 const userSchema = new mongoose.Schema({
-    phone: { type: String, unique: true, required: true },
-    name: { type: String, default: "" },
-    email: { type: String, default: "" },
-    tz: { type: String, default: "" },
+    phone: String,
+    name: String,
+    email: String,
+    tz: String,
     totalDonated: { type: Number, default: 0 },
-    token: { type: String, default: "" }, 
-    lastCardDigits: { type: String, default: "" }
+    token: { type: String, default: "" },
+    lastCardDigits: String
 });
 const User = mongoose.model('User', userSchema);
 
@@ -27,69 +28,82 @@ const KESHER_URL = 'https://kesherhk.info/ConnectToKesher/ConnectToKesher';
 const KESHER_USER = '2181420WS2087';
 const KESHER_PASS = 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl';
 
-app.get('/', (req, res) => res.send('Server is Up!'));
-
 app.post('/verify-auth', async (req, res) => {
-    const { phone, code } = req.body;
-    if (code !== '1234') return res.json({ success: false });
     try {
+        const { phone } = req.body;
         let user = await User.findOne({ phone });
         if (!user) { user = new User({ phone }); await user.save(); }
         res.json({ success: true, user });
-    } catch (e) { res.status(500).json({ success: false }); }
+    } catch (e) { 
+        console.error("Auth Error:", e.message);
+        res.status(500).json({ success: false, error: "שגיאת התחברות" }); 
+    }
 });
 
 app.post('/donate', async (req, res) => {
     const { phone, amount, ccDetails, email, fullName, tz, useToken } = req.body;
+    
     try {
+        // 1. מציאת המשתמש
         let user = await User.findOne({ phone });
-        const totalAgorot = parseInt(amount) * 100;
+        if (!user) throw new Error("User not found in DB");
 
-        // בניית העסקה עם כל שדות הזיהוי האפשריים לת"ז
+        // 2. הכנת הנתונים ל"קשר"
         let tranData = {
-            Total: totalAgorot, Currency: 1, CreditType: 1, Phone: phone,
+            Total: parseInt(amount) * 100,
+            Currency: 1, CreditType: 1, Phone: phone,
             FirstName: (fullName || "Torem").split(" ")[0],
             LastName: (fullName || "Torem").split(" ").slice(1).join(" ") || ".",
-            Mail: email || "app@donate.com",
-            UniqNum: tz || "",        // השדה שקשר ביקשו בלוג
-            HolderID: tz || "",       // גיבוי
+            Mail: email || "a@a.com",
+            UniqNum: tz || "", // השדה שפתר את הבעיה הקודמת
             ParamJ: "J4", TransactionType: "debit"
         };
 
-        if (useToken && user && user.token) {
+        // 3. בחירה בין טוקן לכרטיס חדש
+        if (useToken && user.token) {
             tranData.Token = user.token; // שימוש בטוקן השמור
-        } else {
+        } else if (ccDetails) {
             let exp = ccDetails.exp;
             if (exp.length === 4) exp = exp.substring(2,4) + exp.substring(0,2); // פורמט YYMM
             tranData.CreditNum = ccDetails.num;
             tranData.Expiry = exp;
             tranData.Cvv2 = ccDetails.cvv;
+        } else {
+            return res.status(400).json({ success: false, error: "חסרים פרטי תשלום" });
         }
 
-        const payload = { Json: { userName: KESHER_USER, password: KESHER_PASS, func: "SendTransaction", format: "json", tran: tranData }, format: "json" };
-        
-        const response = await axios.post(KESHER_URL, payload);
+        // 4. שליחה לקשר
+        const response = await axios.post(KESHER_URL, {
+            Json: { userName: KESHER_USER, password: KESHER_PASS, func: "SendTransaction", format: "json", tran: tranData },
+            format: "json"
+        });
+
         console.log("KESHER RESPONSE:", JSON.stringify(response.data));
 
+        // 5. עיבוד התוצאה
         if (response.data.RequestResult?.Status === true) {
-            if (user) {
-                user.totalDonated += parseInt(amount);
-                user.name = fullName; user.email = email; user.tz = tz;
-                // שמירת הטוקן מהתגובה
-                const rToken = response.data.RequestResult.Token;
-                if (rToken) user.token = rToken;
-                if (!useToken) user.lastCardDigits = ccDetails.num.slice(-4);
-                await user.save();
-            }
+            user.totalDonated += parseInt(amount);
+            user.name = fullName; user.email = email; user.tz = tz;
+            
+            // שמירת הטוקן החדש
+            const rToken = response.data.RequestResult.Token;
+            if (rToken) user.token = rToken;
+            
+            if (!useToken && ccDetails) user.lastCardDigits = ccDetails.num.slice(-4);
+            
+            await user.save();
             res.json({ success: true, newTotal: user.totalDonated });
         } else {
-            res.status(400).json({ success: false, error: response.data.RequestResult?.Description || "נדחה" });
+            const kesherError = response.data.RequestResult?.Description || "העסקה נדחתה";
+            res.status(400).json({ success: false, error: kesherError });
         }
+
     } catch (e) {
-        console.error("DONATE ERROR:", e.message);
-        res.status(500).json({ success: false, error: "שגיאת שרת - נסה שוב בעוד דקה" });
+        console.error("CRITICAL DONATE ERROR:", e.message);
+        // מחזירים 400 במקום 500 כדי שהאפליקציה תדע להציג הודעה למשתמש ולא תקרוס
+        res.status(400).json({ success: false, error: "שגיאת תקשורת. נסה שוב בעוד דקה." });
     }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
