@@ -17,7 +17,7 @@ const userSchema = new mongoose.Schema({
     email: { type: String, default: "" },
     tz: { type: String, default: "" },
     totalDonated: { type: Number, default: 0 },
-    token: { type: String, default: "" }, // שדה לטוקן מ-Kesher
+    token: { type: String, default: "" }, // לחיוב מהיר
     lastCardDigits: { type: String, default: "" }
 });
 const User = mongoose.model('User', userSchema);
@@ -26,9 +26,7 @@ const KESHER_URL = 'https://kesherhk.info/ConnectToKesher/ConnectToKesher';
 const KESHER_USER = '2181420WS2087';
 const KESHER_PASS = 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl';
 
-app.get('/', (req, res) => res.send('PushCoins Live'));
-
-app.post('/send-auth', (req, res) => res.json({ success: true }));
+app.get('/', (req, res) => res.send('PushCoins Server Ready'));
 
 app.post('/verify-auth', async (req, res) => {
     const { phone, code } = req.body;
@@ -36,6 +34,7 @@ app.post('/verify-auth', async (req, res) => {
     try {
         let user = await User.findOne({ phone });
         if (!user) { user = new User({ phone }); await user.save(); }
+        // שולח את כל נתוני המשתמש כולל הטוקן חזרה לאפליקציה
         res.json({ success: true, user });
     } catch (e) { res.status(500).json({ success: false }); }
 });
@@ -51,15 +50,20 @@ app.post('/donate', async (req, res) => {
             FirstName: (fullName || "Torem").split(" ")[0],
             LastName: (fullName || "Torem").split(" ").slice(1).join(" ") || ".",
             Mail: email || "app@donate.com",
-            UniqNum: tz || "", // התיקון לפי הלוג
+            // --- ניסיונות למיקום ת"ז נכון ---
+            HolderID: tz || "",       // ניסיון חדש לשדה "תעודת זהות"
+            ID: tz || "",             // ניסיון נוסף
+            UniqNum: tz || "",        // השדה מהלוג הקודם
+            numAssociation: tz || "", 
+            // -----------------------------
             ParamJ: "J4", TransactionType: "debit"
         };
 
         if (useToken && user && user.token) {
-            tranData.Token = user.token; // שימוש בטוקן השמור
+            tranData.Token = user.token;
         } else {
             let exp = ccDetails.exp;
-            if (exp.length === 4) exp = exp.substring(2,4) + exp.substring(0,2); // YYMM
+            if (exp.length === 4) exp = exp.substring(2,4) + exp.substring(0,2);
             tranData.CreditNum = ccDetails.num;
             tranData.Expiry = exp;
             tranData.Cvv2 = ccDetails.cvv;
@@ -68,16 +72,23 @@ app.post('/donate', async (req, res) => {
         const payload = { Json: { userName: KESHER_USER, password: KESHER_PASS, func: "SendTransaction", format: "json", tran: tranData }, format: "json" };
         const response = await axios.post(KESHER_URL, payload);
         
-        console.log("FULL RESPONSE:", JSON.stringify(response.data));
+        console.log("FULL RESPONSE FROM KESHER:", JSON.stringify(response.data));
 
         if (response.data.RequestResult?.Status === true) {
             if (user) {
                 user.totalDonated += parseInt(amount);
                 user.name = fullName; user.email = email; user.tz = tz;
-                const rToken = response.data.RequestResult.Token; // חילוץ טוקן מהלוג
-                if (rToken) user.token = rToken;
+                
+                // בדיקה יסודית של איפה הטוקן נמצא בתשובה
+                const rToken = response.data.RequestResult.Token || response.data.RequestResult.CardId || response.data.RequestResult.TokenId;
+                if (rToken) {
+                    console.log("SAVING TOKEN FOR USER:", rToken);
+                    user.token = rToken;
+                }
+                
                 if (!useToken) user.lastCardDigits = ccDetails.num.slice(-4);
                 await user.save();
+                console.log("USER UPDATED IN DB:", user.phone);
             }
             res.json({ success: true, newTotal: user.totalDonated });
         } else {
