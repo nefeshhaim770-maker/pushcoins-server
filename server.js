@@ -23,22 +23,29 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// הגדרת המייל עם הסיסמה שנוצרה
+// הגדרת שליחת מייל בפורט 587 (הכי יציב בשרתי ענן)
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false, 
     auth: {
         user: 'nefeshhaim770@gmail.com',
         pass: 'gmoe trle sydr tfnw' 
+    },
+    tls: {
+        rejectUnauthorized: false 
     }
 });
 
-app.get('/', (req, res) => res.send('PushCoins Server is Running'));
+app.get('/', (req, res) => res.send('Server is Up'));
 
 app.post('/send-auth', async (req, res) => {
     const { email } = req.body;
     const code = Math.floor(1000 + Math.random() * 9000).toString();
     try {
+        // שמירת המשתמש או יצירה אם לא קיים
         await User.findOneAndUpdate({ email }, { tempCode: code }, { upsert: true });
+        
         await transporter.sendMail({
             from: '"PushCoins" <nefeshhaim770@gmail.com>',
             to: email,
@@ -48,7 +55,7 @@ app.post('/send-auth', async (req, res) => {
         res.json({ success: true });
     } catch (e) {
         console.error("Mail Error:", e);
-        res.status(500).json({ success: false });
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
@@ -56,9 +63,10 @@ app.post('/verify-auth', async (req, res) => {
     const { email, code } = req.body;
     try {
         let user = await User.findOne({ email });
+        // קוד 1234 נשאר לגיבוי למקרה שהמייל מתעכב
         if (user && (user.tempCode === code || code === '1234')) {
             res.json({ success: true, user });
-        } else { res.json({ success: false }); }
+        } else { res.json({ success: false, error: "קוד שגוי" }); }
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
@@ -88,7 +96,10 @@ app.post('/donate', async (req, res) => {
             user.totalDonated += parseInt(amount);
             user.name = fullName; user.tz = tz; user.phone = phone || user.phone;
             const rToken = response.data.Token || response.data.RequestResult?.Token;
-            if (rToken) { user.token = rToken; user.lastCardDigits = useToken ? user.lastCardDigits : ccDetails.num.slice(-4); }
+            if (rToken) { 
+                user.token = rToken; 
+                if (!useToken) user.lastCardDigits = ccDetails.num.slice(-4); 
+            }
             await user.save();
             res.json({ success: true, user });
         } else { res.status(400).json({ success: false }); }
@@ -96,4 +107,4 @@ app.post('/donate', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`✅ Server live on port ${PORT}`));
+app.listen(PORT, () => console.log(`✅ Live on port ${PORT}`));
