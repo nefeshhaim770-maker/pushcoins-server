@@ -7,7 +7,6 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// חיבור למסד נתונים - וודא שהסיסמה והכתובת תקינים
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
     .then(() => console.log('✅ Connected to MongoDB'))
     .catch(err => console.error('❌ DB Error:', err));
@@ -25,7 +24,6 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// עדכון קוד אימות לפי מייל או טלפון
 app.post('/update-code', async (req, res) => {
     const { email, phone, code } = req.body;
     try {
@@ -35,7 +33,6 @@ app.post('/update-code', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
-// אימות משתמש
 app.post('/verify-auth', async (req, res) => {
     const { email, phone, code } = req.body;
     try {
@@ -47,7 +44,6 @@ app.post('/verify-auth', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
-// תרומה וסליקה
 app.post('/donate', async (req, res) => {
     const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note } = req.body;
     try {
@@ -55,25 +51,24 @@ app.post('/donate', async (req, res) => {
         if (!user) return res.status(404).json({ error: "User not found" });
 
         let tranData = {
-            Total: Math.round(parseFloat(amount) * 100),
+            Total: parseFloat(amount), // לפי הדוגמה שלך, הם מקבלים מספר רגיל ולא אגורות
             Currency: 1, 
             CreditType: 1, 
             Phone: phone || user.phone || "0500000000",
-            FirstName: (fullName || user.name || "T").split(" ")[0],
-            LastName: (fullName || user.name || "T").split(" ").slice(1).join(" ") || "T",
+            FirstName: (fullName || user.name || "שם").split(" ")[0],
+            LastName: (fullName || user.name || "משפחה").split(" ").slice(1).join(" ") || "משפחה",
             Mail: email || user.email || "no-email@test.com", 
-            Id: tz || user.tz || "", 
             ParamJ: "J4", 
-            TransactionType: "debit"
+            TransactionType: "debit",
+            ProjectNumber: "00001" // הוספתי לפי הדוגמה שלך
         };
 
         if (useToken && user.token && user.token !== "") {
-            tranData.Token = user.token; // חיוב לפי טוקן שמור
+            tranData.Token = user.token; // שימוש בטוקן השמור
         } else if (ccDetails) {
-            let exp = ccDetails.exp;
-            if (exp.length === 4) exp = exp.substring(2,4) + exp.substring(0,2);
+            // שימוש בפורמט התאריך המדויק מהדוגמה שלך (YYMM)
             tranData.CreditNum = ccDetails.num; 
-            tranData.Expiry = exp; 
+            tranData.Expiry = ccDetails.exp; 
             tranData.Cvv2 = ccDetails.cvv;
         }
 
@@ -89,6 +84,7 @@ app.post('/donate', async (req, res) => {
         });
 
         const resData = response.data;
+        // אימות הצלחה לפי המבנה ששלחת
         if (resData.RequestResult?.Status === true || resData.Status === true) {
             user.totalDonated += parseFloat(amount);
             if (fullName) user.name = fullName;
@@ -96,6 +92,7 @@ app.post('/donate', async (req, res) => {
             if (phone) user.phone = phone;
             if (note) user.notes.push(note);
             
+            // עדכון הטוקן החדש מהתגובה
             const rToken = resData.Token || resData.RequestResult?.Token;
             if (rToken) {
                 user.token = rToken;
@@ -104,10 +101,16 @@ app.post('/donate', async (req, res) => {
             await user.save();
             res.json({ success: true, user });
         } else { 
-            res.status(400).json({ success: false, error: resData.RequestResult?.Description || "העסקה נדחתה" }); 
+            res.status(400).json({ 
+                success: false, 
+                error: resData.RequestResult?.Description || resData.Description || "העסקה נדחתה" 
+            }); 
         }
-    } catch (e) { res.status(500).json({ success: false, error: "שגיאת שרת" }); }
+    } catch (e) { 
+        console.error("Error:", e.response?.data || e.message);
+        res.status(500).json({ success: false, error: "שגיאת סליקה" }); 
+    }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`✅ Server Live`));
