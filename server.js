@@ -1,53 +1,3 @@
-const express = require('express');
-const cors = require('cors');
-const axios = require('axios');
-const mongoose = require('mongoose');
-const app = express();
-
-app.use(express.json());
-app.use(cors());
-
-// חיבור למסד נתונים
-mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
-    .then(() => console.log('✅ Connected to MongoDB'))
-    .catch(err => console.error(err));
-
-const userSchema = new mongoose.Schema({
-    email: { type: String, sparse: true },
-    phone: { type: String, sparse: true },
-    name: String,
-    tz: String,
-    totalDonated: { type: Number, default: 0 },
-    token: { type: String, default: "" },
-    lastCardDigits: String,
-    tempCode: String,
-    notes: [String] 
-});
-const User = mongoose.model('User', userSchema);
-
-// עדכון קוד אימות
-app.post('/update-code', async (req, res) => {
-    const { email, phone, code } = req.body;
-    try {
-        const query = email ? { email } : { phone };
-        await User.findOneAndUpdate(query, { tempCode: code }, { upsert: true });
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ success: false }); }
-});
-
-// אימות משתמש
-app.post('/verify-auth', async (req, res) => {
-    const { email, phone, code } = req.body;
-    try {
-        const query = email ? { email } : { phone };
-        let user = await User.findOne(query);
-        if (user && (user.tempCode === code || code === '1234')) {
-            res.json({ success: true, user });
-        } else { res.json({ success: false, error: "קוד שגוי" }); }
-    } catch (e) { res.status(500).json({ success: false }); }
-});
-
-// תרומה וסליקה
 app.post('/donate', async (req, res) => {
     const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note } = req.body;
     try {
@@ -67,14 +17,17 @@ app.post('/donate', async (req, res) => {
             TransactionType: "debit"
         };
 
+        // לוגיקת טוקן משופרת: אם ה-Token נכשל, המשתמש יוכל להזין אשראי מחדש
         if (useToken && user.token && user.token !== "") {
-            tranData.Token = user.token;
-        } else if (ccDetails) {
+            tranData.Token = user.token; 
+        } else if (ccDetails && ccDetails.num) {
             let exp = ccDetails.exp;
             if (exp.length === 4) exp = exp.substring(2,4) + exp.substring(0,2);
             tranData.CreditNum = ccDetails.num; 
             tranData.Expiry = exp; 
             tranData.Cvv2 = ccDetails.cvv;
+        } else {
+            return res.status(400).json({ success: false, error: "נא להזין פרטי אשראי מחדש" });
         }
 
         const response = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
@@ -85,12 +38,13 @@ app.post('/donate', async (req, res) => {
         const resData = response.data;
         if (resData.RequestResult?.Status === true || resData.Status === true) {
             user.totalDonated += parseFloat(amount);
+            // עדכון פרטים אישיים במידה והשתנו
             if (fullName) user.name = fullName;
             if (tz) user.tz = tz;
             if (phone) user.phone = phone;
-            if (email) user.email = email;
             if (note) user.notes.push(note);
             
+            // שמירת הטוקן החדש שהתקבל מחברת הסליקה
             const rToken = resData.Token || resData.RequestResult?.Token;
             if (rToken) {
                 user.token = rToken;
@@ -99,10 +53,8 @@ app.post('/donate', async (req, res) => {
             await user.save();
             res.json({ success: true, user });
         } else { 
+            // במידה והטוקן שגוי, נחזיר את השגיאה המדויקת
             res.status(400).json({ success: false, error: resData.RequestResult?.Description || "העסקה נדחתה" }); 
         }
-    } catch (e) { res.status(500).json({ success: false, error: "שגיאת סליקה" }); }
+    } catch (e) { res.status(500).json({ success: false, error: "שגיאת שרת" }); }
 });
-
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`✅ Port ${PORT}`));
