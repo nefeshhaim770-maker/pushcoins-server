@@ -1,97 +1,121 @@
-const express = require('express');
-const cors = require('cors');
-const axios = require('axios');
-const mongoose = require('mongoose');
-const app = express();
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PushCoins</title>
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root { --primary: #007aff; --success: #34c759; --bg: #f2f2f7; --card: #ffffff; }
+        body { font-family: 'Rubik', sans-serif; background: var(--bg); margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .app-container { width: 100%; max-width: 400px; background: var(--card); border-radius: 24px; padding: 25px; box-shadow: 0 8px 30px rgba(0,0,0,0.05); }
+        input { width: 100%; padding: 15px; margin: 10px 0; border: 2px solid #eee; border-radius: 14px; box-sizing: border-box; font-size: 16px; }
+        .main-btn { width: 100%; padding: 16px; background: var(--primary); color: white; border: none; border-radius: 14px; font-size: 18px; font-weight: 600; cursor: pointer; }
+        .hidden { display: none; }
+        .saved-card { background: #eef7ff; padding: 15px; border-radius: 14px; margin: 10px 0; border: 1px solid var(--primary); font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div id="login-screen">
+            <h1>🪙 PushCoins</h1>
+            <p>הכנס אימייל לקבלת קוד:</p>
+            <input type="email" id="email-input" placeholder="yourname@gmail.com">
+            <button class="main-btn" onclick="sendAuth()">שלח קוד</button>
+        </div>
 
-app.use(express.json());
-app.use(cors());
+        <div id="verify-screen" class="hidden">
+            <h1>🔐 אימות</h1>
+            <p>הזן את הקוד שקיבלת במייל:</p>
+            <input type="tel" id="otp-input" placeholder="4 ספרות" maxlength="4">
+            <button class="main-btn" onclick="verifyAuth()">התחבר</button>
+        </div>
 
-mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
-    .then(() => console.log('✅ Connected to DB'))
-    .catch(err => console.error(err));
+        <div id="main-screen" class="hidden">
+            <div style="text-align:right; margin-bottom:15px;">
+                <b>שלום, <span id="user-name"></span></b><br>
+                נתרמו: ₪<span id="user-total">0</span>
+            </div>
+            <input type="number" id="amount" placeholder="סכום לתרומה ב-₪">
+            
+            <div id="payment-fields">
+                <input type="tel" id="cc-num" placeholder="מספר כרטיס">
+                <div style="display:flex; gap:10px;">
+                    <input type="tel" id="cc-exp" placeholder="MMYY">
+                    <input type="tel" id="cc-cvv" placeholder="CVV">
+                </div>
+            </div>
 
-const userSchema = new mongoose.Schema({
-    phone: String, name: String, email: String, tz: String,
-    totalDonated: { type: Number, default: 0 },
-    token: { type: String, default: "" },
-    lastCardDigits: String
-});
-const User = mongoose.model('User', userSchema);
+            <div id="card-saved" class="hidden saved-card">
+                💳 כרטיס שמור: **** <span id="card-digits"></span>
+                <br><a href="#" onclick="changeCard()" style="color:var(--primary); text-decoration:none; font-size:12px;">החלף כרטיס</a>
+            </div>
 
-const KESHER_URL = 'https://kesherhk.info/ConnectToKesher/ConnectToKesher';
-const KESHER_USER = '2181420WS2087';
-const KESHER_PASS = 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl';
+            <input type="text" id="full-name" placeholder="שם מלא">
+            <input type="tel" id="tz" placeholder="תעודת זהות">
+            <button class="main-btn" id="donate-btn" onclick="donate()" style="background:var(--success); margin-top:10px;">תרום ❤️</button>
+        </div>
+    </div>
 
-app.post('/verify-auth', async (req, res) => {
-    try {
-        let user = await User.findOne({ phone: req.body.phone });
-        if (!user) { user = new User({ phone: req.body.phone }); await user.save(); }
-        res.json({ success: true, user });
-    } catch (e) { res.status(500).json({ success: false }); }
-});
+    <script>
+        const API = 'https://pushcoins-server.onrender.com';
+        let user = null;
 
-app.post('/donate', async (req, res) => {
-    const { phone, amount, ccDetails, email, fullName, tz, useToken } = req.body;
-    try {
-        let user = await User.findOne({ phone });
-        if (!user) return res.status(404).json({ error: "User not found" });
-
-        let tranData = {
-            Total: parseInt(amount) * 100, Currency: 1, CreditType: 1, Phone: phone,
-            FirstName: (fullName || "T").split(" ")[0],
-            LastName: (fullName || "T").split(" ").slice(1).join(" ") || ".",
-            Mail: email || "a@a.com",
-            Id: tz || "", // השדה שעבד לת"ז
-            ParamJ: "J4", TransactionType: "debit"
-        };
-
-        if (useToken && user.token) {
-            tranData.Token = user.token;
-        } else {
-            let exp = ccDetails.exp;
-            if (exp.length === 4) exp = exp.substring(2,4) + exp.substring(0,2);
-            tranData.CreditNum = ccDetails.num;
-            tranData.Expiry = exp;
-            tranData.Cvv2 = ccDetails.cvv;
+        async function sendAuth() {
+            const email = document.getElementById('email-input').value;
+            await fetch(`${API}/send-auth`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ email }) });
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('verify-screen').classList.remove('hidden');
         }
 
-        const response = await axios.post(KESHER_URL, {
-            Json: { userName: KESHER_USER, password: KESHER_PASS, func: "SendTransaction", format: "json", tran: tranData },
-            format: "json"
-        });
+        async function verifyAuth() {
+            const email = document.getElementById('email-input').value;
+            const code = document.getElementById('otp-input').value;
+            const res = await fetch(`${API}/verify-auth`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ email, code }) });
+            const data = await res.json();
+            if(data.success) { user = data.user; showMain(); } else { alert('קוד שגוי'); }
+        }
 
-        const resData = response.data;
-        // לוג לבדיקה - מה קשר החזירו לנו
-        console.log("FULL KESHER DATA:", JSON.stringify(resData));
-
-        // בדיקת סטטוס (Status נמצא לפעמים בתוך RequestResult או ישירות ב-resData)
-        const isSuccess = resData.RequestResult?.Status === true || resData.Status === true;
-
-        if (isSuccess) {
-            user.totalDonated += parseInt(amount);
-            user.name = fullName; user.email = email; user.tz = tz;
-            
-            // חילוץ טוקן לפי הלוג החדש ששלחת (214949.png)
-            const rToken = resData.Token || resData.RequestResult?.Token;
-            
-            if (rToken) {
-                console.log("SUCCESS: Saving Token:", rToken);
-                user.token = rToken;
-                if (!useToken && ccDetails) user.lastCardDigits = ccDetails.num.slice(-4);
+        function showMain() {
+            document.getElementById('verify-screen').classList.add('hidden');
+            document.getElementById('main-screen').classList.remove('hidden');
+            document.getElementById('user-name').innerText = user.name || user.email;
+            document.getElementById('user-total').innerText = user.totalDonated;
+            if(user.token) {
+                document.getElementById('payment-fields').classList.add('hidden');
+                document.getElementById('card-saved').classList.remove('hidden');
+                document.getElementById('card-digits').innerText = user.lastCardDigits;
             }
-            
-            await user.save();
-            res.json({ success: true, newTotal: user.totalDonated, user: user });
-        } else {
-            const errorMsg = resData.RequestResult?.Description || "העסקה נדחתה";
-            res.status(400).json({ success: false, error: errorMsg });
         }
-    } catch (e) { 
-        console.error("DONATE ERROR:", e.message);
-        res.status(500).json({ success: false, error: "שגיאת שרת - נסה שוב בעוד דקה" }); 
-    }
-});
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+        function changeCard() {
+            document.getElementById('payment-fields').classList.remove('hidden');
+            document.getElementById('card-saved').classList.add('hidden');
+        }
+
+        async function donate() {
+            const btn = document.getElementById('donate-btn');
+            btn.innerText = 'מעבד...';
+            const isToken = document.getElementById('payment-fields').classList.contains('hidden');
+            const res = await fetch(`${API}/donate`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    email: user.email,
+                    amount: document.getElementById('amount').value,
+                    fullName: document.getElementById('full-name').value,
+                    tz: document.getElementById('tz').value,
+                    useToken: isToken,
+                    ccDetails: isToken ? null : {
+                        num: document.getElementById('cc-num').value,
+                        exp: document.getElementById('cc-exp').value,
+                        cvv: document.getElementById('cc-cvv').value
+                    }
+                })
+            });
+            const data = await res.json();
+            if(data.success) { alert('תודה!'); user = data.user; showMain(); } else { alert('שגיאה'); }
+            btn.innerText = 'תרום ❤️';
+        }
+    </script>
+</body>
+</html>
