@@ -25,7 +25,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// הגדרת המייל עם הסיסמה שסיפקת
+// הגדרת המייל עם הסיסמה שנוצרה
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
