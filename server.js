@@ -50,9 +50,8 @@ app.post('/donate', async (req, res) => {
         let user = await User.findById(userId);
         if (!user) return res.status(404).json({ error: "User not found" });
 
-        // בניית אובייקט הטרנזקציה לפי דוגמת ה-CURL המוצלחת
         let tranData = {
-            Total: parseFloat(amount), // שליחת סכום בשקלים לפי הדוגמה
+            Total: parseFloat(amount), 
             Currency: 1, 
             CreditType: 1, 
             Phone: phone || user.phone || "0500000000",
@@ -61,33 +60,28 @@ app.post('/donate', async (req, res) => {
             Mail: email || user.email || "no-email@test.com", 
             ParamJ: "J4", 
             TransactionType: "debit",
-            ProjectNumber: "00001" // נוסף לפי הדוגמה
+            ProjectNumber: "00001" 
         };
 
-        if (useToken && user.token && user.token !== "") {
-            tranData.Token = user.token; // שימוש בטוקן השמור מה-DB
+        if (useToken && user.token) {
+            console.log("💳 Using saved Token:", user.token);
+            tranData.Token = user.token; 
         } else if (ccDetails) {
-            // שימוש בפרטי אשראי מלאים
+            console.log("💳 Using new Credit Card details");
             tranData.CreditNum = ccDetails.num; 
-            tranData.Expiry = ccDetails.exp; // פורמט YYMM כמו בדוגמה
+            tranData.Expiry = ccDetails.exp; 
             tranData.Cvv2 = ccDetails.cvv;
-        } else {
-            return res.status(400).json({ success: false, error: "נדרשים פרטי תשלום" });
         }
 
         const response = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
-            Json: { 
-                userName: '2181420WS2087', 
-                password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', 
-                func: "SendTransaction", 
-                format: "json", 
-                tran: tranData 
-            },
+            Json: { userName: '2181420WS2087', password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', func: "SendTransaction", format: "json", tran: tranData },
             format: "json"
         });
 
         const resData = response.data;
-        // בדיקת סטטוס הצלחה כפי שמופיע ב-RequestResult בדוגמה שלך
+        // הדפסת התגובה המלאה ללוג כדי שנוכל לאתר את הטוקן
+        console.log("📩 Kesher Response:", JSON.stringify(resData));
+
         if (resData.RequestResult?.Status === true || resData.Status === true) {
             user.totalDonated += parseFloat(amount);
             if (fullName) user.name = fullName;
@@ -95,26 +89,23 @@ app.post('/donate', async (req, res) => {
             if (phone) user.phone = phone;
             if (note) user.notes.push(note);
             
-            // שמירת הטוקן החדש מהשדה Token בתגובה
+            // חילוץ הטוקן לפי המבנה שראינו ב-CURL
             const rToken = resData.Token || resData.RequestResult?.Token;
             if (rToken) {
+                console.log("🔑 New Token Received:", rToken);
                 user.token = rToken;
                 if (!useToken && ccDetails) user.lastCardDigits = ccDetails.num.slice(-4);
             }
+            
             await user.save();
             res.json({ success: true, user });
         } else { 
-            // אם הטוקן שגוי, "קשר" יחזירו תיאור שגיאה בשדה זה
-            res.status(400).json({ 
-                success: false, 
-                error: resData.RequestResult?.Description || resData.Description || "עסקה נכשלה" 
-            }); 
+            res.status(400).json({ success: false, error: resData.RequestResult?.Description || "נדחה" }); 
         }
     } catch (e) { 
-        console.error("Donate Error:", e.message);
-        res.status(500).json({ success: false, error: "שגיאת תקשורת" }); 
+        console.error("❌ Donate Error:", e.message);
+        res.status(500).json({ success: false }); 
     }
 });
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`✅ Server Live`));
+app.listen(process.env.PORT || 10000);
