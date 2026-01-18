@@ -22,15 +22,16 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// הגדרת המייל המעודכנת למניעת Timeout
+// הגדרת המייל המדויקת למניעת Timeout
 const transporter = nodemailer.createTransport({
     host: "smtp.gmail.com",
     port: 465,
-    secure: true,
+    secure: true, // חובה לפורט 465
     auth: {
         user: 'nefeshhaim770@gmail.com',
-        pass: 'gmoe trle sydr tfnw' //
-    }
+        pass: 'gmoe trle sydr tfnw' // סיסמת האפליקציה
+    },
+    connectionTimeout: 10000 // מחכה מקסימום 10 שניות
 });
 
 app.post('/send-auth', async (req, res) => {
@@ -42,12 +43,12 @@ app.post('/send-auth', async (req, res) => {
             from: '"PushCoins" <nefeshhaim770@gmail.com>',
             to: email,
             subject: 'קוד האימות שלך',
-            html: `<div dir="rtl"><h2>שלום!</h2><p>קוד האימות שלך הוא: <b>${code}</b></p></div>`
+            html: `<div dir="rtl"><h2>שלום!</h2><p>קוד האימות הוא: <b>${code}</b></p></div>`
         });
         res.json({ success: true });
     } catch (e) {
-        console.error("Mail Error:", e.message); // זה ידפיס ללוג אם יש שוב Timeout
-        res.status(500).json({ success: false, error: "שגיאת חיבור למייל" });
+        console.error("Mail Error:", e.message); // יעזור לנו לראות שגיאות בלוג
+        res.status(500).json({ success: false, error: "שגיאת שרת בשליחת המייל" });
     }
 });
 
@@ -72,7 +73,7 @@ app.post('/donate', async (req, res) => {
             Mail: email, Id: tz || "", ParamJ: "J4", TransactionType: "debit"
         };
         if (useToken && user.token) {
-            tranData.Token = user.token;
+            tranData.Token = user.token; // חיוב מהיר
         } else {
             let exp = ccDetails.exp;
             if (exp.length === 4) exp = exp.substring(2,4) + exp.substring(0,2);
@@ -83,12 +84,11 @@ app.post('/donate', async (req, res) => {
             format: "json"
         });
         
-        const resData = response.data;
+        const resData = response.data; // התגובה מ"קשר"
         if (resData.RequestResult?.Status === true || resData.Status === true) {
             user.totalDonated += parseInt(amount);
             user.name = fullName; user.tz = tz; user.phone = phone || user.phone;
-            // חילוץ טוקן מהמבנה שראינו בלוג
-            const rToken = resData.Token || resData.RequestResult?.Token;
+            const rToken = resData.Token || resData.RequestResult?.Token; // שליפת הטוקן
             if (rToken) {
                 user.token = rToken;
                 if (!useToken) user.lastCardDigits = ccDetails.num.slice(-4);
@@ -99,4 +99,5 @@ app.post('/donate', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
-app.listen(10000);
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`✅ Server live on port ${PORT}`));
