@@ -35,21 +35,20 @@ app.post('/donate', async (req, res) => {
     const { phone, amount, ccDetails, email, fullName, tz, useToken } = req.body;
     try {
         let user = await User.findOne({ phone });
-        
+        if (!user) return res.status(404).json({ error: "User not found" });
+
         let tranData = {
             Total: parseInt(amount) * 100, Currency: 1, CreditType: 1, Phone: phone,
             FirstName: (fullName || "T").split(" ")[0],
             LastName: (fullName || "T").split(" ").slice(1).join(" ") || ".",
             Mail: email || "a@a.com",
-            // --- הניסיון הסופי לפיצוח הת"ז ב"קשר" ---
-            PersonalId: tz || "",      // שם שדה נפוץ בקשר
-            UniqNum: tz || "",         // מה שראינו בלוג
-            Comment: "ת.ז: " + tz,      // גיבוי בשדה הערות כדי שיופיע בדו"ח
-            // ------------------------------------
+            // השדה המנצח שמצאנו ב-CURL!
+            Id: tz || "", 
+            UniqNum: tz || "", 
             ParamJ: "J4", TransactionType: "debit"
         };
 
-        if (useToken && user?.token) {
+        if (useToken && user.token) {
             tranData.Token = user.token;
         } else {
             let exp = ccDetails.exp;
@@ -64,21 +63,29 @@ app.post('/donate', async (req, res) => {
             format: "json"
         });
 
+        console.log("KESHER RESPONSE:", JSON.stringify(response.data));
+
         if (response.data.RequestResult?.Status === true) {
             user.totalDonated += parseInt(amount);
             user.name = fullName; user.email = email; user.tz = tz;
             
-            // חילוץ טוקן - בדיקה של כל האפשרויות
+            // חילוץ טוקן מהתגובה
             const rToken = response.data.RequestResult.Token || response.data.RequestResult.CardId;
             if (rToken) user.token = rToken;
+            
             if (!useToken && ccDetails) user.lastCardDigits = ccDetails.num.slice(-4);
             
             await user.save();
+            // החזרת המשתמש המעודכן לאפליקציה
             res.json({ success: true, newTotal: user.totalDonated, user: user });
         } else {
             res.status(400).json({ success: false, error: response.data.RequestResult?.Description });
         }
-    } catch (e) { res.status(500).json({ success: false, error: "שגיאת שרת" }); }
+    } catch (e) { 
+        console.error(e.message);
+        res.status(500).json({ success: false, error: "שגיאת שרת - נסה שוב בעוד דקה" }); 
+    }
 });
 
-app.listen(10000);
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
