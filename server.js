@@ -49,6 +49,8 @@ function fixToken(token) {
     return strToken;
 }
 
+// --- Routes ---
+
 app.post('/update-code', async (req, res) => {
     let { email, phone, code } = req.body;
     try {
@@ -87,7 +89,7 @@ app.post('/verify-auth', async (req, res) => {
 
         let user = await User.findOne(query);
 
-        // ✅ תיקון: הסרתי את || '1234'. רק הקוד מהדאטה-בייס יעבוד.
+        // וידוא שהקוד תואם בדיוק (ללא דלת אחורית 1234)
         if (user && String(user.tempCode).trim() === String(code).trim()) {
             res.json({ success: true, user });
         } else {
@@ -121,7 +123,7 @@ app.post('/donate', async (req, res) => {
     const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note } = req.body;
 
     try {
-        console.log("🚀 תרומה (J4)...");
+        console.log("🚀 תרומה (J4) - המרת סכום לאגורות...");
         
         let user = await User.findById(userId);
         if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
@@ -142,8 +144,12 @@ app.post('/donate', async (req, res) => {
             activeToken = fixToken(user.token);
         }
 
+        // ✅ התיקון הקריטי: המרה לאגורות (כפל ב-100)
+        // Math.round מבטיח שלא יהיו שברים עשרוניים מוזרים
+        const amountInAgorot = Math.round(parseFloat(amount) * 100);
+
         let tranData = {
-            Total: parseFloat(amount), // זה מבטיח ש-1 נשאר 1.00 ולא משתנה
+            Total: amountInAgorot, // שולחים 100 עבור 1 שקל
             Currency: 1, 
             CreditType: 1, 
             ParamJ: "J4", 
@@ -169,7 +175,7 @@ app.post('/donate', async (req, res) => {
 
         const sortedTranData = sortObjectKeys(tranData);
         
-        // ⚠️ להחליף לפרטי Production כאן כשתקבל אותם
+        // ⚠️ להחליף לפרטי Production כשתקבל אותם
         const response = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
             Json: { 
                 userName: '2181420WS2087', 
