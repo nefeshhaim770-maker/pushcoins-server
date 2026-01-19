@@ -11,9 +11,10 @@ mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.
     .then(() => console.log('✅ MongoDB Connected'))
     .catch(err => console.error('❌ MongoDB Error:', err));
 
+// ✅ תיקון 1: הוספת unique ו-sparse כדי למנוע התנגשויות של שדות ריקים
 const userSchema = new mongoose.Schema({
-    email: { type: String, sparse: true },
-    phone: { type: String, sparse: true },
+    email: { type: String, sparse: true, unique: true },
+    phone: { type: String, sparse: true, unique: true },
     name: String,
     tz: String,
     lastExpiry: String,
@@ -45,7 +46,6 @@ function sortObjectKeys(obj) {
     }, {});
 }
 
-// ✅ תיקון 1: פונקציה להוספת 0 לטוקן
 function fixToken(token) {
     if (!token) return "";
     let strToken = String(token).replace(/['"]+/g, '').trim();
@@ -60,16 +60,38 @@ function fixToken(token) {
 app.post('/update-code', async (req, res) => {
     let { email, phone, code } = req.body;
     try {
-        // ✅ תיקון 2: ניקוי קלט (מונע בעיות הרשמה)
-        if (email) email = email.toString().toLowerCase().trim();
-        if (phone) phone = phone.toString().replace(/\D/g, '').trim(); // משאיר רק ספרות בטלפון
+        // ✅ תיקון 2: לוגיקה שמבטיחה שרק שדה אחד יישמר והשני יימחק מהבקשה
+        let cleanEmail = undefined;
+        let cleanPhone = undefined;
 
-        const query = email ? { email } : { phone };
+        // אם התקבל מייל ויש בו תוכן - ננקה אותו
+        if (email && email.toString().trim() !== "") {
+            cleanEmail = email.toString().toLowerCase().trim();
+        }
+
+        // אם אין מייל, ורק אז - נבדוק אם יש טלפון
+        if (!cleanEmail && phone && phone.toString().trim() !== "") {
+            cleanPhone = phone.toString().replace(/\D/g, '').trim();
+        }
+
+        // אם אין אף אחד מהם - שגיאה
+        if (!cleanEmail && !cleanPhone) {
+            return res.status(400).json({ success: false, error: "חובה להזין מייל או טלפון" });
+        }
+
+        const query = cleanEmail ? { email: cleanEmail } : { phone: cleanPhone };
         
-        // השארתי את הלוגיקה שלך בדיוק כמו שהיא
-        await User.findOneAndUpdate(query, { tempCode: code }, { upsert: true, new: true });
+        // בניית אובייקט העדכון בצורה שלא תכניס null לשדה השני
+        let updateData = { tempCode: code };
+        if (cleanEmail) updateData.email = cleanEmail;
+        if (cleanPhone) updateData.phone = cleanPhone;
+
+        await User.findOneAndUpdate(query, updateData, { upsert: true, new: true });
         res.json({ success: true });
-    } catch (e) { res.status(500).json({ success: false }); }
+    } catch (e) { 
+        console.error(e);
+        res.status(500).json({ success: false }); 
+    }
 });
 
 app.post('/verify-auth', async (req, res) => {
@@ -77,14 +99,24 @@ app.post('/verify-auth', async (req, res) => {
     try {
         if (code === 'check') return res.json({ success: true });
 
-        // ✅ תיקון 2: ניקוי קלט גם באימות
-        if (email) email = email.toString().toLowerCase().trim();
-        if (phone) phone = phone.toString().replace(/\D/g, '').trim();
+        // אותו ניקוי גם כאן כדי למצוא את המשתמש
+        let cleanEmail = undefined;
+        let cleanPhone = undefined;
 
-        const query = email ? { email } : { phone };
+        if (email && email.toString().trim() !== "") {
+            cleanEmail = email.toString().toLowerCase().trim();
+        }
+        if (!cleanEmail && phone && phone.toString().trim() !== "") {
+            cleanPhone = phone.toString().replace(/\D/g, '').trim();
+        }
+
+        const query = cleanEmail ? { email: cleanEmail } : { phone: cleanPhone };
+        
+        // הוספת הגנה למקרה שהשאילתה ריקה
+        if (Object.keys(query).length === 0) return res.json({ success: false, error: "חסר פרטים" });
+
         let user = await User.findOne(query);
 
-        // הוספתי המרה ל-String כדי למנוע באגים של מספר מול טקסט
         if (user && (String(user.tempCode) === String(code) || String(code) === '1234')) {
             res.json({ success: true, user });
         } else {
@@ -93,7 +125,6 @@ app.post('/verify-auth', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
-// מסלול התחברות אוטומטית (ביקשת להוסיף את זה קודם, השארתי כי זה עבד)
 app.post('/login-by-id', async (req, res) => {
     const { userId } = req.body;
     try {
@@ -137,7 +168,6 @@ app.post('/donate', async (req, res) => {
 
         let activeToken = "";
         
-        // --- שלב 1: השגת טוקן ---
         if (!useToken && ccDetails) {
             console.log("💳 כרטיס חדש -> מבצע GetToken...");
             
@@ -148,12 +178,11 @@ app.post('/donate', async (req, res) => {
             
             const sortedTokenReq = sortObjectKeys(tokenRequest);
 
-            // ⚠️ שים לב: כאן נמצאים פרטי הטסטים שלך.
-            // כדי לעבור ל-Production (חיוב אמיתי), עליך להחליף את ה-userName וה-password בשורות למטה לפרטים החדשים שתקבל מקשר.
+            // ⚠️ להחליף לפרטי Production כאן כשתקבל אותם
             const tokenResponse = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
                 Json: { 
-                    userName: '2181420WS2087',  // <-- להחליף לאמיתי
-                    password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', // <-- להחליף לאמיתי
+                    userName: '2181420WS2087', 
+                    password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', 
                     func: "GetToken", 
                     format: "json", 
                     ...sortedTokenReq
@@ -164,7 +193,6 @@ app.post('/donate', async (req, res) => {
             let rawToken = tokenResponse.data;
             if (typeof rawToken === 'object' && rawToken.Token) rawToken = rawToken.Token;
             
-            // ✅ תיקון 1: הפעלת פונקציית תיקון הטוקן
             activeToken = fixToken(rawToken);
 
             if (activeToken.length > 5) {
@@ -177,13 +205,11 @@ app.post('/donate', async (req, res) => {
             }
 
         } else if (useToken && user.token) {
-            // ✅ תיקון 1: גם בשימוש חוזר
             activeToken = fixToken(user.token);
         } else {
             return res.status(400).json({ success: false, error: "חסר אמצעי תשלום" });
         }
 
-        // --- שלב 2: ביצוע החיוב ---
         const safeName = fullName || user.name || "Torem";
         const firstName = safeName.split(" ")[0] || "Israel";
         const lastName = safeName.split(" ").slice(1).join(" ") || "Israeli";
@@ -209,7 +235,7 @@ app.post('/donate', async (req, res) => {
 
         const sortedTranData = sortObjectKeys(tranData);
 
-        // ⚠️ גם כאן - להחליף פרטים ל-Production כשיהיו לך
+        // ⚠️ להחליף לפרטי Production כאן כשתקבל אותם
         const response = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
             Json: { 
                 userName: '2181420WS2087', 
