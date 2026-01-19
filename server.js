@@ -8,10 +8,17 @@ app.use(express.json());
 app.use(cors());
 
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
-    .then(() => console.log('✅ MongoDB Connected'))
+    .then(async () => {
+        console.log('✅ MongoDB Connected');
+        // --- תיקון קריטי למסד הנתונים ---
+        // שורות אלו מוחקות את ה"חוקים" הישנים שמונעים כפילות של שדות ריקים.
+        // בפעם הבאה שמונגו ירוץ, הוא ייצור אותם מחדש בצורה תקינה (sparse) בגלל הסכמה למטה.
+        try { await mongoose.connection.db.collection('users').dropIndex('phone_1'); console.log('🛠️ אינדקס טלפון ישן נמחק ותוקן'); } catch (e) { }
+        try { await mongoose.connection.db.collection('users').dropIndex('email_1'); console.log('🛠️ אינדקס אימייל ישן נמחק ותוקן'); } catch (e) { }
+    })
     .catch(err => console.error('❌ MongoDB Error:', err));
 
-// ✅ תיקון 1: הוספת unique ו-sparse כדי למנוע התנגשויות של שדות ריקים
+// הסכמה עם sparse: true (חובה למניעת השגיאה שקיבלת)
 const userSchema = new mongoose.Schema({
     email: { type: String, sparse: true, unique: true },
     phone: { type: String, sparse: true, unique: true },
@@ -55,41 +62,45 @@ function fixToken(token) {
     return strToken;
 }
 
+function cleanInput(str) {
+    if (!str) return undefined;
+    let cleaned = String(str).trim();
+    if (cleaned === "") return undefined;
+    return cleaned.toLowerCase();
+}
+
 // --- Routes ---
 
 app.post('/update-code', async (req, res) => {
     let { email, phone, code } = req.body;
     try {
-        // ✅ תיקון 2: לוגיקה שמבטיחה שרק שדה אחד יישמר והשני יימחק מהבקשה
         let cleanEmail = undefined;
         let cleanPhone = undefined;
 
-        // אם התקבל מייל ויש בו תוכן - ננקה אותו
         if (email && email.toString().trim() !== "") {
             cleanEmail = email.toString().toLowerCase().trim();
         }
 
-        // אם אין מייל, ורק אז - נבדוק אם יש טלפון
         if (!cleanEmail && phone && phone.toString().trim() !== "") {
             cleanPhone = phone.toString().replace(/\D/g, '').trim();
         }
 
-        // אם אין אף אחד מהם - שגיאה
         if (!cleanEmail && !cleanPhone) {
             return res.status(400).json({ success: false, error: "חובה להזין מייל או טלפון" });
         }
 
         const query = cleanEmail ? { email: cleanEmail } : { phone: cleanPhone };
         
-        // בניית אובייקט העדכון בצורה שלא תכניס null לשדה השני
+        // בניית אובייקט עדכון מפורש כדי לא לשלוח null
         let updateData = { tempCode: code };
         if (cleanEmail) updateData.email = cleanEmail;
         if (cleanPhone) updateData.phone = cleanPhone;
 
-        await User.findOneAndUpdate(query, updateData, { upsert: true, new: true });
+        // שימוש ב-$set כדי לעדכן רק מה שצריך
+        await User.findOneAndUpdate(query, { $set: updateData }, { upsert: true, new: true });
         res.json({ success: true });
     } catch (e) { 
-        console.error(e);
+        console.error("Database Error:", e);
         res.status(500).json({ success: false }); 
     }
 });
@@ -99,7 +110,6 @@ app.post('/verify-auth', async (req, res) => {
     try {
         if (code === 'check') return res.json({ success: true });
 
-        // אותו ניקוי גם כאן כדי למצוא את המשתמש
         let cleanEmail = undefined;
         let cleanPhone = undefined;
 
@@ -111,8 +121,6 @@ app.post('/verify-auth', async (req, res) => {
         }
 
         const query = cleanEmail ? { email: cleanEmail } : { phone: cleanPhone };
-        
-        // הוספת הגנה למקרה שהשאילתה ריקה
         if (Object.keys(query).length === 0) return res.json({ success: false, error: "חסר פרטים" });
 
         let user = await User.findOne(query);
