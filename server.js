@@ -7,7 +7,6 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// התחברות לדאטה-בייס
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
     .then(() => console.log('✅ MongoDB Connected'))
     .catch(err => console.error('❌ MongoDB Error:', err));
@@ -32,7 +31,6 @@ const User = mongoose.model('User', userSchema);
 
 // --- פונקציות עזר ---
 
-// 1. פונקציה לתיקון ת"ז (9 ספרות)
 function padTz(tz) {
     if (!tz) return "000000000";
     let str = tz.toString().replace(/\D/g, '');
@@ -40,7 +38,7 @@ function padTz(tz) {
     return str;
 }
 
-// 2. פונקציה קריטית: סידור מפתחות לפי ABC (דרישת המפתח)
+// פונקציית הקסם: מסדרת את כל השדות לפי ABC לפני השליחה
 function sortObjectKeys(obj) {
     return Object.keys(obj).sort().reduce((result, key) => {
         result[key] = obj[key];
@@ -48,7 +46,7 @@ function sortObjectKeys(obj) {
     }, {});
 }
 
-// --- נתיבים ---
+// --- Routes ---
 
 app.post('/update-code', async (req, res) => {
     const { email, phone, code } = req.body;
@@ -77,12 +75,12 @@ app.post('/donate', async (req, res) => {
     const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note } = req.body;
 
     try {
-        console.log("🚀 מתחיל תהליך תרומה (ABC Mode)...");
+        console.log("🚀 מתחיל תהליך תרומה (עם סידור ABC והערות)...");
         
         let user = await User.findById(userId);
         if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
 
-        // טיפול בתוקף (היפוך מ-MMYY ל-YYMM)
+        // המרת תוקף מ-MMYY ל-YYMM
         let finalExpiry = "";
         if (ccDetails && ccDetails.exp) {
             if (ccDetails.exp.length === 4) {
@@ -99,8 +97,7 @@ app.post('/donate', async (req, res) => {
         const lastName = safeName.split(" ").slice(1).join(" ") || "Israeli";
         const finalTz = padTz(tz || user.tz);
 
-        // --- בניית האובייקט הגולמי (לפני סידור) ---
-        // שים לב: אנחנו משתמשים ב-Id עבור תעודת זהות כפי שהמפתח ביקש
+        // בניית האובייקט הגולמי
         let rawTranData = {
             Total: parseFloat(amount),
             Currency: 1, 
@@ -112,26 +109,26 @@ app.post('/donate', async (req, res) => {
             FirstName: firstName,
             LastName: lastName,
             Mail: email || user.email || "no-email@test.com",
-            Id: finalTz // התיקון לפי הערת המפתח: Id במקום Tz או HolderID
+            Id: finalTz,          // ת"ז בשם Id
+            Details: note || ""   // הוספנו את ההערה לשדה Details שקיים בקשר
         };
 
-        // הוספת פרטי תשלום
+        // הוספת פרטי תשלום (כרטיס או טוקן)
         if (useToken && user.token) {
-            console.log("💳 Using Token");
+            console.log("💳 שימוש בטוקן קיים");
             rawTranData.Token = user.token;
             rawTranData.Expiry = finalExpiry; 
         } else if (ccDetails) {
-            console.log("💳 Using New Card");
+            console.log("💳 שימוש בכרטיס חדש");
             rawTranData.CreditNum = ccDetails.num;
             rawTranData.Expiry = finalExpiry; 
         } else {
             return res.status(400).json({ success: false, error: "חסרים פרטי תשלום" });
         }
 
-        // --- השלב הקריטי: סידור לפי ABC ---
+        // --- סידור לפי ABC ---
         const sortedTranData = sortObjectKeys(rawTranData);
-        
-        console.log("📤 Sorted Payload:", JSON.stringify(sortedTranData));
+        console.log("📤 נתונים נשלחים (מסודר):", JSON.stringify(sortedTranData));
 
         const response = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
             Json: { 
@@ -139,13 +136,13 @@ app.post('/donate', async (req, res) => {
                 password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', 
                 func: "SendTransaction", 
                 format: "json", 
-                tran: sortedTranData // שולחים את האובייקט המסודר
+                tran: sortedTranData 
             },
             format: "json"
         }, { validateStatus: () => true });
 
         const resData = response.data;
-        console.log("📩 Response:", JSON.stringify(resData));
+        console.log("📩 תשובה מקשר:", JSON.stringify(resData));
 
         if (resData.RequestResult?.Status === true || resData.Status === true) {
             if (fullName) user.name = fullName;
@@ -155,6 +152,7 @@ app.post('/donate', async (req, res) => {
             user.totalDonated += parseFloat(amount);
             user.donationsHistory.push({ amount: parseFloat(amount), note: note || "", date: new Date() });
             
+            // שמירת טוקן חדש
             const rToken = resData.Token || resData.RequestResult?.Token;
             if (rToken) {
                 user.token = rToken;
@@ -167,12 +165,12 @@ app.post('/donate', async (req, res) => {
             res.json({ success: true, user });
         } else {
             const errorMsg = resData.RequestResult?.Description || resData.Description || "סירוב עסקה";
-            console.log("❌ Rejected:", errorMsg);
+            console.log("❌ נדחה:", errorMsg);
             res.status(400).json({ success: false, error: errorMsg });
         }
 
     } catch (e) {
-        console.error("🔥 Error:", e.message);
+        console.error("🔥 שגיאה:", e.message);
         res.status(500).json({ success: false, error: "שגיאת תקשורת" });
     }
 });
