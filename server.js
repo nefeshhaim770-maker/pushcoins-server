@@ -38,6 +38,7 @@ function padTz(tz) {
     return str;
 }
 
+// פונקציית סידור ABC
 function sortObjectKeys(obj) {
     return Object.keys(obj).sort().reduce((result, key) => {
         result[key] = obj[key];
@@ -45,11 +46,11 @@ function sortObjectKeys(obj) {
     }, {});
 }
 
-// פונקציה חדשה שמכריחה הוספת אפס לטוקן
+// פונקציה לתיקון טוקן (מוסיפה 0 בהתחלה אם חסר)
 function fixToken(token) {
     if (!token) return "";
-    let strToken = String(token).trim(); // המרה למחרוזת
-    if (!strToken.startsWith('0')) {
+    let strToken = String(token).replace(/['"]+/g, '').trim();
+    if (strToken.length > 0 && !strToken.startsWith('0')) {
         return '0' + strToken;
     }
     return strToken;
@@ -57,6 +58,7 @@ function fixToken(token) {
 
 // --- Routes ---
 
+// שליחת קוד לאימות
 app.post('/update-code', async (req, res) => {
     const { email, phone, code } = req.body;
     try {
@@ -66,6 +68,7 @@ app.post('/update-code', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
+// אימות קוד (Login)
 app.post('/verify-auth', async (req, res) => {
     const { email, phone, code } = req.body;
     try {
@@ -80,16 +83,43 @@ app.post('/verify-auth', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
+// התחברות אוטומטית (לפי ID שנשמר במכשיר)
+app.post('/login-by-id', async (req, res) => {
+    const { userId } = req.body;
+    try {
+        let user = await User.findById(userId);
+        if (user) {
+            res.json({ success: true, user });
+        } else {
+            res.json({ success: false, error: "משתמש לא נמצא" });
+        }
+    } catch (e) { res.status(500).json({ success: false }); }
+});
+
+// עדכון פרטי משתמש
+app.post('/update-profile', async (req, res) => {
+    const { userId, name, email, phone } = req.body;
+    try {
+        let updateData = { name };
+        if (email) updateData.email = email;
+        if (phone) updateData.phone = phone;
+        
+        let user = await User.findByIdAndUpdate(userId, updateData, { new: true });
+        res.json({ success: true, user });
+    } catch (e) { res.status(500).json({ success: false }); }
+});
+
+// ביצוע תרומה
 app.post('/donate', async (req, res) => {
     const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note } = req.body;
 
     try {
-        console.log("🚀 התחלת תרומה (עם תיקון טוקן אגרסיבי)...");
+        console.log("🚀 תרומה חדשה מתחילה...");
         
         let user = await User.findById(userId);
         if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
 
-        // תוקף YYMM
+        // המרת תוקף
         let finalExpiry = "";
         if (ccDetails && ccDetails.exp) {
             if (ccDetails.exp.length === 4) {
@@ -103,9 +133,9 @@ app.post('/donate', async (req, res) => {
 
         let activeToken = "";
         
-        // --- שלב 1: GetToken ---
+        // --- שלב 1: GetToken (אם כרטיס חדש) ---
         if (!useToken && ccDetails) {
-            console.log("💳 יוצר טוקן חדש...");
+            console.log("💳 יצירת טוקן חדש...");
             
             let tokenRequest = {
                 creditNum: ccDetails.num,
@@ -127,11 +157,11 @@ app.post('/donate', async (req, res) => {
             let rawToken = tokenResponse.data;
             if (typeof rawToken === 'object' && rawToken.Token) rawToken = rawToken.Token;
             
-            // שימוש בפונקציית התיקון
+            // שימוש בפונקציית התיקון שמוסיפה 0
             activeToken = fixToken(rawToken);
 
             if (activeToken.length > 5) {
-                console.log(`✅ טוקן נוצר ותוקן: ${activeToken}`);
+                console.log(`✅ טוקן נוצר (מתוקן): ${activeToken}`);
                 user.token = activeToken;
                 user.lastCardDigits = ccDetails.num.slice(-4);
                 user.lastExpiry = finalExpiry;
@@ -143,7 +173,7 @@ app.post('/donate', async (req, res) => {
         } else if (useToken && user.token) {
             // גם בשימוש חוזר - נתקן את הטוקן למקרה שנשמר לא טוב
             activeToken = fixToken(user.token);
-            console.log(`💳 שימוש בטוקן קיים (מתוקן): ${activeToken}`);
+            console.log(`💳 שימוש בטוקן קיים: ${activeToken}`);
         } else {
             return res.status(400).json({ success: false, error: "חסר אמצעי תשלום" });
         }
@@ -165,8 +195,9 @@ app.post('/donate', async (req, res) => {
             LastName: (fullName || user.name || "Family").split(" ").slice(1).join(" ") || "Family",
             Mail: email || user.email || "no-email@test.com",
             Id: finalTz,
-            Token: activeToken, // כאן ייכנס הטוקן עם ה-0 בטוח
-            Expiry: finalExpiry
+            Token: activeToken, 
+            Expiry: finalExpiry,
+            Details: note || "" // הוספנו את ההערה ל-Details כדי שתעבור לקשר
         };
 
         const sortedTranData = sortObjectKeys(tranData);
@@ -187,9 +218,11 @@ app.post('/donate', async (req, res) => {
         console.log("📩 תשובת חיוב:", JSON.stringify(resData));
 
         if (resData.RequestResult?.Status === true || resData.Status === true) {
+            // עדכון פרטים אם השתנו
             if (fullName) user.name = fullName;
             if (finalTz !== "000000000") user.tz = finalTz;
             if (phone) user.phone = phone;
+            
             user.totalDonated += parseFloat(amount);
             user.donationsHistory.push({ amount: parseFloat(amount), note: note || "", date: new Date() });
             
