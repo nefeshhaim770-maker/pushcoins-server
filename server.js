@@ -38,7 +38,7 @@ function padTz(tz) {
     return str;
 }
 
-// פונקציית הקסם: מסדרת את כל השדות לפי ABC לפני השליחה
+// פונקציית סידור ABC
 function sortObjectKeys(obj) {
     return Object.keys(obj).sort().reduce((result, key) => {
         result[key] = obj[key];
@@ -75,12 +75,12 @@ app.post('/donate', async (req, res) => {
     const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note } = req.body;
 
     try {
-        console.log("🚀 מתחיל תהליך תרומה (עם סידור ABC והערות)...");
+        console.log("🚀 מתחיל תרומה (פרוטוקול J5)...");
         
         let user = await User.findById(userId);
         if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
 
-        // המרת תוקף מ-MMYY ל-YYMM
+        // טיפול בתוקף (היפוך מ-MMYY ל-YYMM)
         let finalExpiry = "";
         if (ccDetails && ccDetails.exp) {
             if (ccDetails.exp.length === 4) {
@@ -97,25 +97,30 @@ app.post('/donate', async (req, res) => {
         const lastName = safeName.split(" ").slice(1).join(" ") || "Israeli";
         const finalTz = padTz(tz || user.tz);
 
-        // בניית האובייקט הגולמי
+        // --- בניית האובייקט (השינוי הגדול: J5) ---
         let rawTranData = {
             Total: parseFloat(amount),
             Currency: 1, 
             CreditType: 1, 
-            ParamJ: "J4", 
+            
+            // שינוי 1: J5 במקום J4
+            ParamJ: "J5", 
+            
+            // שינוי 2: הוספת מספר ייחודי (חובה ב-J5)
+            UniqNum: Date.now().toString(),
+            
             TransactionType: "debit",
             ProjectNumber: "00001",
             Phone: (phone || user.phone || "0500000000").toString(),
             FirstName: firstName,
             LastName: lastName,
             Mail: email || user.email || "no-email@test.com",
-            Id: finalTz,          // ת"ז בשם Id
-            Details: note || ""   // הוספנו את ההערה לשדה Details שקיים בקשר
+            Id: finalTz, // משתמשים ב-Id כי זה עבר ולידציה בהצלחה
         };
 
-        // הוספת פרטי תשלום (כרטיס או טוקן)
+        // הוספת פרטי תשלום
         if (useToken && user.token) {
-            console.log("💳 שימוש בטוקן קיים");
+            console.log("💳 שימוש בטוקן קיים (J5)");
             rawTranData.Token = user.token;
             rawTranData.Expiry = finalExpiry; 
         } else if (ccDetails) {
@@ -128,7 +133,7 @@ app.post('/donate', async (req, res) => {
 
         // --- סידור לפי ABC ---
         const sortedTranData = sortObjectKeys(rawTranData);
-        console.log("📤 נתונים נשלחים (מסודר):", JSON.stringify(sortedTranData));
+        console.log("📤 נתונים נשלחים:", JSON.stringify(sortedTranData));
 
         const response = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
             Json: { 
@@ -152,7 +157,6 @@ app.post('/donate', async (req, res) => {
             user.totalDonated += parseFloat(amount);
             user.donationsHistory.push({ amount: parseFloat(amount), note: note || "", date: new Date() });
             
-            // שמירת טוקן חדש
             const rToken = resData.Token || resData.RequestResult?.Token;
             if (rToken) {
                 user.token = rToken;
