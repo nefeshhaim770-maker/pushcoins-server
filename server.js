@@ -29,6 +29,14 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
+// פונקציית עזר לתיקון ת"ז (חובה 9 ספרות)
+function padTz(tz) {
+    if (!tz) return "000000000";
+    let str = tz.toString().replace(/\D/g, '');
+    while (str.length < 9) str = "0" + str;
+    return str;
+}
+
 // --- Routes ---
 
 app.post('/update-code', async (req, res) => {
@@ -63,10 +71,12 @@ app.post('/donate', async (req, res) => {
         let user = await User.findById(userId);
         if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
 
-        // טיפול בתוקף
+        // הכנת ת"ז
+        const finalTz = padTz(tz || user.tz);
+        
+        // הכנת תוקף: המרה מ-MMYY (לקוח) ל-YYMM (שרת)
         let finalExpiry = "";
         if (ccDetails && ccDetails.exp) {
-            // המרה מ-MMYY ל-YYMM
             if (ccDetails.exp.length === 4) {
                 finalExpiry = ccDetails.exp.substring(2, 4) + ccDetails.exp.substring(0, 2);
             } else {
@@ -80,7 +90,7 @@ app.post('/donate', async (req, res) => {
         const firstName = safeName.split(" ")[0] || "Israel";
         const lastName = safeName.split(" ").slice(1).join(" ") || "Israeli";
 
-        // --- בניית העסקה (התיקון: בלי customerRef ובלי Tz) ---
+        // --- בניית העסקה (התיקון: השדה נקרא Id) ---
         let tranData = {
             Total: parseFloat(amount),
             Currency: 1, 
@@ -91,10 +101,12 @@ app.post('/donate', async (req, res) => {
             Phone: (phone || user.phone || "0500000000").toString(),
             FirstName: firstName,
             LastName: lastName,
-            Mail: email || user.email || "no-email@test.com"
+            Mail: email || user.email || "no-email@test.com",
             
-            // הוסר: customerRef (גרם לשגיאה בלוג)
-            // הוסר: Tz / HolderID (גרם לשגיאה קודמת)
+            // התיקון שהערת לי עליו: השדה נקרא Id
+            Id: finalTz 
+            
+            // הורדנו את customerRef כי הוא גורם לשגיאת ולידציה ב-SendTransaction
         };
 
         if (useToken && user.token) {
@@ -127,7 +139,7 @@ app.post('/donate', async (req, res) => {
 
         if (resData.RequestResult?.Status === true || resData.Status === true) {
             if (fullName) user.name = fullName;
-            if (tz) user.tz = tz;
+            if (finalTz !== "000000000") user.tz = finalTz;
             if (phone) user.phone = phone;
 
             user.totalDonated += parseFloat(amount);
