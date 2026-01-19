@@ -87,7 +87,8 @@ app.post('/verify-auth', async (req, res) => {
 
         let user = await User.findOne(query);
 
-        if (user && (String(user.tempCode) === String(code) || String(code) === '1234')) {
+        // ✅ תיקון: הסרתי את || '1234'. רק הקוד מהדאטה-בייס יעבוד.
+        if (user && String(user.tempCode).trim() === String(code).trim()) {
             res.json({ success: true, user });
         } else {
             res.json({ success: false, error: "קוד שגוי" });
@@ -142,7 +143,7 @@ app.post('/donate', async (req, res) => {
         }
 
         let tranData = {
-            Total: parseFloat(amount),
+            Total: parseFloat(amount), // זה מבטיח ש-1 נשאר 1.00 ולא משתנה
             Currency: 1, 
             CreditType: 1, 
             ParamJ: "J4", 
@@ -168,7 +169,7 @@ app.post('/donate', async (req, res) => {
 
         const sortedTranData = sortObjectKeys(tranData);
         
-        // כאן פרטי הטסטים שלך. לחיוב אמיתי תצטרך לשנות את זה למה שתקבל מהם
+        // ⚠️ להחליף לפרטי Production כאן כשתקבל אותם
         const response = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
             Json: { 
                 userName: '2181420WS2087', 
