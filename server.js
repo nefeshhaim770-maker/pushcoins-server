@@ -38,7 +38,6 @@ function padTz(tz) {
     return str;
 }
 
-// פונקציית סידור ABC
 function sortObjectKeys(obj) {
     return Object.keys(obj).sort().reduce((result, key) => {
         result[key] = obj[key];
@@ -46,7 +45,6 @@ function sortObjectKeys(obj) {
     }, {});
 }
 
-// פונקציה לתיקון טוקן (מוסיפה 0 בהתחלה אם חסר)
 function fixToken(token) {
     if (!token) return "";
     let strToken = String(token).replace(/['"]+/g, '').trim();
@@ -58,7 +56,6 @@ function fixToken(token) {
 
 // --- Routes ---
 
-// שליחת קוד לאימות
 app.post('/update-code', async (req, res) => {
     const { email, phone, code } = req.body;
     try {
@@ -68,7 +65,6 @@ app.post('/update-code', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
-// אימות קוד (Login)
 app.post('/verify-auth', async (req, res) => {
     const { email, phone, code } = req.body;
     try {
@@ -83,33 +79,28 @@ app.post('/verify-auth', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
-// התחברות אוטומטית (לפי ID שנשמר במכשיר)
+// התחברות אוטומטית (לפי ID)
 app.post('/login-by-id', async (req, res) => {
     const { userId } = req.body;
     try {
         let user = await User.findById(userId);
-        if (user) {
-            res.json({ success: true, user });
-        } else {
-            res.json({ success: false, error: "משתמש לא נמצא" });
-        }
+        if (user) res.json({ success: true, user });
+        else res.json({ success: false });
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
-// עדכון פרטי משתמש
+// עדכון פרופיל
 app.post('/update-profile', async (req, res) => {
     const { userId, name, email, phone } = req.body;
     try {
         let updateData = { name };
         if (email) updateData.email = email;
         if (phone) updateData.phone = phone;
-        
         let user = await User.findByIdAndUpdate(userId, updateData, { new: true });
         res.json({ success: true, user });
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
-// ביצוע תרומה
 app.post('/donate', async (req, res) => {
     const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note } = req.body;
 
@@ -119,7 +110,6 @@ app.post('/donate', async (req, res) => {
         let user = await User.findById(userId);
         if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
 
-        // המרת תוקף
         let finalExpiry = "";
         if (ccDetails && ccDetails.exp) {
             if (ccDetails.exp.length === 4) {
@@ -133,23 +123,18 @@ app.post('/donate', async (req, res) => {
 
         let activeToken = "";
         
-        // --- שלב 1: GetToken (אם כרטיס חדש) ---
+        // --- שלב 1: GetToken ---
         if (!useToken && ccDetails) {
-            console.log("💳 יצירת טוקן חדש...");
+            console.log("💳 יצירת טוקן...");
             
-            let tokenRequest = {
-                creditNum: ccDetails.num,
-                validity: finalExpiry,
-            };
+            let tokenRequest = { creditNum: ccDetails.num, validity: finalExpiry };
             const sortedTokenReq = sortObjectKeys(tokenRequest);
 
             const tokenResponse = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
                 Json: { 
                     userName: '2181420WS2087', 
                     password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', 
-                    func: "GetToken",
-                    format: "json", 
-                    ...sortedTokenReq
+                    func: "GetToken", format: "json", ...sortedTokenReq
                 },
                 format: "json"
             }, { validateStatus: () => true });
@@ -157,11 +142,9 @@ app.post('/donate', async (req, res) => {
             let rawToken = tokenResponse.data;
             if (typeof rawToken === 'object' && rawToken.Token) rawToken = rawToken.Token;
             
-            // שימוש בפונקציית התיקון שמוסיפה 0
             activeToken = fixToken(rawToken);
 
             if (activeToken.length > 5) {
-                console.log(`✅ טוקן נוצר (מתוקן): ${activeToken}`);
                 user.token = activeToken;
                 user.lastCardDigits = ccDetails.num.slice(-4);
                 user.lastExpiry = finalExpiry;
@@ -171,15 +154,12 @@ app.post('/donate', async (req, res) => {
             }
 
         } else if (useToken && user.token) {
-            // גם בשימוש חוזר - נתקן את הטוקן למקרה שנשמר לא טוב
             activeToken = fixToken(user.token);
-            console.log(`💳 שימוש בטוקן קיים: ${activeToken}`);
         } else {
             return res.status(400).json({ success: false, error: "חסר אמצעי תשלום" });
         }
 
         // --- שלב 2: החיוב ---
-        
         const finalTz = padTz(tz || user.tz);
 
         let tranData = {
@@ -197,7 +177,7 @@ app.post('/donate', async (req, res) => {
             Id: finalTz,
             Token: activeToken, 
             Expiry: finalExpiry,
-            Details: note || "" // הוספנו את ההערה ל-Details כדי שתעבור לקשר
+            Details: note || ""
         };
 
         const sortedTranData = sortObjectKeys(tranData);
@@ -217,8 +197,12 @@ app.post('/donate', async (req, res) => {
         const resData = response.data;
         console.log("📩 תשובת חיוב:", JSON.stringify(resData));
 
-        if (resData.RequestResult?.Status === true || resData.Status === true) {
-            // עדכון פרטים אם השתנו
+        // --- הבדיקה החדשה והקריטית ---
+        const isSuccess = resData.RequestResult?.Status === true || resData.Status === true;
+        const isBlocked = resData.TransactionType === "BlockedCard"; // תופס את המקרה שלך
+
+        if (isSuccess && !isBlocked) {
+            // הצלחה אמיתית
             if (fullName) user.name = fullName;
             if (finalTz !== "000000000") user.tz = finalTz;
             if (phone) user.phone = phone;
@@ -229,12 +213,20 @@ app.post('/donate', async (req, res) => {
             await user.save();
             res.json({ success: true, user });
         } else {
-            const errorMsg = resData.RequestResult?.Description || resData.Description || "סירוב עסקה";
-            // אם הטוקן שגוי - נמחק אותו
+            // כישלון
+            let errorMsg = resData.RequestResult?.Description || resData.Description || "סירוב עסקה";
+            
+            if (isBlocked) {
+                errorMsg = "העסקה סורבה: הכרטיס חסום (BlockedCard)";
+            }
+
+            // מחיקת טוקן אם הוא שגוי
             if (errorMsg.includes("טוקן") || errorMsg.includes("Token")) {
                 user.token = ""; 
                 await user.save();
             }
+            
+            console.log("❌ נדחה:", errorMsg);
             res.status(400).json({ success: false, error: errorMsg });
         }
 
