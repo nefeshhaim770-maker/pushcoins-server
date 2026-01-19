@@ -7,7 +7,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// התחברות ל-MongoDB
+// התחברות לדאטה-בייס
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
     .then(() => console.log('✅ MongoDB Connected'))
     .catch(err => console.error('❌ MongoDB Error:', err));
@@ -30,7 +30,9 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// פונקציית עזר לתיקון ת"ז (חובה 9 ספרות)
+// --- פונקציות עזר ---
+
+// 1. פונקציה לתיקון ת"ז (9 ספרות)
 function padTz(tz) {
     if (!tz) return "000000000";
     let str = tz.toString().replace(/\D/g, '');
@@ -38,7 +40,16 @@ function padTz(tz) {
     return str;
 }
 
-// נתיבים לאפליקציה
+// 2. פונקציה קריטית: סידור מפתחות לפי ABC (דרישת המפתח)
+function sortObjectKeys(obj) {
+    return Object.keys(obj).sort().reduce((result, key) => {
+        result[key] = obj[key];
+        return result;
+    }, {});
+}
+
+// --- נתיבים ---
+
 app.post('/update-code', async (req, res) => {
     const { email, phone, code } = req.body;
     try {
@@ -66,39 +77,34 @@ app.post('/donate', async (req, res) => {
     const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note } = req.body;
 
     try {
-        console.log("🚀 מתחיל תהליך תרומה...");
+        console.log("🚀 מתחיל תהליך תרומה (ABC Mode)...");
         
         let user = await User.findById(userId);
         if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
 
-        // הכנת נתונים
-        const finalTz = padTz(tz || user.tz);
-        const safeName = fullName || user.name || "Torem";
-        const firstName = safeName.split(" ")[0] || "Israel";
-        const lastName = safeName.split(" ").slice(1).join(" ") || "Israeli";
-
-        // המרה לפורמט YYMM שהשרת דורש (למשל 2512)
-        // המשתמש מזין ב-HTML פורמט MMYY (למשל 1225) -> צריך להפוך
+        // טיפול בתוקף (היפוך מ-MMYY ל-YYMM)
         let finalExpiry = "";
         if (ccDetails && ccDetails.exp) {
-            // אם המשתמש הזין 1225 (דצמבר 2025) -> הופכים ל-2512
             if (ccDetails.exp.length === 4) {
-                const mm = ccDetails.exp.substring(0, 2);
-                const yy = ccDetails.exp.substring(2, 4);
-                finalExpiry = yy + mm; 
+                finalExpiry = ccDetails.exp.substring(2, 4) + ccDetails.exp.substring(0, 2);
             } else {
                 finalExpiry = ccDetails.exp;
             }
         } else if (useToken) {
-            finalExpiry = user.lastExpiry; // כבר שמור בפורמט הנכון
+            finalExpiry = user.lastExpiry; 
         }
 
-        // --- בניית האובייקט בדיוק לפי הדוגמה המוצלחת ששלחת ---
-        let tranData = {
-            Total: parseFloat(amount), // מספר! לא סטרינג
-            Currency: 1,               // מספר
-            CreditType: 1,             // מספר (1 = רגיל, 10 = תשלומים. נתחיל ב-1 לבדיקה)
-            // NumPayment: 12,         // נוריד את זה כרגע כדי לראות שחיוב רגיל עובר
+        const safeName = fullName || user.name || "Torem";
+        const firstName = safeName.split(" ")[0] || "Israel";
+        const lastName = safeName.split(" ").slice(1).join(" ") || "Israeli";
+        const finalTz = padTz(tz || user.tz);
+
+        // --- בניית האובייקט הגולמי (לפני סידור) ---
+        // שים לב: אנחנו משתמשים ב-Id עבור תעודת זהות כפי שהמפתח ביקש
+        let rawTranData = {
+            Total: parseFloat(amount),
+            Currency: 1, 
+            CreditType: 1, 
             ParamJ: "J4", 
             TransactionType: "debit",
             ProjectNumber: "00001",
@@ -106,45 +112,42 @@ app.post('/donate', async (req, res) => {
             FirstName: firstName,
             LastName: lastName,
             Mail: email || user.email || "no-email@test.com",
-            
-            // לפי הדוגמה המוצלחת שלך אין שדה HolderID או Tz בתוך האובייקט tran! 
-            // אבל יש clientReference לפעמים. ננסה לשלוח נקי כמו בדוגמה.
+            Id: finalTz // התיקון לפי הערת המפתח: Id במקום Tz או HolderID
         };
 
-        // הוספת פרטי אשראי
+        // הוספת פרטי תשלום
         if (useToken && user.token) {
-            console.log("💳 שימוש בטוקן קיים");
-            tranData.Token = user.token;
-            tranData.Expiry = finalExpiry; 
+            console.log("💳 Using Token");
+            rawTranData.Token = user.token;
+            rawTranData.Expiry = finalExpiry; 
         } else if (ccDetails) {
-            console.log("💳 שימוש בכרטיס חדש");
-            tranData.CreditNum = ccDetails.num;
-            tranData.Expiry = finalExpiry; // הפורמט ההפוך (YYMM)
-            // tranData.Cvv2 = ccDetails.cvv; // בדוגמה שלך ה-CVV בהערה, ננסה בלי
+            console.log("💳 Using New Card");
+            rawTranData.CreditNum = ccDetails.num;
+            rawTranData.Expiry = finalExpiry; 
         } else {
             return res.status(400).json({ success: false, error: "חסרים פרטי תשלום" });
         }
 
-        console.log("📤 שולח לקשר:", JSON.stringify(tranData));
+        // --- השלב הקריטי: סידור לפי ABC ---
+        const sortedTranData = sortObjectKeys(rawTranData);
+        
+        console.log("📤 Sorted Payload:", JSON.stringify(sortedTranData));
 
-        // שליחה עם validateStatus כדי למנוע קריסה
         const response = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
             Json: { 
                 userName: '2181420WS2087', 
                 password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', 
                 func: "SendTransaction", 
                 format: "json", 
-                tran: tranData 
+                tran: sortedTranData // שולחים את האובייקט המסודר
             },
             format: "json"
         }, { validateStatus: () => true });
 
         const resData = response.data;
-        console.log("📩 תשובה מקשר:", JSON.stringify(resData));
+        console.log("📩 Response:", JSON.stringify(resData));
 
-        // בדיקת הצלחה
         if (resData.RequestResult?.Status === true || resData.Status === true) {
-            // עדכון משתמש
             if (fullName) user.name = fullName;
             if (finalTz !== "000000000") user.tz = finalTz;
             if (phone) user.phone = phone;
@@ -152,7 +155,6 @@ app.post('/donate', async (req, res) => {
             user.totalDonated += parseFloat(amount);
             user.donationsHistory.push({ amount: parseFloat(amount), note: note || "", date: new Date() });
             
-            // שמירת טוקן
             const rToken = resData.Token || resData.RequestResult?.Token;
             if (rToken) {
                 user.token = rToken;
@@ -164,17 +166,16 @@ app.post('/donate', async (req, res) => {
             await user.save();
             res.json({ success: true, user });
         } else {
-            // חילוץ שגיאה
-            let errorMsg = resData.RequestResult?.Description || resData.Description || "סירוב עסקה";
-            console.log("❌ נדחה:", errorMsg);
+            const errorMsg = resData.RequestResult?.Description || resData.Description || "סירוב עסקה";
+            console.log("❌ Rejected:", errorMsg);
             res.status(400).json({ success: false, error: errorMsg });
         }
 
     } catch (e) {
-        console.error("🔥 שגיאה קריטית:", e.message);
-        res.status(500).json({ success: false, error: "תקלה טכנית בשרת" });
+        console.error("🔥 Error:", e.message);
+        res.status(500).json({ success: false, error: "שגיאת תקשורת" });
     }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`✅ Server Live on port ${PORT}`));
+app.listen(PORT, () => console.log(`✅ Server Live`));
