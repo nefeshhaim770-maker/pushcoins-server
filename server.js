@@ -38,12 +38,21 @@ function padTz(tz) {
     return str;
 }
 
-// פונקציית סידור ABC (קריטי!)
 function sortObjectKeys(obj) {
     return Object.keys(obj).sort().reduce((result, key) => {
         result[key] = obj[key];
         return result;
     }, {});
+}
+
+// פונקציה חדשה שמכריחה הוספת אפס לטוקן
+function fixToken(token) {
+    if (!token) return "";
+    let strToken = String(token).trim(); // המרה למחרוזת
+    if (!strToken.startsWith('0')) {
+        return '0' + strToken;
+    }
+    return strToken;
 }
 
 // --- Routes ---
@@ -75,12 +84,12 @@ app.post('/donate', async (req, res) => {
     const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note } = req.body;
 
     try {
-        console.log("🚀 מתחיל תרומה בשיטת 'שני השלבים'...");
+        console.log("🚀 התחלת תרומה (עם תיקון טוקן אגרסיבי)...");
         
         let user = await User.findById(userId);
         if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
 
-        // הכנת תוקף (YYMM)
+        // תוקף YYMM
         let finalExpiry = "";
         if (ccDetails && ccDetails.exp) {
             if (ccDetails.exp.length === 4) {
@@ -94,85 +103,74 @@ app.post('/donate', async (req, res) => {
 
         let activeToken = "";
         
-        // --- שלב 1: השגת טוקן (אם זה כרטיס חדש) ---
+        // --- שלב 1: GetToken ---
         if (!useToken && ccDetails) {
-            console.log("💳 כרטיס חדש -> מבצע GetToken קודם...");
+            console.log("💳 יוצר טוקן חדש...");
             
-            // הכנת בקשת GetToken לפי ה-Curl שעבד לך
             let tokenRequest = {
                 creditNum: ccDetails.num,
-                validity: finalExpiry, // YYMM
-                // הערה: ב-GetToken לפעמים לא צריך ID, אבל נשלח אם צריך
+                validity: finalExpiry,
             };
-            
-            // סידור ABC
             const sortedTokenReq = sortObjectKeys(tokenRequest);
 
             const tokenResponse = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
                 Json: { 
                     userName: '2181420WS2087', 
                     password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', 
-                    func: "GetToken", 
+                    func: "GetToken",
                     format: "json", 
-                    ...sortedTokenReq // פריסת הפרמטרים
+                    ...sortedTokenReq
                 },
                 format: "json"
             }, { validateStatus: () => true });
 
-            console.log("📩 תשובת GetToken:", JSON.stringify(tokenResponse.data));
+            let rawToken = tokenResponse.data;
+            if (typeof rawToken === 'object' && rawToken.Token) rawToken = rawToken.Token;
+            
+            // שימוש בפונקציית התיקון
+            activeToken = fixToken(rawToken);
 
-            // בדיקה אם קיבלנו טוקן
-            // ב-GetToken לפעמים התשובה היא מחרוזת ישירה של הטוקן (כמו בלוג ששלחת) או בתוך אובייקט
-            let newToken = tokenResponse.data;
-            if (typeof newToken === 'object' && newToken.Token) newToken = newToken.Token;
-            if (typeof newToken === 'string' && newToken.length > 5) {
-                console.log("✅ טוקן חדש נוצר:", newToken);
-                activeToken = newToken;
-                // שמירה זמנית
-                user.token = newToken;
+            if (activeToken.length > 5) {
+                console.log(`✅ טוקן נוצר ותוקן: ${activeToken}`);
+                user.token = activeToken;
                 user.lastCardDigits = ccDetails.num.slice(-4);
                 user.lastExpiry = finalExpiry;
                 await user.save();
             } else {
-                return res.status(400).json({ success: false, error: "נכשל ביצירת טוקן לכרטיס" });
+                return res.status(400).json({ success: false, error: "נכשל ביצירת טוקן" });
             }
 
         } else if (useToken && user.token) {
-            console.log("💳 שימוש בטוקן קיים");
-            activeToken = user.token;
+            // גם בשימוש חוזר - נתקן את הטוקן למקרה שנשמר לא טוב
+            activeToken = fixToken(user.token);
+            console.log(`💳 שימוש בטוקן קיים (מתוקן): ${activeToken}`);
         } else {
             return res.status(400).json({ success: false, error: "חסר אמצעי תשלום" });
         }
 
-        // --- שלב 2: ביצוע החיוב עם הטוקן (תמיד!) ---
+        // --- שלב 2: החיוב ---
         
-        const safeName = fullName || user.name || "Torem";
-        const firstName = safeName.split(" ")[0] || "Israel";
-        const lastName = safeName.split(" ").slice(1).join(" ") || "Israeli";
         const finalTz = padTz(tz || user.tz);
 
         let tranData = {
             Total: parseFloat(amount),
             Currency: 1, 
             CreditType: 1, 
-            ParamJ: "J4", 
+            ParamJ: "J5", 
+            UniqNum: Date.now().toString(), 
             TransactionType: "debit",
             ProjectNumber: "00001",
             Phone: (phone || user.phone || "0500000000").toString(),
-            FirstName: firstName,
-            LastName: lastName,
+            FirstName: (fullName || user.name || "Torem").split(" ")[0],
+            LastName: (fullName || user.name || "Family").split(" ").slice(1).join(" ") || "Family",
             Mail: email || user.email || "no-email@test.com",
             Id: finalTz,
-            Details: note || "",
-            
-            // חובה לשלוח טוקן ותוקף
-            Token: activeToken,
+            Token: activeToken, // כאן ייכנס הטוקן עם ה-0 בטוח
             Expiry: finalExpiry
         };
 
-        // סידור ABC
         const sortedTranData = sortObjectKeys(tranData);
-        console.log("📤 שליחת חיוב (ABC):", JSON.stringify(sortedTranData));
+        console.log("📤 נתונים לחיוב:", JSON.stringify(sortedTranData));
 
         const response = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
             Json: { 
@@ -192,7 +190,6 @@ app.post('/donate', async (req, res) => {
             if (fullName) user.name = fullName;
             if (finalTz !== "000000000") user.tz = finalTz;
             if (phone) user.phone = phone;
-
             user.totalDonated += parseFloat(amount);
             user.donationsHistory.push({ amount: parseFloat(amount), note: note || "", date: new Date() });
             
@@ -200,11 +197,16 @@ app.post('/donate', async (req, res) => {
             res.json({ success: true, user });
         } else {
             const errorMsg = resData.RequestResult?.Description || resData.Description || "סירוב עסקה";
+            // אם הטוקן שגוי - נמחק אותו
+            if (errorMsg.includes("טוקן") || errorMsg.includes("Token")) {
+                user.token = ""; 
+                await user.save();
+            }
             res.status(400).json({ success: false, error: errorMsg });
         }
 
     } catch (e) {
-        console.error("🔥 Error:", e.message);
+        console.error("🔥 שגיאה:", e.message);
         res.status(500).json({ success: false, error: "שגיאת תקשורת" });
     }
 });
