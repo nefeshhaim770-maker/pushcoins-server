@@ -7,12 +7,18 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// --- הגדרות חיבור ל"קשר" ---
-// שים לב: כרגע אלו פרטי הטסטים.
-// כדי לחייב כסף באמת, עליך להחליף את שלושת המשתנים האלו בפרטים שתקבל מהתמיכה של קשר.
-const KESHER_USER = '2181420WS2087'; 
-const KESHER_PASS = 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl';
+// ==================================================================
+// 🛑 אזור ההגדרות - כאן מכניסים את הפרטים האמיתיים מ"קשר"
+// ==================================================================
+
+// החלף את מה שבתוך הגרשיים בפרטים שתקבל מהתמיכה:
+const KESHER_USER = '2181420WS2087';  // <-- כאן שים את שם המשתמש האמיתי
+const KESHER_PASS = 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl'; // <-- כאן שים את הסיסמה האמיתית
+
+// כתובת ה-API (בדרך כלל זהה, אלא אם כן נתנו לך כתובת אחרת)
 const KESHER_URL = 'https://kesherhk.info/ConnectToKesher/ConnectToKesher';
+
+// ==================================================================
 
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
     .then(() => console.log('✅ MongoDB Connected'))
@@ -36,7 +42,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- פונקציות עזר ---
+// --- פונקציות עזר קריטיות ---
 
 function padTz(tz) {
     if (!tz) return "000000000";
@@ -45,7 +51,7 @@ function padTz(tz) {
     return str;
 }
 
-// קריטי: סידור פרמטרים לפי ABC
+// סידור לפי ABC - חובה ב-NodeJS מול קשר
 function sortObjectKeys(obj) {
     return Object.keys(obj).sort().reduce((result, key) => {
         result[key] = obj[key];
@@ -53,17 +59,18 @@ function sortObjectKeys(obj) {
     }, {});
 }
 
-// קריטי: הוספת 0 מוביל לטוקן
+// תיקון טוקן - חובה להוסיף 0 בהתחלה
 function fixToken(token) {
     if (!token) return "";
     let strToken = String(token).replace(/['"]+/g, '').trim();
+    // אם הטוקן לא ריק ולא מתחיל ב-0, נוסיף לו 0
     if (strToken.length > 0 && !strToken.startsWith('0')) {
         return '0' + strToken;
     }
     return strToken;
 }
 
-// --- Routes ---
+// --- נתיבים (Routes) ---
 
 app.post('/update-code', async (req, res) => {
     const { email, phone, code } = req.body;
@@ -108,6 +115,7 @@ app.post('/update-profile', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
+// --- תהליך התרומה המלא ---
 app.post('/donate', async (req, res) => {
     const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note } = req.body;
 
@@ -117,6 +125,7 @@ app.post('/donate', async (req, res) => {
         let user = await User.findById(userId);
         if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
 
+        // המרת תוקף מ-MMYY ל-YYMM
         let finalExpiry = "";
         if (ccDetails && ccDetails.exp) {
             if (ccDetails.exp.length === 4) {
@@ -130,13 +139,14 @@ app.post('/donate', async (req, res) => {
 
         let activeToken = "";
         
-        // --- שלב 1: יצירת טוקן (GetToken) ---
+        // --- שלב 1: יצירת טוקן (רק אם זה כרטיס חדש) ---
         if (!useToken && ccDetails) {
             console.log("💳 יצירת טוקן חדש...");
             
             let tokenRequest = { creditNum: ccDetails.num, validity: finalExpiry };
             const sortedTokenReq = sortObjectKeys(tokenRequest);
 
+            // שימוש במשתנים מההגדרות למעלה
             const tokenResponse = await axios.post(KESHER_URL, {
                 Json: { 
                     userName: KESHER_USER, 
@@ -151,7 +161,7 @@ app.post('/donate', async (req, res) => {
             let rawToken = tokenResponse.data;
             if (typeof rawToken === 'object' && rawToken.Token) rawToken = rawToken.Token;
             
-            // שימוש בפונקציית התיקון (הוספת 0)
+            // תיקון הטוקן (הוספת 0)
             activeToken = fixToken(rawToken);
 
             if (activeToken.length > 5) {
@@ -160,10 +170,12 @@ app.post('/donate', async (req, res) => {
                 user.lastExpiry = finalExpiry;
                 await user.save();
             } else {
+                console.log("❌ שגיאת טוקן:", JSON.stringify(tokenResponse.data));
                 return res.status(400).json({ success: false, error: "נכשל ביצירת טוקן לכרטיס" });
             }
 
         } else if (useToken && user.token) {
+            // גם בשימוש בטוקן קיים, נוודא שיש לו 0 בהתחלה
             activeToken = fixToken(user.token);
         } else {
             return res.status(400).json({ success: false, error: "חסר אמצעי תשלום" });
@@ -179,7 +191,7 @@ app.post('/donate', async (req, res) => {
             ParamJ: "J5", 
             UniqNum: Date.now().toString(), 
             TransactionType: "debit",
-            ProjectNumber: "00001", // שים לב: ב-Production המספר הזה עשוי להשתנות
+            ProjectNumber: "00001", // ב-Production המספר הזה עשוי להיות שונה, בדוק עם קשר
             Phone: (phone || user.phone || "0500000000").toString(),
             FirstName: (fullName || user.name || "Torem").split(" ")[0],
             LastName: (fullName || user.name || "Family").split(" ").slice(1).join(" ") || "Family",
@@ -187,7 +199,7 @@ app.post('/donate', async (req, res) => {
             Id: finalTz,
             Token: activeToken, 
             Expiry: finalExpiry,
-            Details: note || "" // הערה מועברת כאן
+            Details: note || ""
         };
 
         const sortedTranData = sortObjectKeys(tranData);
@@ -207,14 +219,12 @@ app.post('/donate', async (req, res) => {
         const resData = response.data;
         console.log("📩 תשובת חיוב:", JSON.stringify(resData));
 
-        // --- לוגיקת בדיקת ההצלחה (החלק החשוב) ---
+        // --- בדיקת הצלחה חכמה ---
         const isSuccess = resData.RequestResult?.Status === true || resData.Status === true;
-        
-        // בדיקה ספציפית: האם הכרטיס חסום? (קורה בטסטים עם כרטיס אמיתי)
         const isBlocked = resData.TransactionType === "BlockedCard"; 
 
         if (isSuccess && !isBlocked) {
-            // רק אם גם הצליח וגם לא חסום
+            // הצלחה אמיתית!
             if (fullName) user.name = fullName;
             if (finalTz !== "000000000") user.tz = finalTz;
             if (phone) user.phone = phone;
@@ -229,10 +239,10 @@ app.post('/donate', async (req, res) => {
             let errorMsg = resData.RequestResult?.Description || resData.Description || "סירוב עסקה";
             
             if (isBlocked) {
-                errorMsg = "העסקה סורבה: מסוף טסטים אינו מקבל כרטיס אמיתי (BlockedCard)";
+                errorMsg = "העסקה סורבה: הכרטיס חסום (BlockedCard) - נדרש מעבר למסוף Production";
             }
 
-            // מחיקת טוקן שגוי כדי לא להיתקע בלופ
+            // מחיקת טוקן שגוי
             if (errorMsg.includes("טוקן") || errorMsg.includes("Token")) {
                 user.token = ""; 
                 await user.save();
