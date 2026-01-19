@@ -33,6 +33,8 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
+// --- פונקציות עזר ---
+
 function sortObjectKeys(obj) {
     return Object.keys(obj).sort().reduce((result, key) => {
         result[key] = obj[key];
@@ -49,7 +51,7 @@ function fixToken(token) {
     return strToken;
 }
 
-// --- Routes ---
+// --- Routes (משתמשים) ---
 
 app.post('/update-code', async (req, res) => {
     let { email, phone, code } = req.body;
@@ -89,7 +91,6 @@ app.post('/verify-auth', async (req, res) => {
 
         let user = await User.findOne(query);
 
-        // וידוא שהקוד תואם בדיוק (ללא דלת אחורית 1234)
         if (user && String(user.tempCode).trim() === String(code).trim()) {
             res.json({ success: true, user });
         } else {
@@ -144,12 +145,11 @@ app.post('/donate', async (req, res) => {
             activeToken = fixToken(user.token);
         }
 
-        // ✅ התיקון הקריטי: המרה לאגורות (כפל ב-100)
-        // Math.round מבטיח שלא יהיו שברים עשרוניים מוזרים
+        // המרה לאגורות (1 = 100)
         const amountInAgorot = Math.round(parseFloat(amount) * 100);
 
         let tranData = {
-            Total: amountInAgorot, // שולחים 100 עבור 1 שקל
+            Total: amountInAgorot,
             Currency: 1, 
             CreditType: 1, 
             ParamJ: "J4", 
@@ -217,6 +217,46 @@ app.post('/donate', async (req, res) => {
     } catch (e) {
         console.error("🔥 Error:", e.message);
         res.status(500).json({ success: false, error: "שגיאת תקשורת" });
+    }
+});
+
+// ==========================================
+// 🛡️ אזור הניהול (ADMIN)
+// ==========================================
+
+const ADMIN_PASSWORD = "admin1234"; // שנה לסיסמה שאתה רוצה
+
+app.post('/admin/login', (req, res) => {
+    const { password } = req.body;
+    if (password === ADMIN_PASSWORD) {
+        res.json({ success: true });
+    } else {
+        res.json({ success: false, error: "סיסמה שגויה" });
+    }
+});
+
+app.post('/admin/get-users', async (req, res) => {
+    const { password } = req.body;
+    if (password !== ADMIN_PASSWORD) return res.status(403).json({ success: false });
+
+    try {
+        // שולף את המשתמשים ממוינים לפי סכום התרומה (הכי גבוה ראשון)
+        const users = await User.find().sort({ totalDonated: -1 });
+        res.json({ success: true, users });
+    } catch (e) {
+        res.status(500).json({ success: false });
+    }
+});
+
+app.post('/admin/delete-user', async (req, res) => {
+    const { password, userId } = req.body;
+    if (password !== ADMIN_PASSWORD) return res.status(403).json({ success: false });
+
+    try {
+        await User.findByIdAndDelete(userId);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false });
     }
 });
 
