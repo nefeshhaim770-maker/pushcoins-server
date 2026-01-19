@@ -29,8 +29,15 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- Routes ---
+// פונקציית עזר לתיקון ת"ז
+function padTz(tz) {
+    if (!tz) return "000000000";
+    let str = tz.toString().replace(/\D/g, '');
+    while (str.length < 9) str = "0" + str;
+    return str;
+}
 
+// נתיבים
 app.post('/update-code', async (req, res) => {
     const { email, phone, code } = req.body;
     try {
@@ -58,23 +65,23 @@ app.post('/donate', async (req, res) => {
     const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note } = req.body;
 
     try {
+        console.log("🚀 Starting Donation Process...");
+        
         let user = await User.findById(userId);
         if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
 
-        // 1. הגנה מקריסה: וידוא שיש ת"ז
-        const finalTz = tz || user.tz;
-        if (!finalTz) return res.status(400).json({ success: false, error: "חסר מספר תעודת זהות" });
+        // 1. הכנת נתונים בסיסיים
+        const finalTz = padTz(tz || user.tz);
+        const safeName = fullName || user.name || "Torem";
+        const firstName = safeName.split(" ")[0] || "Israel";
+        const lastName = safeName.split(" ").slice(1).join(" ") || "Israeli";
 
-        // 2. הגנה מקריסה: טיפול בשם מלא (אם ריק - שם ברירת מחדל)
-        const safeName = fullName || user.name || "Torem Unknown";
-        const firstName = safeName.split(" ")[0] || "Torem";
-        const lastName = safeName.split(" ").slice(1).join(" ") || "Family";
-
+        // 2. בניית אובייקט העסקה - שים לב לשינוי בטיפוסים (מספרים ללא גרשיים)
         let tranData = {
-            Total: amount.toString(),
-            Currency: "1", 
-            CreditType: "10", 
-            NumPayment: "12",
+            Total: parseFloat(amount), // מספר
+            Currency: 1,               // מספר
+            CreditType: 10,            // מספר (תשלומים)
+            NumPayment: 12,            // מספר
             ParamJ: "J4", 
             TransactionType: "debit",
             ProjectNumber: "00001",
@@ -82,23 +89,27 @@ app.post('/donate', async (req, res) => {
             FirstName: firstName,
             LastName: lastName,
             Mail: email || user.email || "no-email@test.com",
-            Tz: finalTz.toString(),
+            Tz: finalTz,
             customerRef: user._id.toString() 
         };
 
+        // 3. הוספת פרטי אשראי/טוקן
         if (useToken && user.token) {
-            console.log("💳 שימוש בטוקן...");
+            console.log("💳 Using Token");
             tranData.Token = user.token;
             tranData.Expiry = user.lastExpiry; 
         } else if (ccDetails) {
-            console.log("💳 שימוש בכרטיס חדש...");
+            console.log("💳 Using New Card");
             tranData.CreditNum = ccDetails.num;
-            tranData.Expiry = ccDetails.exp;
+            tranData.Expiry = ccDetails.exp; 
             tranData.Cvv2 = ccDetails.cvv;
         } else {
             return res.status(400).json({ success: false, error: "חסרים פרטי תשלום" });
         }
 
+        console.log("📤 Sending to Kesher:", JSON.stringify(tranData));
+
+        // 4. שליחה עם מניעת קריסה (validateStatus: true)
         const response = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
             Json: { 
                 userName: '2181420WS2087', 
@@ -108,14 +119,21 @@ app.post('/donate', async (req, res) => {
                 tran: tranData 
             },
             format: "json"
+        }, {
+            // זה החלק הכי חשוב! מונע מהשרת שלך לקרוס אם קשר מחזירים שגיאה
+            validateStatus: function (status) {
+                return true; 
+            }
         });
 
         const resData = response.data;
-        
+        console.log("📩 Kesher Raw Response:", JSON.stringify(resData));
+
+        // 5. בדיקת תוצאה
         if (resData.RequestResult?.Status === true || resData.Status === true) {
-            // עדכון פרטים רק אם ההעברה הצליחה
+            // הצלחה
             if (fullName) user.name = fullName;
-            if (finalTz) user.tz = finalTz;
+            if (finalTz && finalTz !== "000000000") user.tz = finalTz;
             if (phone) user.phone = phone;
 
             user.totalDonated += parseFloat(amount);
@@ -132,14 +150,16 @@ app.post('/donate', async (req, res) => {
             await user.save();
             res.json({ success: true, user });
         } else {
-            const errorMsg = resData.RequestResult?.Description || resData.Description || "סירוב עסקה";
-            console.log("❌ Kesher Reject:", errorMsg);
+            // כישלון - מחזירים את ההודעה המקורית
+            const errorMsg = resData.RequestResult?.Description || resData.Description || resData.ErrorMessage || "נדחה ע\"י חברת האשראי";
+            console.log("❌ Rejected Reason:", errorMsg);
             res.status(400).json({ success: false, error: errorMsg });
         }
 
     } catch (e) {
-        console.error("🔥 Server Error:", e.message); // זה ידפיס לך בלוג בדיוק מה קרס
-        res.status(500).json({ success: false, error: "שגיאת שרת פנימית" });
+        // תופס שגיאות קוד בלבד (לא שגיאות API)
+        console.error("🔥 Code Exception:", e.message);
+        res.status(500).json({ success: false, error: "שגיאה פנימית בקוד השרת" });
     }
 });
 
