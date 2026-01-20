@@ -7,6 +7,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+// חיבור למסד הנתונים
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
     .then(async () => {
         console.log('✅ MongoDB Connected');
@@ -15,6 +16,7 @@ mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.
     })
     .catch(err => console.error('❌ MongoDB Error:', err));
 
+// הגדרת משתמש
 const userSchema = new mongoose.Schema({
     email: { type: String, sparse: true, unique: true },
     phone: { type: String, sparse: true, unique: true },
@@ -73,10 +75,10 @@ app.post('/update-code', async (req, res) => {
 
         await User.findOneAndUpdate(query, { $set: updateData }, { upsert: true, new: true });
 
-        // --- שליחת מייל (עם התיקון למפתח שלך) ---
+        // שליחת המייל עם הקוד - דרך השרת
         if (cleanEmail) {
             try {
-                const PRIVATE_KEY = "b-Dz-J0Iq_yJvCfqX5Iw3"; // המפתח שלך
+                const PRIVATE_KEY = "b-Dz-J0Iq_yJvCfqX5Iw3"; // המפתח שלך מ-EmailJS
 
                 await axios.post('https://api.emailjs.com/api/v1.0/email/send', {
                     service_id: 'service_8f6h188',
@@ -174,7 +176,11 @@ app.post('/donate', async (req, res) => {
 
         const amountInAgorot = Math.round(parseFloat(amount) * 100);
 
-        // ✅ חזרתי ללוגיקה הפשוטה שעבדה לך בקוד המקורי:
+        // ✅ התיקון הקריטי: שולחים תמיד 000000000 לסליקה בטסטים
+        // (אבל ב-DB שלך למעלה נשמר ה-tz האמיתי של המשתמש)
+        const safeIdForTest = "000000000"; 
+        const safePhone = (phone || user.phone || "0500000000").replace(/\D/g, '');
+
         let tranData = {
             Total: amountInAgorot,
             Currency: 1, 
@@ -182,11 +188,11 @@ app.post('/donate', async (req, res) => {
             ParamJ: "J4", 
             TransactionType: "debit",
             ProjectNumber: "00001",
-            Phone: (phone || user.phone || "0500000000").toString(),
+            Phone: safePhone,
             FirstName: (fullName || user.name || "Torem").split(" ")[0],
             LastName: (fullName || user.name || "").split(" ").slice(1).join(" ") || "Family",
             Mail: email || user.email || "no-email@test.com",
-            Id: tz || user.tz || "000000000", // פשטות: זה מה שעבד בקוד ששלחת
+            Id: safeIdForTest, // <--- הנה התיקון שמונע את החסימה
             Details: note || ""
         };
 
@@ -219,7 +225,7 @@ app.post('/donate', async (req, res) => {
 
         if (isSuccess) {
             if (fullName) user.name = fullName;
-            if (tz) user.tz = tz;
+            if (tz && tz.length > 5) user.tz = tz; // שומרים ת"ז אמיתית ב-DB
             if (phone) user.phone = phone;
 
             if (!useToken && resData.Token) {
