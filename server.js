@@ -2,12 +2,24 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const mongoose = require('mongoose');
+const nodemailer = require('nodemailer'); 
 const app = express();
 
 app.use(express.json());
 app.use(cors());
 
-// חיבור למסד הנתונים
+// ============================================================
+// ⚙️ הגדרות המייל - Pushka App
+// ============================================================
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: 'ceo1@nefesh-ha-chaim.org', // המייל שלך
+        pass: 'bcnq usuk puzk zxlc'       // סיסמת האפליקציה
+    }
+});
+// ============================================================
+
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
     .then(async () => {
         console.log('✅ MongoDB Connected');
@@ -74,25 +86,25 @@ app.post('/update-code', async (req, res) => {
 
         await User.findOneAndUpdate(query, { $set: updateData }, { upsert: true, new: true });
 
-        // שליחת מייל דרך השרת (עם המפתח הפרטי שלך)
+        // שליחת מייל ללקוח
         if (cleanEmail) {
-            try {
-                const PRIVATE_KEY = "b-Dz-J0Iq_yJvCfqX5Iw3"; 
+            const mailOptions = {
+                from: '"קופת צדקה - נפש החיים" <ceo1@nefesh-ha-chaim.org>',
+                to: cleanEmail,
+                subject: 'קוד אימות לכניסה',
+                html: `
+                    <div style="direction:rtl; text-align:center; font-family:Arial,sans-serif;">
+                        <h2>קוד הכניסה שלך הוא:</h2>
+                        <h1 style="color:#27ae60; font-size:40px; letter-spacing:5px;">${code}</h1>
+                        <p>הקוד תקף לזמן מוגבל.</p>
+                    </div>
+                `
+            };
 
-                await axios.post('https://api.emailjs.com/api/v1.0/email/send', {
-                    service_id: 'service_8f6h188',
-                    template_id: 'template_tzbq0k4',
-                    user_id: 'yLYooSdg891aL7etD',
-                    template_params: {
-                        email: cleanEmail,
-                        code: code
-                    },
-                    accessToken: PRIVATE_KEY
-                });
-                console.log("📧 Email sent via Server");
-            } catch (emailError) {
-                console.error("❌ Email failed");
-            }
+            transporter.sendMail(mailOptions, function(error, info){
+                if (error) { console.log('❌ Error sending email:', error); }
+                else { console.log('✅ Email sent: ' + info.response); }
+            });
         }
 
         res.json({ success: true });
@@ -175,8 +187,10 @@ app.post('/donate', async (req, res) => {
 
         const amountInAgorot = Math.round(parseFloat(amount) * 100);
 
-        // ✅ תיקון 1: שליחת ה-TZ האמיתי (אם ריק, שולח 000000000 כברירת מחדל כדי לא לקרוס)
-        const realIdToSend = tz || user.tz || "000000000";
+        // ✅ המפתח לזיהוי לקוח: תעודת זהות נקייה
+        const rawId = tz || user.tz || "000000000";
+        const realIdToSend = rawId.replace(/\D/g, ''); 
+        
         const safePhone = (phone || user.phone || "0500000000").replace(/\D/g, '');
 
         let tranData = {
@@ -190,7 +204,7 @@ app.post('/donate', async (req, res) => {
             FirstName: (fullName || user.name || "Torem").split(" ")[0],
             LastName: (fullName || user.name || "").split(" ").slice(1).join(" ") || "Family",
             Mail: email || user.email || "no-email@test.com",
-            Id: realIdToSend, // כאן נכנסת הת"ז האמיתית
+            Id: realIdToSend, // ת"ז לזיהוי
             Details: note || ""
         };
 
@@ -218,9 +232,6 @@ app.post('/donate', async (req, res) => {
         }, { validateStatus: () => true });
 
         const resData = response.data;
-        
-        // ✅ תיקון 2: בדיקת הצלחה פשוטה. אם החברה אומרת "Status: true", אנחנו מאשרים.
-        // ביטלתי את הבדיקה המחמירה של "BlockedCard" שגרמה לבלבול.
         const isSuccess = resData.RequestResult?.Status === true || resData.Status === true;
 
         if (isSuccess) {
@@ -247,7 +258,6 @@ app.post('/donate', async (req, res) => {
             await user.save();
             res.json({ success: true, user });
         } else {
-            // טיפול בשגיאה
             const errorMsg = resData.RequestResult?.Description || resData.Description || "סירוב עסקה";
             
             if (errorMsg.includes("טוקן") || errorMsg.includes("Token")) {
