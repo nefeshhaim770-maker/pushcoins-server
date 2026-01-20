@@ -9,24 +9,27 @@ app.use(express.json());
 app.use(cors());
 
 // ============================================================
-// ⚙️ הגדרות המייל (הגדרה מתקדמת ומאובטחת ל-Google Workspace)
+// ⚙️ הגדרות המייל (תצורה מעודכנת לפתרון בעיות שליחה)
 // ============================================================
 const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com', // שרת ה-SMTP של גוגל
-    port: 465,              // פורט מאובטח
-    secure: true,           // שימוש ב-SSL
+    host: 'smtp.gmail.com',
+    port: 587,              // פורט 587 עובד טוב יותר בשרתים מסוימים
+    secure: false,          // משתמש ב-TLS
     auth: {
-        user: 'ceo1@nefesh-ha-chaim.org', // המייל שלך
-        pass: 'bcnq usuk puzk zxlc'       // סיסמת האפליקציה שלך
+        user: 'ceo1@nefesh-ha-chaim.org', 
+        pass: 'bcnq usuk puzk zxlc'       
+    },
+    tls: {
+        rejectUnauthorized: false // מונע שגיאות תעודת אבטחה בשרתים
     }
 });
 
-// בדיקה שהמייל מחובר תקין בעת עליית השרת
+// בדיקת חיבור למייל בעת עליית השרת
 transporter.verify(function (error, success) {
     if (error) {
-        console.log("❌ שגיאה בחיבור לשרת המיילים:", error);
+        console.log("❌ שגיאת חיבור למייל:", error);
     } else {
-        console.log("✅ שרת המיילים מוכן לשליחה!");
+        console.log("✅ השרת מוכן לשליחת מיילים!");
     }
 });
 // ============================================================
@@ -97,10 +100,10 @@ app.post('/update-code', async (req, res) => {
 
         await User.findOneAndUpdate(query, { $set: updateData }, { upsert: true, new: true });
 
-        // --- שליחת מייל ללקוח (לוגיקה משופרת) ---
+        // --- שליחת המייל ---
         if (cleanEmail) {
             const mailOptions = {
-                from: '"קופת צדקה - נפש החיים" <ceo1@nefesh-ha-chaim.org>',
+                from: '"קופת צדקה" <ceo1@nefesh-ha-chaim.org>',
                 to: cleanEmail,
                 subject: 'קוד אימות לכניסה',
                 html: `
@@ -112,21 +115,18 @@ app.post('/update-code', async (req, res) => {
                 `
             };
 
-            // שימוש ב-await כדי לוודא שליחה ולתפוס שגיאות
-            try {
-                let info = await transporter.sendMail(mailOptions);
-                console.log("📧 המייל נשלח בהצלחה: " + info.messageId);
-            } catch (mailError) {
-                console.error("❌ שגיאה בשליחת המייל: ", mailError);
-                // לא עוצרים את הבקשה, רק מדפיסים שגיאה ללוג
-            }
+            // שימוש ב-Callback כדי לראות שגיאות בזמן אמת בלוגים
+            transporter.sendMail(mailOptions, (err, info) => {
+                if (err) {
+                    console.error("❌ תקלה בשליחת המייל בפועל:", err);
+                } else {
+                    console.log("📧 המייל נשלח בהצלחה! מזהה:", info.messageId);
+                }
+            });
         }
 
         res.json({ success: true });
-    } catch (e) { 
-        console.error("General Error in update-code:", e);
-        res.status(500).json({ success: false }); 
-    }
+    } catch (e) { res.status(500).json({ success: false }); }
 });
 
 app.post('/verify-auth', async (req, res) => {
@@ -210,6 +210,7 @@ app.post('/donate', async (req, res) => {
         
         const safePhone = (phone || user.phone || "0500000000").replace(/\D/g, '');
 
+        // בניית אובייקט העסקה
         let tranData = {
             Total: amountInAgorot,
             Currency: 1, 
@@ -221,7 +222,13 @@ app.post('/donate', async (req, res) => {
             FirstName: (fullName || user.name || "Torem").split(" ")[0],
             LastName: (fullName || user.name || "").split(" ").slice(1).join(" ") || "Family",
             Mail: email || user.email || "no-email@test.com",
-            Id: realIdToSend,
+            
+            // ✅ כאן הוספנו את השדה החדש שביקשו ב"קשר" לזיהוי הלקוח
+            ClientApiIdentity: realIdToSend, 
+            
+            // שומרים גם על השדה הזה כי הוא חובה לעסקה עצמה
+            Id: realIdToSend, 
+            
             Details: note || ""
         };
 
