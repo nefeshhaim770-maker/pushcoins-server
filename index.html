@@ -44,13 +44,21 @@
         /* שדות קלט */
         .custom-input { border-radius: 15px; padding: 12px; font-size: 1.1rem; border: 2px solid #e9ecef; }
         .custom-input:focus { border-color: #198754; box-shadow: none; }
+
+        /* מסך טעינה */
+        #loading-screen { position: absolute; top:0; left:0; right:0; bottom:0; background:white; z-index: 2000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
     </style>
 </head>
 <body>
 
 <div class="pushka-container">
     
-    <div id="login-section" class="p-4 pt-5">
+    <div id="loading-screen">
+        <div class="spinner-border text-success mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
+        <h5 class="text-muted">טוען נתונים...</h5>
+    </div>
+
+    <div id="login-section" class="p-4 pt-5 d-none">
         <div class="text-center mb-5">
             <i class="fas fa-hand-holding-heart fa-4x text-success mb-3"></i>
             <h2 class="fw-bold">ברוכים הבאים</h2>
@@ -235,15 +243,19 @@
     firebase.initializeApp(firebaseConfig);
     const messaging = firebase.messaging();
 
-    // ⚠️⚠️ תיקון השגיאה: שימוש ב-var כדי למנוע התנגשויות (Hoisting)
+    // שמירה בזיכרון המקומי - משתמשים ב-var כדי למנוע שגיאות
     var currentUserId = localStorage.getItem('userId');
     var currentUser = null;
 
-    // בטעינת הדף
+    // בטעינת הדף - הבדיקה מתבצעת מיד
     window.onload = () => { 
         if (currentUserId) {
+            // אם יש משתמש בזיכרון, נשארים במסך טעינה ומנסים לטעון את הפרופיל
             loadUserProfile();
-            setTimeout(registerForPush, 3000); 
+        } else {
+            // אם אין משתמש, מעלימים את הטעינה ומראים את ההתחברות
+            document.getElementById('loading-screen').classList.add('d-none');
+            document.getElementById('login-section').classList.remove('d-none');
         }
     };
 
@@ -267,9 +279,15 @@
         });
     }
 
+    // --- לוגיקה של פוש עם בדיקה משופרת ---
     async function registerForPush() {
         if (!currentUserId) return;
         try {
+            if (!("Notification" in window)) {
+                console.log("דפדפן זה לא תומך בהתראות");
+                return;
+            }
+            
             const permission = await Notification.requestPermission();
             if (permission === 'granted') {
                 const token = await messaging.getToken({ vapidKey: VAPID_KEY });
@@ -299,6 +317,7 @@
         });
     });
 
+    // --- התחברות ---
     async function sendCode() {
         const input = document.getElementById('login-input').value;
         if (!input) return Swal.fire('שגיאה', 'נא להזין מספר טלפון או מייל', 'warning');
@@ -353,12 +372,11 @@
             Swal.close(); 
 
             if (data.success) {
-                // עדכון המשתנה הראשי בצורה בטוחה
                 currentUserId = data.user._id;
+                // שמירה קריטית בזיכרון המקומי
                 localStorage.setItem('userId', currentUserId);
                 
                 await loadUserProfile(); 
-                registerForPush(); 
             } else {
                 Swal.fire('שגיאה', 'קוד שגוי', 'error');
             }
@@ -375,17 +393,24 @@
                 body: JSON.stringify({ userId: currentUserId })
             });
             const data = await res.json();
+            
+            // מסתירים את מסך הטעינה בכל מקרה כשיש תשובה
+            document.getElementById('loading-screen').classList.add('d-none');
+
             if(data.success) {
                 currentUser = data.user;
+                // מציגים את האפליקציה
                 document.getElementById('login-section').classList.add('d-none');
                 document.getElementById('app-section').classList.remove('d-none');
                 
+                // עדכון נתונים
                 document.getElementById('total-donated').innerText = `₪${(currentUser.totalDonated||0).toFixed(0)}`;
                 const pendingCount = currentUser.pendingDonations?.length || 0;
                 const badge = document.getElementById('basket-badge');
                 badge.innerText = pendingCount;
                 badge.classList.toggle('d-none', pendingCount === 0);
 
+                // מילוי טפסים
                 document.getElementById('edit-name').value = currentUser.name || "";
                 document.getElementById('edit-tz').value = currentUser.tz || "";
                 document.getElementById('edit-email').value = currentUser.email || "";
@@ -403,10 +428,25 @@
                 }
 
                 renderBasket();
+                
+                // נסיון רישום לפוש ברקע
+                setTimeout(registerForPush, 2000);
+
+            } else {
+                // אם המשתמש לא נמצא בשרת (נמחק?) - מנקים וחוזרים להתחלה
+                localStorage.removeItem('userId');
+                document.getElementById('login-section').classList.remove('d-none');
             }
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error(e);
+            // במקרה של שגיאת רשת, נשארים במסך טעינה או מראים שגיאה
+            Swal.fire('שגיאת תקשורת', 'לא ניתן לטעון את הפרופיל', 'error');
+            document.getElementById('loading-screen').classList.add('d-none');
+            document.getElementById('login-section').classList.remove('d-none');
+        }
     }
 
+    // --- שאר הפונקציות נשארו זהות ---
     async function donate(mode) {
         const amount = document.getElementById('custom-amount').value;
         const note = document.getElementById('donation-note').value;
