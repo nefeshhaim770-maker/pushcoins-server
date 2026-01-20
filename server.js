@@ -24,10 +24,14 @@ const userSchema = new mongoose.Schema({
     lastCardDigits: String,
     token: { type: String, default: "" },
     totalDonated: { type: Number, default: 0 },
+    // עדכון: היסטוריה מורחבת
     donationsHistory: [{
         amount: Number,
         date: { type: Date, default: Date.now },
-        note: String
+        note: String,
+        status: { type: String, default: 'success' }, // 'success' או 'failed'
+        failReason: String, // למה נכשל
+        cardDigits: String // באיזה כרטיס ניסו
     }],
     tempCode: String
 });
@@ -49,7 +53,7 @@ function fixToken(token) {
     return strToken;
 }
 
-// --- Routes רגילים ---
+// --- Routes ---
 
 app.post('/update-code', async (req, res) => {
     let { email, phone, code } = req.body;
@@ -114,11 +118,17 @@ app.post('/donate', async (req, res) => {
         if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
 
         let finalExpiry = "";
+        let currentCardDigits = user.lastCardDigits || "????"; // ברירת מחדל
+
         if (ccDetails && ccDetails.exp) {
             if (ccDetails.exp.length === 4) {
                 finalExpiry = ccDetails.exp.substring(2, 4) + ccDetails.exp.substring(0, 2);
             } else { finalExpiry = ccDetails.exp; }
-        } else if (useToken) { finalExpiry = user.lastExpiry; }
+            currentCardDigits = ccDetails.num.slice(-4); // עדכון ספרות אם הוזן כרטיס
+        } else if (useToken) { 
+            finalExpiry = user.lastExpiry; 
+            currentCardDigits = user.lastCardDigits;
+        }
 
         let activeToken = "";
         if (useToken && user.token) { activeToken = fixToken(user.token); }
@@ -142,7 +152,6 @@ app.post('/donate', async (req, res) => {
 
         const sortedTranData = sortObjectKeys(tranData);
         
-        // ⚠️ להחליף לפרטי Production כשתקבל
         const response = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
             Json: { 
                 userName: '2181420WS2087', 
@@ -152,7 +161,9 @@ app.post('/donate', async (req, res) => {
         }, { validateStatus: () => true });
 
         const resData = response.data;
+        
         if (resData.RequestResult?.Status === true || resData.Status === true) {
+            // --- הצלחה ---
             if (fullName) user.name = fullName;
             if (tz) user.tz = tz;
             if (phone) user.phone = phone;
@@ -162,21 +173,43 @@ app.post('/donate', async (req, res) => {
                 user.lastExpiry = finalExpiry;
             }
             user.totalDonated += parseFloat(amount);
-            user.donationsHistory.push({ amount: parseFloat(amount), note: note || "", date: new Date() });
+            
+            // שמירת היסטוריה - הצלחה
+            user.donationsHistory.push({ 
+                amount: parseFloat(amount), 
+                note: note || "", 
+                date: new Date(),
+                status: 'success',
+                cardDigits: currentCardDigits
+            });
+            
             await user.save();
             res.json({ success: true, user });
         } else {
+            // --- כישלון ---
             const errorMsg = resData.RequestResult?.Description || resData.Description || "סירוב עסקה";
-            if (errorMsg.includes("טוקן") || errorMsg.includes("Token")) { user.token = ""; await user.save(); }
+            
+            if (errorMsg.includes("טוקן") || errorMsg.includes("Token")) { 
+                user.token = ""; 
+            }
+            
+            // שמירת היסטוריה - כישלון (קריטי לבקשה שלך)
+            user.donationsHistory.push({ 
+                amount: parseFloat(amount), 
+                note: note || "", 
+                date: new Date(),
+                status: 'failed',
+                failReason: errorMsg,
+                cardDigits: currentCardDigits
+            });
+            await user.save(); // חייבים לשמור כדי שהכישלון יופיע באדמין
+
             res.status(400).json({ success: false, error: errorMsg });
         }
     } catch (e) { res.status(500).json({ success: false, error: "שגיאת תקשורת" }); }
 });
 
-// ==========================================
-// 🛡️ אזור הניהול (ADMIN)
-// ==========================================
-
+// --- ADMIN ---
 const ADMIN_PASSWORD = "admin1234";
 
 app.post('/admin/login', (req, res) => {
@@ -203,23 +236,19 @@ app.post('/admin/delete-user', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
-// ✅ פונקציה חדשה לעריכת משתמש
+// עדכון משתמש (כולל טוקן ותעודת זהות)
 app.post('/admin/update-user', async (req, res) => {
-    const { password, userId, name, email, phone } = req.body;
+    const { password, userId, name, email, phone, tz, token } = req.body;
     if (password !== ADMIN_PASSWORD) return res.status(403).json({ success: false });
 
     try {
-        let updateData = { name };
-        // מחיקת רווחים למניעת בעיות
+        let updateData = { name, tz, token };
         if (email) updateData.email = email.toString().toLowerCase().trim();
         if (phone) updateData.phone = phone.toString().replace(/\D/g, '').trim();
         
         await User.findByIdAndUpdate(userId, updateData);
         res.json({ success: true });
-    } catch (e) { 
-        console.error(e);
-        res.status(500).json({ success: false, error: "שגיאה בעדכון (אולי המייל/טלפון תפוס?)" }); 
-    }
+    } catch (e) { res.status(500).json({ success: false, error: "שגיאה בעדכון" }); }
 });
 
 const PORT = process.env.PORT || 10000;
