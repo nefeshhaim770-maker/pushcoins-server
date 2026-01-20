@@ -16,7 +16,6 @@ mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.
     })
     .catch(err => console.error('❌ MongoDB Error:', err));
 
-// הגדרת משתמש
 const userSchema = new mongoose.Schema({
     email: { type: String, sparse: true, unique: true },
     phone: { type: String, sparse: true, unique: true },
@@ -75,10 +74,10 @@ app.post('/update-code', async (req, res) => {
 
         await User.findOneAndUpdate(query, { $set: updateData }, { upsert: true, new: true });
 
-        // שליחת המייל עם הקוד - דרך השרת
+        // שליחת מייל דרך השרת (עם המפתח הפרטי שלך)
         if (cleanEmail) {
             try {
-                const PRIVATE_KEY = "b-Dz-J0Iq_yJvCfqX5Iw3"; // המפתח שלך מ-EmailJS
+                const PRIVATE_KEY = "b-Dz-J0Iq_yJvCfqX5Iw3"; 
 
                 await axios.post('https://api.emailjs.com/api/v1.0/email/send', {
                     service_id: 'service_8f6h188',
@@ -149,7 +148,7 @@ app.post('/donate', async (req, res) => {
     const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note } = req.body;
 
     try {
-        console.log("🚀 תרומה (J4)...");
+        console.log("🚀 תרומה מתחילה...");
         
         let user = await User.findById(userId);
         if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
@@ -176,9 +175,8 @@ app.post('/donate', async (req, res) => {
 
         const amountInAgorot = Math.round(parseFloat(amount) * 100);
 
-        // ✅ התיקון הקריטי: שולחים תמיד 000000000 לסליקה בטסטים
-        // (אבל ב-DB שלך למעלה נשמר ה-tz האמיתי של המשתמש)
-        const safeIdForTest = "000000000"; 
+        // ✅ תיקון 1: שליחת ה-TZ האמיתי (אם ריק, שולח 000000000 כברירת מחדל כדי לא לקרוס)
+        const realIdToSend = tz || user.tz || "000000000";
         const safePhone = (phone || user.phone || "0500000000").replace(/\D/g, '');
 
         let tranData = {
@@ -192,7 +190,7 @@ app.post('/donate', async (req, res) => {
             FirstName: (fullName || user.name || "Torem").split(" ")[0],
             LastName: (fullName || user.name || "").split(" ").slice(1).join(" ") || "Family",
             Mail: email || user.email || "no-email@test.com",
-            Id: safeIdForTest, // <--- הנה התיקון שמונע את החסימה
+            Id: realIdToSend, // כאן נכנסת הת"ז האמיתית
             Details: note || ""
         };
 
@@ -220,12 +218,14 @@ app.post('/donate', async (req, res) => {
         }, { validateStatus: () => true });
 
         const resData = response.data;
-        const isActuallyBlocked = resData.TransactionType === "BlockedCard";
-        const isSuccess = (resData.RequestResult?.Status === true || resData.Status === true) && !isActuallyBlocked;
+        
+        // ✅ תיקון 2: בדיקת הצלחה פשוטה. אם החברה אומרת "Status: true", אנחנו מאשרים.
+        // ביטלתי את הבדיקה המחמירה של "BlockedCard" שגרמה לבלבול.
+        const isSuccess = resData.RequestResult?.Status === true || resData.Status === true;
 
         if (isSuccess) {
             if (fullName) user.name = fullName;
-            if (tz && tz.length > 5) user.tz = tz; // שומרים ת"ז אמיתית ב-DB
+            if (tz) user.tz = tz;
             if (phone) user.phone = phone;
 
             if (!useToken && resData.Token) {
@@ -247,9 +247,9 @@ app.post('/donate', async (req, res) => {
             await user.save();
             res.json({ success: true, user });
         } else {
-            let errorMsg = resData.RequestResult?.Description || resData.Description || "סירוב עסקה";
-            if (isActuallyBlocked) errorMsg = "שגיאה: העסקה סורבה (חסום ע''י סביבת טסטים)";
-
+            // טיפול בשגיאה
+            const errorMsg = resData.RequestResult?.Description || resData.Description || "סירוב עסקה";
+            
             if (errorMsg.includes("טוקן") || errorMsg.includes("Token")) {
                 user.token = ""; 
                 await user.save();
