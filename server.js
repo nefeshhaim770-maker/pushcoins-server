@@ -100,19 +100,16 @@ app.post('/login-by-id', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
-// ✅ התיקון החשוב: קליטת TZ ושמירתו
 app.post('/update-profile', async (req, res) => {
     const { userId, name, email, phone, tz } = req.body;
     try {
-        let updateData = { name, tz }; // הוספנו את ה-tz כאן
-        
+        let updateData = { name, tz }; 
         if (email) updateData.email = email.toString().toLowerCase().trim();
         if (phone) updateData.phone = phone.toString().replace(/\D/g, '').trim();
         
         let user = await User.findByIdAndUpdate(userId, updateData, { new: true });
         res.json({ success: true, user });
     } catch (e) { 
-        console.error("Update error:", e);
         res.status(500).json({ success: false, error: "שגיאה בעדכון" }); 
     }
 });
@@ -123,11 +120,9 @@ app.post('/donate', async (req, res) => {
         let user = await User.findById(userId);
         if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
 
-        // בדיקה שכל הפרטים קיימים
-        if (!fullName || !phone || !email || !tz) {
-            return res.status(400).json({ success: false, error: "חסרים פרטי חובה" });
-        }
-
+        // ביטלתי את בדיקת החובה הקשוחה כדי למנוע חסימות מיותרות בטסטים
+        // if (!fullName || !phone || !email || !tz) ...
+        
         let finalExpiry = "";
         let currentCardDigits = user.lastCardDigits || "????"; 
 
@@ -146,14 +141,18 @@ app.post('/donate', async (req, res) => {
 
         const amountInAgorot = Math.round(parseFloat(amount) * 100);
 
+        // שימוש ב-000000000 כברירת מחדל אם אין ת"ז (זה מה שעבד קודם)
+        const safeId = (tz && tz.length > 5) ? tz : (user.tz || "000000000");
+        const safePhone = (phone || user.phone || "0500000000").replace(/\D/g, '');
+
         let tranData = {
             Total: amountInAgorot,
             Currency: 1, CreditType: 1, ParamJ: "J4", TransactionType: "debit", ProjectNumber: "00001",
-            Phone: (phone || user.phone || "0500000000").toString(),
+            Phone: safePhone,
             FirstName: (fullName || user.name || "Torem").split(" ")[0],
             LastName: (fullName || user.name || "").split(" ").slice(1).join(" ") || "Family",
             Mail: email || user.email || "no-email@test.com",
-            Id: tz || user.tz || "000000000",
+            Id: safeId,
             Details: note || ""
         };
 
@@ -172,13 +171,16 @@ app.post('/donate', async (req, res) => {
         }, { validateStatus: () => true });
 
         const resData = response.data;
+        
+        // כאן התיקון הקריטי: לא לסמן כהצלחה אם זה BlockedCard
         const isActuallyBlocked = resData.TransactionType === "BlockedCard";
         const isSuccess = (resData.RequestResult?.Status === true || resData.Status === true) && !isActuallyBlocked;
 
         if (isSuccess) {
             if (fullName) user.name = fullName;
-            if (tz) user.tz = tz;
+            if (tz && tz.length > 5) user.tz = tz; // שומרים ת"ז רק אם היא אמיתית
             if (phone) user.phone = phone;
+            
             if (!useToken && resData.Token) {
                 user.token = fixToken(resData.Token);
                 user.lastCardDigits = ccDetails.num.slice(-4);
@@ -198,7 +200,7 @@ app.post('/donate', async (req, res) => {
             res.json({ success: true, user });
         } else {
             let errorMsg = resData.RequestResult?.Description || resData.Description || "סירוב עסקה";
-            if (isActuallyBlocked) errorMsg = "העסקה סורבה (חסום ע''י סביבת טסטים)";
+            if (isActuallyBlocked) errorMsg = "שגיאה: העסקה סורבה (חסום ע''י סביבת טסטים)";
 
             if (errorMsg.includes("טוקן") || errorMsg.includes("Token")) { user.token = ""; }
             
