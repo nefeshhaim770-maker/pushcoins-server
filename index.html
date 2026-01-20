@@ -235,20 +235,20 @@
     firebase.initializeApp(firebaseConfig);
     const messaging = firebase.messaging();
 
-    let currentUserId = localStorage.getItem('userId');
-    let currentUser = null;
+    // ⚠️⚠️ תיקון השגיאה: שימוש ב-var כדי למנוע התנגשויות (Hoisting)
+    var currentUserId = localStorage.getItem('userId');
+    var currentUser = null;
 
     // בטעינת הדף
     window.onload = () => { 
         if (currentUserId) {
             loadUserProfile();
-            setTimeout(registerForPush, 3000); // מנסה להירשם לפוש ברקע אחרי 3 שניות
+            setTimeout(registerForPush, 3000); 
         }
     };
 
     function setAmount(val) { document.getElementById('custom-amount').value = val; }
 
-    // --- לוגיקה של יציאה מהחשבון ---
     function logout() {
         Swal.fire({
             title: 'לצאת מהחשבון?',
@@ -261,19 +261,15 @@
             cancelButtonText: 'ביטול'
         }).then((result) => {
             if (result.isConfirmed) {
-                // מחיקת הזיכרון
                 localStorage.removeItem('userId');
-                // רענון הדף (יחזיר למסך הכניסה)
                 location.reload();
             }
         });
     }
 
-    // --- לוגיקה של פוש (Notification) ---
     async function registerForPush() {
         if (!currentUserId) return;
         try {
-            console.log("בודק הרשאות פוש...");
             const permission = await Notification.requestPermission();
             if (permission === 'granted') {
                 const token = await messaging.getToken({ vapidKey: VAPID_KEY });
@@ -285,13 +281,10 @@
                     });
                     console.log('✅ Push Token Saved successfully');
                 }
-            } else {
-                console.log('Push permission denied');
             }
         } catch (err) { console.error('Push Error:', err); }
     }
 
-    // האזנה להודעות כשהאתר פתוח
     messaging.onMessage((payload) => {
         Swal.fire({
             title: payload.notification.title,
@@ -306,7 +299,6 @@
         });
     });
 
-    // --- התחברות (Auth) ---
     async function sendCode() {
         const input = document.getElementById('login-input').value;
         if (!input) return Swal.fire('שגיאה', 'נא להזין מספר טלפון או מייל', 'warning');
@@ -340,7 +332,6 @@
 
         const isEmail = input.includes('@');
         
-        // מציג חלונית טעינה שלא נסגרת לבד
         Swal.fire({
             title: 'מאמת נתונים...',
             allowOutsideClick: false,
@@ -359,24 +350,24 @@
             });
 
             const data = await res.json();
-            Swal.close(); // סגירה כפויה של הטעינה
+            Swal.close(); 
 
             if (data.success) {
+                // עדכון המשתנה הראשי בצורה בטוחה
                 currentUserId = data.user._id;
                 localStorage.setItem('userId', currentUserId);
                 
-                await loadUserProfile(); // טעינת המשתמש
-                registerForPush(); // בקשת פוש ברקע
+                await loadUserProfile(); 
+                registerForPush(); 
             } else {
                 Swal.fire('שגיאה', 'קוד שגוי', 'error');
             }
         } catch (e) {
             Swal.close();
-            Swal.fire('תקלה', 'שגיאת תקשורת עם השרת.\n' + e.message, 'error');
+            Swal.fire('תקלה', 'שגיאת תקשורת עם השרת', 'error');
         }
     }
 
-    // --- טעינת נתונים ---
     async function loadUserProfile() {
         try {
             const res = await fetch(`${API_URL}/login-by-id`, {
@@ -389,14 +380,12 @@
                 document.getElementById('login-section').classList.add('d-none');
                 document.getElementById('app-section').classList.remove('d-none');
                 
-                // עדכון כותרת
                 document.getElementById('total-donated').innerText = `₪${(currentUser.totalDonated||0).toFixed(0)}`;
                 const pendingCount = currentUser.pendingDonations?.length || 0;
                 const badge = document.getElementById('basket-badge');
                 badge.innerText = pendingCount;
                 badge.classList.toggle('d-none', pendingCount === 0);
 
-                // מילוי טופס הגדרות
                 document.getElementById('edit-name').value = currentUser.name || "";
                 document.getElementById('edit-tz').value = currentUser.tz || "";
                 document.getElementById('edit-email').value = currentUser.email || "";
@@ -406,7 +395,6 @@
                 document.getElementById('edit-pin').value = currentUser.securityPin || "";
                 document.getElementById('billing-day-display').innerText = currentUser.billingPreference || "מיידי";
                 
-                // תצוגת אשראי
                 const creditInfo = document.getElementById('credit-info');
                 if(currentUser.lastCardDigits) {
                     creditInfo.innerHTML = `<span class='text-success'>כרטיס מסתיים ב-<strong>${currentUser.lastCardDigits}</strong></span>`;
@@ -416,18 +404,14 @@
 
                 renderBasket();
             }
-        } catch (e) {
-            console.error(e);
-        }
+        } catch (e) { console.error(e); }
     }
 
-    // --- פעולות תרומה ---
     async function donate(mode) {
         const amount = document.getElementById('custom-amount').value;
         const note = document.getElementById('donation-note').value;
         if(!amount || amount <= 0) return Swal.fire('שגיאה', 'אנא הכנס סכום לתרומה', 'warning');
 
-        // בדיקת PIN
         if(currentUser.securityPin) {
             const {value:pin} = await Swal.fire({
                 title: '🔒 אימות אבטחה', 
@@ -457,13 +441,7 @@
             Swal.close();
 
             if(data.success) {
-                Swal.fire({
-                    title: 'הצלחה!', 
-                    text: data.message, 
-                    icon: 'success',
-                    timer: 2000,
-                    showConfirmButton: false
-                });
+                Swal.fire({ title: 'הצלחה!', text: data.message, icon: 'success', timer: 2000, showConfirmButton: false });
                 loadUserProfile();
                 document.getElementById('custom-amount').value = '';
                 document.getElementById('donation-note').value = '';
@@ -474,7 +452,6 @@
         }
     }
 
-    // --- ניהול סל ---
     function openBasket() { new bootstrap.Modal(document.getElementById('basketModal')).show(); }
     
     function renderBasket() {
@@ -510,7 +487,6 @@
         loadUserProfile();
     }
 
-    // --- הגדרות ---
     function openSettings() { new bootstrap.Modal(document.getElementById('settingsModal')).show(); }
 
     async function saveSettings() {
