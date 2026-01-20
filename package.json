@@ -1,16 +1,18 @@
 {
-  "name": "pushka-server",
+  "name": "pushcoins-server",
   "version": "1.0.0",
-  "description": "Charity App Server",
+  "description": "Server for Pushka App",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
+    "axios": "^1.6.0",
     "cors": "^2.8.5",
-    "axios": "^1.6.2",
-    "mongoose": "^8.0.3",
+    "express": "^4.18.2",
+    "firebase-admin": "^11.11.0",
+    "mongoose": "^7.6.3",
+    "node-cron": "^3.0.3",
     "nodemailer": "^6.9.7"
   },
   "engines": {
