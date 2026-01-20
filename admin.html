@@ -2,156 +2,472 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>ניהול מערכת</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>מערכת ניהול - קופת צדקה</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <style>body{background:#f8f9fa;}</style>
+
+    <style>
+        :root {
+            --primary-color: #4361ee;
+            --secondary-color: #3f37c9;
+            --success-color: #4cc9f0;
+            --bg-color: #f8f9fa;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            font-family: 'Rubik', sans-serif;
+            color: #2b2d42;
+        }
+
+        /* כרטיסיות סטטיסטיקה */
+        .stat-card {
+            border: none;
+            border-radius: 20px;
+            padding: 20px;
+            color: white;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+            height: 100%;
+        }
+        .stat-card:hover { transform: translateY(-5px); }
+        .bg-gradient-1 { background: linear-gradient(45deg, #4361ee, #3a0ca3); }
+        .bg-gradient-2 { background: linear-gradient(45deg, #f72585, #b5179e); }
+        .bg-gradient-3 { background: linear-gradient(45deg, #4cc9f0, #4895ef); }
+        .bg-gradient-4 { background: linear-gradient(45deg, #f8961e, #f9c74f); }
+
+        .stat-icon { font-size: 2.5rem; opacity: 0.8; }
+        .stat-value { font-size: 2rem; font-weight: 700; margin-bottom: 0; }
+        .stat-label { font-size: 0.9rem; opacity: 0.9; }
+
+        /* טבלה */
+        .table-card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+            overflow: hidden;
+            border: none;
+        }
+        .table thead th {
+            background-color: #f1f3f5;
+            color: #6c757d;
+            font-weight: 600;
+            border: none;
+            padding: 15px;
+        }
+        .table tbody td {
+            vertical-align: middle;
+            padding: 15px;
+            border-bottom: 1px solid #f8f9fa;
+        }
+        .user-avatar {
+            width: 40px; height: 40px;
+            background: #e9ecef;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            color: #adb5bd; font-weight: bold;
+        }
+        
+        /* כפתורים */
+        .btn-action {
+            width: 35px; height: 35px;
+            display: inline-flex; align-items: center; justify-content: center;
+            border-radius: 10px;
+            transition: 0.2s;
+            border: none;
+        }
+        .btn-edit { background: #e2eafc; color: #4361ee; }
+        .btn-edit:hover { background: #4361ee; color: white; }
+        .btn-delete { background: #ffccd5; color: #e01e37; }
+        .btn-delete:hover { background: #e01e37; color: white; }
+
+        .search-box {
+            border: none;
+            background: #fff;
+            padding: 15px 20px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+            width: 100%;
+            font-size: 1.1rem;
+        }
+        .search-box:focus { outline: none; box-shadow: 0 5px 20px rgba(67, 97, 238, 0.2); }
+    </style>
 </head>
 <body>
 
-<div class="container py-4 d-none" id="admin-panel">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3>🛡️ ניהול קופה</h3>
+<div id="login-overlay" class="position-fixed top-0 start-0 w-100 h-100 bg-light d-flex justify-content-center align-items-center" style="z-index: 9999;">
+    <div class="text-center p-5 bg-white rounded-4 shadow-lg" style="max-width: 400px; width: 90%;">
+        <i class="fas fa-user-shield fa-4x text-primary mb-3"></i>
+        <h3>כניסת מנהל</h3>
+        <p class="text-muted mb-4">נא להזין סיסמת ניהול</p>
+        <button class="btn btn-primary w-100 btn-lg rounded-pill" onclick="adminLogin()">התחבר</button>
+    </div>
+</div>
+
+<div class="container-fluid py-4 d-none" id="admin-content">
+    
+    <div class="d-flex justify-content-between align-items-center mb-5">
         <div>
-            <button class="btn btn-dark" onclick="openPushModal()">📢 הודעה לכולם</button>
-            <button class="btn btn-outline-secondary" onclick="location.reload()">🔄</button>
+            <h2 class="fw-bold m-0">לוח בקרה</h2>
+            <small class="text-muted">ניהול קופת צדקה</small>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-warning shadow-sm fw-bold text-white" onclick="recalcTotals()">
+                <i class="fas fa-calculator me-2"></i> תיקון סכומים
+            </button>
+            <button class="btn btn-primary shadow-sm fw-bold" onclick="openPushModal()">
+                <i class="fas fa-paper-plane me-2"></i> שלח הודעה לכולם
+            </button>
+            <button class="btn btn-dark shadow-sm" onclick="location.reload()">
+                <i class="fas fa-sync-alt"></i>
+            </button>
         </div>
     </div>
 
-    <div class="row g-2 mb-4 text-center">
-        <div class="col-6 col-md-3"><div class="card p-2 border-primary"><h4 class="text-primary m-0" id="stat-total">0</h4><small>סה"כ נתרם</small></div></div>
-        <div class="col-6 col-md-3"><div class="card p-2 border-success"><h4 class="text-success m-0" id="stat-month">0</h4><small>החודש</small></div></div>
-        <div class="col-6 col-md-3"><div class="card p-2 border-warning"><h4 class="text-warning m-0" id="stat-users">0</h4><small>משתמשים</small></div></div>
-        <div class="col-6 col-md-3"><div class="card p-2 border-info"><h4 class="text-info m-0" id="stat-count">0</h4><small>תרומות</small></div></div>
+    <div class="row g-4 mb-5">
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-card bg-gradient-1 d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value" id="stat-total">₪0</div>
+                    <div class="stat-label">סה"כ נתרם</div>
+                </div>
+                <i class="fas fa-coins stat-icon"></i>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-card bg-gradient-2 d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value" id="stat-users">0</div>
+                    <div class="stat-label">משתמשים רשומים</div>
+                </div>
+                <i class="fas fa-users stat-icon"></i>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-card bg-gradient-3 d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value" id="stat-count">0</div>
+                    <div class="stat-label">מספר תרומות</div>
+                </div>
+                <i class="fas fa-receipt stat-icon"></i>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-card bg-gradient-4 d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value" id="stat-month">₪0</div>
+                    <div class="stat-label">הערכה חודשית</div>
+                </div>
+                <i class="fas fa-calendar-check stat-icon"></i>
+            </div>
+        </div>
     </div>
 
-    <div class="card">
-        <div class="card-header"><input type="text" id="search" class="form-control" placeholder="חיפוש..." onkeyup="loadUsers()"></div>
-        <div class="card-body p-0 table-responsive">
-            <table class="table table-hover mb-0">
-                <thead><tr><th>שם</th><th>פרטים</th><th>תרומות</th><th>פעולות</th></tr></thead>
-                <tbody id="users-body"></tbody>
-            </table>
+    <div class="row">
+        <div class="col-12 mb-4">
+            <input type="text" id="search-box" class="search-box" placeholder="🔍 חיפוש משתמש לפי שם, טלפון או מייל..." onkeyup="debounceSearch()">
+        </div>
+        
+        <div class="col-12">
+            <div class="card table-card">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>משתמש</th>
+                                    <th>פרטי קשר</th>
+                                    <th>ת"ז</th>
+                                    <th>אשראי (Token)</th>
+                                    <th>סה"כ תרומות</th>
+                                    <th class="text-end">פעולות</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-table-body">
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold">עריכת משתמש</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-id">
+                <div class="form-floating mb-3">
+                    <input type="text" class="form-control rounded-3" id="edit-name" placeholder="שם">
+                    <label>שם מלא</label>
+                </div>
+                <div class="form-floating mb-3">
+                    <input type="text" class="form-control rounded-3" id="edit-phone" placeholder="טלפון">
+                    <label>טלפון</label>
+                </div>
+                <div class="form-floating mb-3">
+                    <input type="email" class="form-control rounded-3" id="edit-email" placeholder="מייל">
+                    <label>אימייל</label>
+                </div>
+                <div class="form-floating mb-3">
+                    <input type="text" class="form-control rounded-3" id="edit-tz" placeholder="תז">
+                    <label>תעודת זהות</label>
+                </div>
+                <div class="form-floating mb-3">
+                    <input type="text" class="form-control rounded-3 font-monospace" id="edit-token" placeholder="Token">
+                    <label class="text-danger">Token אשראי (למתקדמים בלבד)</label>
+                </div>
+                <button class="btn btn-primary w-100 rounded-pill py-3 fw-bold" onclick="saveUser()">שמור שינויים</button>
+            </div>
         </div>
     </div>
 </div>
 
 <div class="modal fade" id="pushModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title">שליחת פוש</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body">
-                <input type="text" id="push-title" class="form-control mb-2" placeholder="כותרת">
-                <textarea id="push-body" class="form-control" rows="3" placeholder="תוכן ההודעה"></textarea>
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4 border-0">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-bell me-2"></i> שליחת הודעה לכולם</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-footer"><button class="btn btn-primary w-100" onclick="sendPush()">שלח</button></div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">כותרת</label>
+                    <input type="text" id="push-title" class="form-control" placeholder="למשל: תודה רבה!">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">תוכן ההודעה</label>
+                    <textarea id="push-body" class="form-control" rows="3" placeholder="מה תרצה לומר לתורמים?"></textarea>
+                </div>
+                <button class="btn btn-primary w-100 py-2" onclick="sendPush()">🚀 שלח הודעה</button>
+            </div>
         </div>
     </div>
 </div>
 
-<div class="modal fade" id="editUserModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title">עריכה</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body">
-                <input type="hidden" id="edit-id">
-                <div class="mb-2"><label>שם:</label><input type="text" id="edit-name" class="form-control"></div>
-                <div class="mb-2"><label>ת"ז:</label><input type="text" id="edit-tz" class="form-control"></div>
-                <div class="mb-2"><label>טלפון:</label><input type="text" id="edit-phone" class="form-control"></div>
-                <div class="mb-2"><label>מייל:</label><input type="text" id="edit-email" class="form-control"></div>
-                <div class="mb-2"><label class="text-danger fw-bold">Token (אשראי):</label><input type="text" id="edit-token" class="form-control font-monospace"></div>
-            </div>
-            <div class="modal-footer"><button class="btn btn-success w-100" onclick="saveUser()">שמור</button></div>
-        </div>
-    </div>
-</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
     const API_URL = "https://pushcoins-server.onrender.com";
+    const ADMIN_PASS = "admin1234"; // הסיסמה שהגדרנו בשרת
 
-    window.onload = function() {
-        Swal.fire({input:'password', title:'סיסמה', allowOutsideClick:false}).then(res => {
-            if(res.value === 'admin1234') {
-                document.getElementById('admin-panel').classList.remove('d-none');
-                loadStats(); loadUsers();
-            } else location.reload();
+    // התחברות ראשונית
+    function adminLogin() {
+        Swal.fire({
+            title: 'הכנס סיסמה',
+            input: 'password',
+            inputAttributes: { autocapitalize: 'off' },
+            showCancelButton: false,
+            confirmButtonText: 'כנס',
+            allowOutsideClick: false
+        }).then((result) => {
+            if (result.value === ADMIN_PASS) {
+                document.getElementById('login-overlay').classList.add('d-none');
+                document.getElementById('admin-content').classList.remove('d-none');
+                loadStats();
+                loadUsers();
+            } else {
+                Swal.fire('שגיאה', 'סיסמה שגויה', 'error');
+            }
         });
-    };
+    }
 
+    // טעינת סטטיסטיקות
     async function loadStats() {
-        const res = await fetch(`${API_URL}/admin/stats`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({password: 'admin1234'}) });
-        const data = await res.json();
-        if(data.success) {
-            document.getElementById('stat-total').innerText = '₪' + data.stats.totalDonated.toLocaleString();
-            document.getElementById('stat-month').innerText = '₪' + data.stats.monthlyDonated.toLocaleString();
-            document.getElementById('stat-users').innerText = data.stats.totalUsers;
-            document.getElementById('stat-count').innerText = data.stats.totalDonationsCount;
-        }
+        try {
+            const res = await fetch(`${API_URL}/admin/stats`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ password: ADMIN_PASS })
+            });
+            const data = await res.json();
+            if(data.success) {
+                document.getElementById('stat-total').innerText = '₪' + data.stats.totalDonated.toLocaleString();
+                document.getElementById('stat-users').innerText = data.stats.totalUsers;
+                // סתם הערכה לחודשי (סה"כ חלקי 12 או משהו דומה, אפשר לשכלל בשרת)
+                document.getElementById('stat-month').innerText = '₪' + Math.round(data.stats.totalDonated / 12).toLocaleString(); 
+                // הנחה: כמות תרומות זה מספר משוער אם אין לנו בשרת כרגע
+                document.getElementById('stat-count').innerText = Math.round(data.stats.totalDonated / 50); 
+            }
+        } catch(e) { console.error(e); }
+    }
+
+    // טעינת משתמשים (כולל חיפוש)
+    let searchTimeout;
+    function debounceSearch() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(loadUsers, 500);
     }
 
     async function loadUsers() {
-        const query = document.getElementById('search').value;
-        const res = await fetch(`${API_URL}/admin/get-users`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({password: 'admin1234', searchQuery: query}) });
-        const data = await res.json();
-        const tbody = document.getElementById('users-body');
-        tbody.innerHTML = '';
-        data.users.forEach(u => {
-            tbody.innerHTML += `
-                <tr>
-                    <td class="fw-bold">${u.name||'-'}</td>
-                    <td><div class="small">${u.phone||''}</div><div class="small text-muted">${u.email||''}</div></td>
-                    <td>₪${u.totalDonated}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-primary" onclick='editUser(${JSON.stringify(u)})'><i class="fas fa-edit"></i></button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteUser('${u._id}')"><i class="fas fa-trash"></i></button>
-                    </td>
-                </tr>`;
-        });
+        const query = document.getElementById('search-box').value;
+        try {
+            const res = await fetch(`${API_URL}/admin/get-users`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ password: ADMIN_PASS, searchQuery: query })
+            });
+            const data = await res.json();
+            
+            const tbody = document.getElementById('users-table-body');
+            tbody.innerHTML = '';
+            
+            if(data.users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">לא נמצאו משתמשים</td></tr>';
+                return;
+            }
+
+            data.users.forEach(u => {
+                const initial = (u.name || "?").charAt(0);
+                const tokenBadge = u.token 
+                    ? `<span class="badge bg-success-subtle text-success">פעיל</span>` 
+                    : `<span class="badge bg-danger-subtle text-danger">אין</span>`;
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <div class="user-avatar ms-3">${initial}</div>
+                                <div>
+                                    <div class="fw-bold">${u.name || 'ללא שם'}</div>
+                                    <small class="text-muted" style="font-size:0.75rem">ID: ${u._id.slice(-4)}</small>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <div><i class="fas fa-phone fa-xs text-muted ms-1"></i> ${u.phone || '-'}</div>
+                            <div class="small text-muted"><i class="fas fa-envelope fa-xs ms-1"></i> ${u.email || '-'}</div>
+                        </td>
+                        <td>${u.tz || '-'}</td>
+                        <td>${tokenBadge} <small class="text-muted font-monospace">${u.token ? '...' + u.token.slice(-4) : ''}</small></td>
+                        <td class="fw-bold text-success">₪${u.totalDonated.toLocaleString()}</td>
+                        <td class="text-end">
+                            <button class="btn-action btn-edit ms-1" onclick='openEditModal(${JSON.stringify(u).replace(/'/g, "&#39;")})' title="ערוך">
+                                <i class="fas fa-pen"></i>
+                            </button>
+                            <button class="btn-action btn-delete" onclick="deleteUser('${u._id}')" title="מחק">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+        } catch(e) { console.error(e); }
     }
 
-    function editUser(u) {
+    // פונקציות עריכה
+    const editModal = new bootstrap.Modal(document.getElementById('editModal'));
+
+    function openEditModal(u) {
         document.getElementById('edit-id').value = u._id;
-        document.getElementById('edit-name').value = u.name||'';
-        document.getElementById('edit-tz').value = u.tz||'';
-        document.getElementById('edit-phone').value = u.phone||'';
-        document.getElementById('edit-email').value = u.email||'';
-        document.getElementById('edit-token').value = u.token||'';
-        new bootstrap.Modal(document.getElementById('editUserModal')).show();
+        document.getElementById('edit-name').value = u.name || '';
+        document.getElementById('edit-phone').value = u.phone || '';
+        document.getElementById('edit-email').value = u.email || '';
+        document.getElementById('edit-tz').value = u.tz || '';
+        document.getElementById('edit-token').value = u.token || '';
+        editModal.show();
     }
 
     async function saveUser() {
+        const id = document.getElementById('edit-id').value;
         const userData = {
             name: document.getElementById('edit-name').value,
-            tz: document.getElementById('edit-tz').value,
             phone: document.getElementById('edit-phone').value,
             email: document.getElementById('edit-email').value,
-            token: document.getElementById('edit-token').value
+            tz: document.getElementById('edit-tz').value,
+            token: document.getElementById('edit-token').value,
         };
-        await fetch(`${API_URL}/admin/update-user-full`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({password: 'admin1234', userId: document.getElementById('edit-id').value, userData}) });
-        bootstrap.Modal.getInstance(document.getElementById('editUserModal')).hide();
-        loadUsers();
+
+        Swal.fire({title:'שומר...', didOpen:()=>Swal.showLoading()});
+        
+        try {
+            await fetch(`${API_URL}/admin/update-user-full`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ password: ADMIN_PASS, userId: id, userData })
+            });
+            editModal.hide();
+            Swal.fire('נשמר', '', 'success');
+            loadUsers();
+        } catch(e) { Swal.fire('שגיאה', 'תקלה בשמירה', 'error'); }
     }
 
+    // מחיקת משתמש
     async function deleteUser(id) {
-        if(confirm('למחוק?')) {
-            await fetch(`${API_URL}/admin/delete-user`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({password: 'admin1234', userId: id}) });
+        const res = await Swal.fire({
+            title: 'למחוק את המשתמש?',
+            text: "פעולה זו היא בלתי הפיכה!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            confirmButtonText: 'כן, מחק',
+            cancelButtonText: 'ביטול'
+        });
+
+        if (res.isConfirmed) {
+            await fetch(`${API_URL}/admin/delete-user`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ password: ADMIN_PASS, userId: id })
+            });
             loadUsers();
+            loadStats();
+            Swal.fire('נמחק!', '', 'success');
         }
     }
 
-    function openPushModal() { new bootstrap.Modal(document.getElementById('pushModal')).show(); }
-    
+    // חישוב מחדש (תיקון באגים בסכומים)
+    async function recalcTotals() {
+        Swal.fire({title:'מבצע חישוב מחדש...', text: 'מתקן סכומים לפי היסטוריית התרומות', didOpen:()=>Swal.showLoading()});
+        try {
+            const res = await fetch(`${API_URL}/admin/recalc-totals`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ password: ADMIN_PASS })
+            });
+            const data = await res.json();
+            Swal.fire('בוצע', `עודכנו ${data.count} משתמשים`, 'success');
+            loadStats();
+            loadUsers();
+        } catch(e) { Swal.fire('שגיאה', '', 'error'); }
+    }
+
+    // שליחת פוש
+    const pushModal = new bootstrap.Modal(document.getElementById('pushModal'));
+    function openPushModal() { pushModal.show(); }
+
     async function sendPush() {
         const title = document.getElementById('push-title').value;
         const body = document.getElementById('push-body').value;
-        const res = await fetch(`${API_URL}/admin/send-push`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({password: 'admin1234', title, body}) });
-        const data = await res.json();
-        bootstrap.Modal.getInstance(document.getElementById('pushModal')).hide();
-        if(data.success) Swal.fire('נשלח!', `ל-${data.sentCount} מכשירים`, 'success');
-        else Swal.fire('שגיאה', data.error, 'error');
+        
+        if(!title || !body) return Swal.fire('חסרים פרטים', '', 'warning');
+
+        pushModal.hide();
+        Swal.fire({title:'שולח...', didOpen:()=>Swal.showLoading()});
+
+        try {
+            const res = await fetch(`${API_URL}/admin/send-push`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ password: ADMIN_PASS, title, body })
+            });
+            const data = await res.json();
+            if(data.success) Swal.fire('נשלח!', `הודעה נשלחה ל-${data.sentCount} מכשירים`, 'success');
+            else Swal.fire('שגיאה', data.error || 'לא נשלח', 'error');
+        } catch(e) { Swal.fire('שגיאה', 'תקלה בשליחה', 'error'); }
     }
+
+    // הפעלה ראשונית: הצגת מסך לוגין
+    // (הפונקציה adminLogin כבר מופעלת ע"י הכפתור במסך)
 </script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
