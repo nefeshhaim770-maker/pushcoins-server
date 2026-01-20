@@ -9,13 +9,24 @@ app.use(express.json());
 app.use(cors());
 
 // ============================================================
-// ⚙️ הגדרות המייל - Pushka App
+// ⚙️ הגדרות המייל (הגדרה מתקדמת ומאובטחת ל-Google Workspace)
 // ============================================================
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com', // שרת ה-SMTP של גוגל
+    port: 465,              // פורט מאובטח
+    secure: true,           // שימוש ב-SSL
     auth: {
         user: 'ceo1@nefesh-ha-chaim.org', // המייל שלך
-        pass: 'bcnq usuk puzk zxlc'       // סיסמת האפליקציה
+        pass: 'bcnq usuk puzk zxlc'       // סיסמת האפליקציה שלך
+    }
+});
+
+// בדיקה שהמייל מחובר תקין בעת עליית השרת
+transporter.verify(function (error, success) {
+    if (error) {
+        console.log("❌ שגיאה בחיבור לשרת המיילים:", error);
+    } else {
+        console.log("✅ שרת המיילים מוכן לשליחה!");
     }
 });
 // ============================================================
@@ -86,7 +97,7 @@ app.post('/update-code', async (req, res) => {
 
         await User.findOneAndUpdate(query, { $set: updateData }, { upsert: true, new: true });
 
-        // שליחת מייל ללקוח
+        // --- שליחת מייל ללקוח (לוגיקה משופרת) ---
         if (cleanEmail) {
             const mailOptions = {
                 from: '"קופת צדקה - נפש החיים" <ceo1@nefesh-ha-chaim.org>',
@@ -101,14 +112,21 @@ app.post('/update-code', async (req, res) => {
                 `
             };
 
-            transporter.sendMail(mailOptions, function(error, info){
-                if (error) { console.log('❌ Error sending email:', error); }
-                else { console.log('✅ Email sent: ' + info.response); }
-            });
+            // שימוש ב-await כדי לוודא שליחה ולתפוס שגיאות
+            try {
+                let info = await transporter.sendMail(mailOptions);
+                console.log("📧 המייל נשלח בהצלחה: " + info.messageId);
+            } catch (mailError) {
+                console.error("❌ שגיאה בשליחת המייל: ", mailError);
+                // לא עוצרים את הבקשה, רק מדפיסים שגיאה ללוג
+            }
         }
 
         res.json({ success: true });
-    } catch (e) { res.status(500).json({ success: false }); }
+    } catch (e) { 
+        console.error("General Error in update-code:", e);
+        res.status(500).json({ success: false }); 
+    }
 });
 
 app.post('/verify-auth', async (req, res) => {
@@ -187,7 +205,6 @@ app.post('/donate', async (req, res) => {
 
         const amountInAgorot = Math.round(parseFloat(amount) * 100);
 
-        // ✅ המפתח לזיהוי לקוח: תעודת זהות נקייה
         const rawId = tz || user.tz || "000000000";
         const realIdToSend = rawId.replace(/\D/g, ''); 
         
@@ -204,7 +221,7 @@ app.post('/donate', async (req, res) => {
             FirstName: (fullName || user.name || "Torem").split(" ")[0],
             LastName: (fullName || user.name || "").split(" ").slice(1).join(" ") || "Family",
             Mail: email || user.email || "no-email@test.com",
-            Id: realIdToSend, // ת"ז לזיהוי
+            Id: realIdToSend,
             Details: note || ""
         };
 
