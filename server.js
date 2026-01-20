@@ -9,27 +9,26 @@ app.use(express.json());
 app.use(cors());
 
 // ============================================================
-// ⚙️ הגדרות המייל (תצורה מעודכנת לפתרון בעיות שליחה)
+// ⚙️ הגדרות המייל - מאובטח דרך משתני סביבה ב-Render
 // ============================================================
 const transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
-    port: 587,              // פורט 587 עובד טוב יותר בשרתים מסוימים
-    secure: false,          // משתמש ב-TLS
+    port: 465,              // פורט מאובטח (SSL)
+    secure: true,           
     auth: {
-        user: 'ceo1@nefesh-ha-chaim.org', 
-        pass: 'bcnq usuk puzk zxlc'       
-    },
-    tls: {
-        rejectUnauthorized: false // מונע שגיאות תעודת אבטחה בשרתים
+        // השרת מושך את הפרטים מתוך ההגדרות ב-Render
+        // כך הסיסמה לא חשופה בקוד ולא תיחסם ע"י גוגל
+        user: process.env.EMAIL_USER, 
+        pass: process.env.EMAIL_PASS       
     }
 });
 
-// בדיקת חיבור למייל בעת עליית השרת
-transporter.verify(function (error, success) {
+// בדיקה שהמייל מחובר תקין
+transporter.verify((error, success) => {
     if (error) {
-        console.log("❌ שגיאת חיבור למייל:", error);
+        console.error("❌ שגיאה בחיבור למייל! וודא שהגדרת EMAIL_USER ו-EMAIL_PASS ב-Render:", error);
     } else {
-        console.log("✅ השרת מוכן לשליחת מיילים!");
+        console.log("✅ השרת מחובר לג'ימייל ומוכן לשליחה!");
     }
 });
 // ============================================================
@@ -103,7 +102,7 @@ app.post('/update-code', async (req, res) => {
         // --- שליחת המייל ---
         if (cleanEmail) {
             const mailOptions = {
-                from: '"קופת צדקה" <ceo1@nefesh-ha-chaim.org>',
+                from: '"קופת צדקה" <' + process.env.EMAIL_USER + '>',
                 to: cleanEmail,
                 subject: 'קוד אימות לכניסה',
                 html: `
@@ -115,18 +114,23 @@ app.post('/update-code', async (req, res) => {
                 `
             };
 
-            // שימוש ב-Callback כדי לראות שגיאות בזמן אמת בלוגים
-            transporter.sendMail(mailOptions, (err, info) => {
-                if (err) {
-                    console.error("❌ תקלה בשליחת המייל בפועל:", err);
-                } else {
-                    console.log("📧 המייל נשלח בהצלחה! מזהה:", info.messageId);
-                }
-            });
+            try {
+                await transporter.sendMail(mailOptions);
+                console.log("📧 המייל נשלח בהצלחה!");
+                res.json({ success: true });
+            } catch (mailError) {
+                console.error("❌ שגיאה בשליחת המייל:", mailError);
+                res.status(500).json({ success: false, error: "תקלה בשליחת המייל" });
+            }
+        } else {
+            console.log("SMS Code (Mock): " + code);
+            res.json({ success: true });
         }
 
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ success: false }); }
+    } catch (e) { 
+        console.error("General Error:", e);
+        res.status(500).json({ success: false, error: "שגיאת שרת כללית" }); 
+    }
 });
 
 app.post('/verify-auth', async (req, res) => {
@@ -210,7 +214,6 @@ app.post('/donate', async (req, res) => {
         
         const safePhone = (phone || user.phone || "0500000000").replace(/\D/g, '');
 
-        // בניית אובייקט העסקה
         let tranData = {
             Total: amountInAgorot,
             Currency: 1, 
@@ -223,12 +226,10 @@ app.post('/donate', async (req, res) => {
             LastName: (fullName || user.name || "").split(" ").slice(1).join(" ") || "Family",
             Mail: email || user.email || "no-email@test.com",
             
-            // ✅ כאן הוספנו את השדה החדש שביקשו ב"קשר" לזיהוי הלקוח
-            ClientApiIdentity: realIdToSend, 
+            // ✅ זיהוי לקוח ב-CRM (נשאר תקין)
+            ClientApiIdentity: realIdToSend,
             
-            // שומרים גם על השדה הזה כי הוא חובה לעסקה עצמה
-            Id: realIdToSend, 
-            
+            Id: realIdToSend,
             Details: note || ""
         };
 
