@@ -73,25 +73,24 @@ app.post('/update-code', async (req, res) => {
 
         await User.findOneAndUpdate(query, { $set: updateData }, { upsert: true, new: true });
 
-        // --- שליחת מייל דרך השרת (עם המפתח הפרטי שלך) ---
+        // --- שליחת מייל (עם התיקון למפתח שלך) ---
         if (cleanEmail) {
             try {
-                // ✅ המפתח הפרטי שלך שהכנסנו:
-                const PRIVATE_KEY = "b-Dz-J0Iq_yJvCfqX5Iw3"; 
+                const PRIVATE_KEY = "b-Dz-J0Iq_yJvCfqX5Iw3"; // המפתח שלך
 
                 await axios.post('https://api.emailjs.com/api/v1.0/email/send', {
                     service_id: 'service_8f6h188',
                     template_id: 'template_tzbq0k4',
-                    user_id: 'yLYooSdg891aL7etD', // Public Key
+                    user_id: 'yLYooSdg891aL7etD',
                     template_params: {
                         email: cleanEmail,
                         code: code
                     },
                     accessToken: PRIVATE_KEY
                 });
-                console.log("📧 Email sent successfully via Server");
+                console.log("📧 Email sent via Server");
             } catch (emailError) {
-                console.error("❌ Email sending failed:", emailError.response ? emailError.response.data : emailError.message);
+                console.error("❌ Email failed");
             }
         }
 
@@ -175,9 +174,7 @@ app.post('/donate', async (req, res) => {
 
         const amountInAgorot = Math.round(parseFloat(amount) * 100);
 
-        const safeId = (tz && tz.length > 5) ? tz : (user.tz || "000000000");
-        const safePhone = (phone || user.phone || "0500000000").replace(/\D/g, '');
-
+        // ✅ חזרתי ללוגיקה הפשוטה שעבדה לך בקוד המקורי:
         let tranData = {
             Total: amountInAgorot,
             Currency: 1, 
@@ -185,11 +182,11 @@ app.post('/donate', async (req, res) => {
             ParamJ: "J4", 
             TransactionType: "debit",
             ProjectNumber: "00001",
-            Phone: safePhone,
+            Phone: (phone || user.phone || "0500000000").toString(),
             FirstName: (fullName || user.name || "Torem").split(" ")[0],
             LastName: (fullName || user.name || "").split(" ").slice(1).join(" ") || "Family",
             Mail: email || user.email || "no-email@test.com",
-            Id: safeId,
+            Id: tz || user.tz || "000000000", // פשטות: זה מה שעבד בקוד ששלחת
             Details: note || ""
         };
 
@@ -222,7 +219,7 @@ app.post('/donate', async (req, res) => {
 
         if (isSuccess) {
             if (fullName) user.name = fullName;
-            if (tz && tz.length > 5) user.tz = tz;
+            if (tz) user.tz = tz;
             if (phone) user.phone = phone;
 
             if (!useToken && resData.Token) {
