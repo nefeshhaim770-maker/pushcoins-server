@@ -10,7 +10,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// --- 1. הגדרות Firebase (הודעות פוש) ---
+// --- 1. הגדרות Firebase ---
 try {
     const serviceAccount = require('/etc/secrets/serviceAccountKey.json'); 
     admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
@@ -23,7 +23,7 @@ try {
     } catch (e) { console.log("⚠️ Warning: Firebase key not found."); }
 }
 
-// --- 2. חיבור למסד הנתונים ---
+// --- 2. חיבור ל-DB ---
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
     .then(() => console.log('✅ MongoDB Connected'))
     .catch(err => console.error('❌ MongoDB Error:', err));
@@ -54,7 +54,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- 4. פונקציות עזר ---
+// --- 4. פונקציות עזר וחיוב ---
 function fixToken(token) {
     if (!token) return "";
     let strToken = String(token).replace(/['"]+/g, '').trim();
@@ -99,67 +99,28 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
 }
 
 // --- 5. נתיבים (Routes) ---
-
-// הגשת קבצים סטטיים
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/manager', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
 app.get('/firebase-messaging-sw.js', (req, res) => res.sendFile(path.join(__dirname, 'firebase-messaging-sw.js')));
 
-// Cron Jobs
-cron.schedule('0 7 * * *', async () => {
-    const users = await User.find({ recurringDailyAmount: { $gt: 0 } });
-    for (const user of users) {
-        if (user.billingPreference === 0) {
-            try {
-                const result = await chargeKesher(user, user.recurringDailyAmount, "תרומה יומית");
-                if(result.isSuccess) { user.totalDonated += user.recurringDailyAmount; }
-                await user.save();
-            } catch(e) {}
-        } else {
-            user.pendingDonations.push({ amount: user.recurringDailyAmount, note: "יומית", date: new Date() });
-            await user.save();
-        }
-    }
-});
-
-cron.schedule('0 9 * * *', async () => {
-    const today = new Date().getDate();
-    const users = await User.find({ billingPreference: today, pendingDonations: { $exists: true, $not: { $size: 0 } } });
-    for (const user of users) {
-        let total = user.pendingDonations.reduce((acc, d) => acc + d.amount, 0);
-        try {
-            const result = await chargeKesher(user, total, "חיוב חודשי מרוכז");
-            if(result.isSuccess) { 
-                user.totalDonated += total;
-                user.pendingDonations = [];
-                user.donationsHistory.push({ amount: total, note: "חיוב חודשי", date: new Date(), status: 'success' });
-            }
-            await user.save();
-        } catch(e) {}
-    }
-});
-
-// שליחת קוד - כולל המפתחות שלך!
+// Auth & App Routes
 app.post('/update-code', async (req, res) => {
     let { email, phone, code } = req.body;
     let cleanEmail = email ? email.toLowerCase().trim() : undefined;
     let cleanPhone = phone ? phone.replace(/\D/g, '').trim() : undefined;
-    
-    console.log(`🔑 LOGIN CODE: ${code}`); // גיבוי לוגים
+    console.log(`🔑 LOGIN CODE: ${code}`);
 
     if (cleanEmail) {
         try {
             await axios.post('https://api.emailjs.com/api/v1.0/email/send', {
-                service_id: 'service_8f6h188',       // המפתח שלך
-                template_id: 'template_tzbq0k4',     // המפתח שלך
-                user_id: 'yLYooSdg891aL7etD',        // המפתח שלך
+                service_id: 'service_8f6h188',
+                template_id: 'template_tzbq0k4',
+                user_id: 'yLYooSdg891aL7etD',
                 template_params: { email: cleanEmail, code: code },
-                accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3" // המפתח הפרטי שלך
+                accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3"
             });
-            console.log("📧 Email sent successfully");
-        } catch (e) { console.error("❌ Email Error:", e.message); }
+        } catch (e) { console.error("Email Error:", e.message); }
     }
-
     await User.findOneAndUpdate(cleanEmail ? { email: cleanEmail } : { phone: cleanPhone }, 
         { $set: { tempCode: code, email: cleanEmail, phone: cleanPhone } }, { upsert: true, new: true });
     res.json({ success: true });
@@ -213,50 +174,75 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// Admin
-const ADMIN_PASS = "admin1234";
-app.post('/admin/login', (req, res) => res.json({ success: req.body.password === ADMIN_PASS }));
-app.post('/admin/get-users', async (req, res) => {
-    if(req.body.password !== ADMIN_PASS) return;
-    const regex = new RegExp(req.body.searchQuery || '', 'i');
-    const users = await User.find({ $or: [{ name: regex }, { email: regex }, { phone: regex }] });
-    res.json({ success: true, users });
+app.post('/delete-pending', async (req, res) => {
+    await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } });
+    res.json({ success: true });
 });
+
+app.post('/reset-token', async (req, res) => {
+    await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "" });
+    res.json({ success: true });
+});
+
+
+// --- ADMIN ROUTES (חשוב מאוד!) ---
+const ADMIN_PASS = "admin1234";
+
 app.post('/admin/stats', async (req, res) => {
-    if(req.body.password !== ADMIN_PASS) return;
+    if(req.body.password !== ADMIN_PASS) return res.json({success: false});
     const users = await User.find();
     let total = 0; users.forEach(u => u.donationsHistory?.forEach(d => { if(d.status==='success') total += d.amount || 0; }));
     res.json({ success: true, stats: { totalDonated: total, totalUsers: users.length } });
 });
+
+app.post('/admin/get-users', async (req, res) => {
+    if(req.body.password !== ADMIN_PASS) return res.json({success: false});
+    const users = await User.find().sort({ _id: -1 }); // הכי חדשים למעלה
+    res.json({ success: true, users });
+});
+
+app.post('/admin/delete-user', async (req, res) => {
+    if (req.body.password !== ADMIN_PASS) return res.status(403).json({ success: false });
+    await User.findByIdAndDelete(req.body.userId);
+    res.json({ success: true });
+});
+
+app.post('/admin/update-user-full', async (req, res) => {
+    if (req.body.password !== ADMIN_PASS) return res.status(403).json({ success: false });
+    await User.findByIdAndUpdate(req.body.userId, req.body.userData);
+    res.json({ success: true });
+});
+
+app.post('/admin/recalc-totals', async (req, res) => {
+    if (req.body.password !== ADMIN_PASS) return res.status(403).json({ success: false });
+    try {
+        const users = await User.find();
+        let updatedCount = 0;
+        for (const user of users) {
+            let realTotal = 0;
+            if(user.donationsHistory) {
+                user.donationsHistory.forEach(d => {
+                    if(d.status === 'success') realTotal += (d.amount || 0);
+                });
+            }
+            if(user.totalDonated !== realTotal) {
+                user.totalDonated = realTotal;
+                await user.save();
+                updatedCount++;
+            }
+        }
+        res.json({ success: true, count: updatedCount });
+    } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
 app.post('/admin/send-push', async (req, res) => {
-    if(req.body.password !== ADMIN_PASS) return;
+    if(req.body.password !== ADMIN_PASS) return res.json({success: false});
     const users = await User.find({ fcmToken: { $exists: true, $ne: "" } });
     const tokens = users.map(u => u.fcmToken);
     if(tokens.length === 0) return res.json({ success: false, error: "אין מכשירים" });
     const response = await admin.messaging().sendMulticast({ notification: { title: req.body.title, body: req.body.body }, tokens });
     res.json({ success: true, sentCount: response.successCount });
 });
-
-// API למחיקת ועדכון משתמש
-app.post('/admin/delete-user', async (req, res) => {
-    if (req.body.password !== ADMIN_PASS) return res.status(403).json({ success: false });
-    await User.findByIdAndDelete(req.body.userId);
-    res.json({ success: true });
-});
-app.post('/admin/update-user-full', async (req, res) => {
-    if (req.body.password !== ADMIN_PASS) return res.status(403).json({ success: false });
-    await User.findByIdAndUpdate(req.body.userId, req.body.userData);
-    res.json({ success: true });
-});
-app.post('/delete-pending', async (req, res) => {
-    await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } });
-    res.json({ success: true });
-});
-app.post('/reset-token', async (req, res) => {
-    await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "" });
-    res.json({ success: true });
-});
-
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
