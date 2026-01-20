@@ -2,24 +2,26 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const mongoose = require('mongoose');
-const cron = require('node-cron'); // ספרייה לתזמון משימות
-const admin = require('firebase-admin'); // ספרייה להודעות פוש
+const cron = require('node-cron'); // תזמון משימות
+const admin = require('firebase-admin'); // הודעות פוש
+const path = require('path'); // לניהול נתיבי קבצים
 const app = express();
 
 app.use(express.json());
 app.use(cors());
 
-// --- הגדרת Firebase להודעות פוש ---
+// ============================================================
+// 1. הגדרות Firebase (הודעות פוש)
+// ============================================================
 try {
-    // השרת יחפש את הקובץ שהעלית ל-Secret Files ב-Render
-    // הנתיב /etc/secrets/ הוא הנתיב הקבוע שבו Render שומר קבצים סודיים
+    // ב-Render הקובץ נמצא בנתיב המיוחד הזה
     const serviceAccount = require('/etc/secrets/serviceAccountKey.json'); 
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)
     });
     console.log("✅ Firebase Admin Initialized");
 } catch (error) {
-    // נסיון טעינה מקומי (למקרה של הרצה במחשב שלך)
+    // גיבוי למקרה שמריצים מהמחשב בבית
     try {
         const serviceAccount = require('./serviceAccountKey.json');
         admin.initializeApp({
@@ -31,16 +33,21 @@ try {
     }
 }
 
-// --- חיבור ל-MongoDB ---
+// ============================================================
+// 2. חיבור למסד הנתונים (MongoDB)
+// ============================================================
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
     .then(async () => {
         console.log('✅ MongoDB Connected');
+        // ניקוי אינדקסים ישנים למניעת כפילויות שגויות
         try { await mongoose.connection.db.collection('users').dropIndex('phone_1'); } catch (e) { }
         try { await mongoose.connection.db.collection('users').dropIndex('email_1'); } catch (e) { }
     })
     .catch(err => console.error('❌ MongoDB Error:', err));
 
-// --- סכמה משודרגת ---
+// ============================================================
+// 3. הגדרת המשתמש (Schema)
+// ============================================================
 const userSchema = new mongoose.Schema({
     // פרטים אישיים
     email: { type: String, sparse: true, unique: true },
@@ -73,12 +80,12 @@ const userSchema = new mongoose.Schema({
         status: { type: String, default: 'success' }, 
         failReason: String,
         cardDigits: String,
-        transactionId: String // מספר אסמכתא מקשר
+        transactionId: String
     }],
 
     // תרומות שממתינות לחיוב המרוכז (סל תרומות)
     pendingDonations: [{
-        _id: { type: mongoose.Schema.Types.ObjectId, auto: true }, // מזהה ייחודי למחיקה
+        _id: { type: mongoose.Schema.Types.ObjectId, auto: true },
         amount: Number,
         date: { type: Date, default: Date.now },
         note: String
@@ -88,7 +95,9 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- פונקציות עזר ---
+// ============================================================
+// 4. פונקציות עזר (חיוב קשר, סידור אובייקטים)
+// ============================================================
 
 function sortObjectKeys(obj) {
     return Object.keys(obj).sort().reduce((result, key) => {
@@ -106,7 +115,7 @@ function fixToken(token) {
     return strToken;
 }
 
-// פונקציה מרכזית לחיוב מול "קשר"
+// פונקציה ראשית לביצוע חיוב מול חברת "קשר"
 async function chargeKesher(user, amount, note, creditDetails = null) {
     const amountInAgorot = Math.round(parseFloat(amount) * 100);
     const realIdToSend = user.tz || "000000000";
@@ -131,7 +140,7 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
     let finalExpiry = user.lastExpiry;
     let currentCardDigits = user.lastCardDigits;
 
-    // שימוש בכרטיס חדש אם סופק, אחרת בטוקן
+    // שימוש בכרטיס חדש או בטוקן קיים
     if (creditDetails) {
         tranData.CreditNum = creditDetails.num;
         if (creditDetails.exp.length === 4) {
@@ -167,18 +176,20 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
     return { isSuccess, resData, currentCardDigits, finalExpiry };
 }
 
-// --- משימות מתוזמנות (Cron Jobs) ---
+// ============================================================
+// 5. משימות מתוזמנות (Cron Jobs)
+// ============================================================
 
-// 1. הוראת קבע יומית + חיובים מיידיים - רץ כל יום ב-07:00 בבוקר
+// הוראת קבע יומית - רצה כל בוקר ב-07:00
 cron.schedule('0 7 * * *', async () => {
     console.log("⏰ Starting Daily Cron Job...");
-    const users = await User.find({ recurringDailyAmount: { $gt: 0 } }); // רק מי שהגדיר סכום יומי
+    const users = await User.find({ recurringDailyAmount: { $gt: 0 } });
 
     for (const user of users) {
         // אם המשתמש מוגדר לחיוב מיידי (0) -> מחייבים מיד
         if (user.billingPreference === 0) {
             try {
-                if (!user.token) continue; // אי אפשר לחייב ללא טוקן
+                if (!user.token) continue;
                 const result = await chargeKesher(user, user.recurringDailyAmount, "תרומה יומית קבועה");
                 
                 if (result.isSuccess) {
@@ -196,13 +207,13 @@ cron.schedule('0 7 * * *', async () => {
                         note: "תרומה יומית קבועה - נכשל",
                         date: new Date(),
                         status: 'failed',
-                        failReason: result.resData.Description || "שגיאה בחיוב יומי"
+                        failReason: result.resData.Description || "שגיאה"
                     });
                 }
                 await user.save();
             } catch (e) { console.error(`Failed daily charge for user ${user._id}`, e); }
         } 
-        // אם המשתמש מוגדר לחיוב מצטבר (2 או 10) -> מוסיפים לרשימת ההמתנה
+        // אחרת -> מוסיפים לסל
         else {
             user.pendingDonations.push({
                 amount: user.recurringDailyAmount,
@@ -215,12 +226,12 @@ cron.schedule('0 7 * * *', async () => {
     console.log("✅ Daily Cron Job Finished");
 });
 
-// 2. חיוב מרוכז - רץ ב-2 וב-10 לחודש ב-09:00 בבוקר
+// חיוב מרוכז - רץ ב-2 וב-10 לחודש ב-09:00 בבוקר
 cron.schedule('0 9 2,10 * *', async () => {
-    const today = new Date().getDate(); // 2 או 10
+    const today = new Date().getDate(); // מחזיר 2 או 10
     console.log(`⏰ Starting Monthly Aggregated Billing for day ${today}...`);
     
-    // מוצאים את כל המשתמשים שבחרו בתאריך הזה ויש להם תרומות בהמתנה
+    // מוצאים משתמשים שהיום הוא יום החיוב שלהם ויש להם פריטים בסל
     const users = await User.find({ 
         billingPreference: today, 
         pendingDonations: { $exists: true, $not: { $size: 0 } } 
@@ -236,7 +247,6 @@ cron.schedule('0 9 2,10 * *', async () => {
                 
                 if (result.isSuccess) {
                     user.totalDonated += totalAmount;
-                    // שומרים בהיסטוריה
                     user.donationsHistory.push({
                         amount: totalAmount,
                         note: "חיוב מרוכז חודשי",
@@ -244,8 +254,7 @@ cron.schedule('0 9 2,10 * *', async () => {
                         status: 'success',
                         cardDigits: user.lastCardDigits
                     });
-                    // מנקים את רשימת ההמתנה
-                    user.pendingDonations = [];
+                    user.pendingDonations = []; // מנקים את הסל
                 } else {
                      user.donationsHistory.push({
                         amount: totalAmount,
@@ -262,146 +271,31 @@ cron.schedule('0 9 2,10 * *', async () => {
     console.log("✅ Monthly Billing Finished");
 });
 
+// ============================================================
+// 6. נתיבי API (Routes)
+// ============================================================
 
-// --- Routes ---
-
-// שמירת טוקן לפוש (מהאפליקציה)
-app.post('/save-push-token', async (req, res) => {
-    const { userId, token } = req.body;
-    try {
-        await User.findByIdAndUpdate(userId, { fcmToken: token });
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ success: false }); }
+// הגשת קבצי ה-HTML (לקוח ומנהל)
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// עדכון הגדרות משתמש (יום חיוב + סכום יומי)
-app.post('/update-settings', async (req, res) => {
-    const { userId, billingPreference, recurringDailyAmount } = req.body;
-    try {
-        await User.findByIdAndUpdate(userId, { 
-            billingPreference: parseInt(billingPreference), // 0, 2, or 10
-            recurringDailyAmount: parseFloat(recurringDailyAmount) || 0
-        });
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ success: false }); }
+app.get('/manager', (req, res) => {
+    res.sendFile(path.join(__dirname, 'admin.html'));
 });
 
-// קבלת רשימת תרומות ממתינות (כדי שהמשתמש יוכל למחוק)
-app.post('/get-pending-donations', async (req, res) => {
-    const { userId } = req.body;
-    try {
-        const user = await User.findById(userId);
-        res.json({ success: true, pending: user.pendingDonations, billingDay: user.billingPreference });
-    } catch (e) { res.status(500).json({ success: false }); }
-});
-
-// מחיקת תרומה ממתינה
-app.post('/delete-pending', async (req, res) => {
-    const { userId, donationId } = req.body;
-    try {
-        await User.findByIdAndUpdate(userId, {
-            $pull: { pendingDonations: { _id: donationId } }
-        });
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ success: false }); }
-});
-
-// מסלול התרומה הראשי (מעודכן)
-app.post('/donate', async (req, res) => {
-    const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note, forceImmediate } = req.body;
-
-    try {
-        let user = await User.findById(userId);
-        if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
-
-        // עדכון פרטים אם נשלחו
-        if (fullName) user.name = fullName;
-        if (tz) user.tz = tz;
-        if (phone) user.phone = phone;
-        if (email) user.email = email;
-
-        // בדיקה: האם זה חיוב מיידי?
-        // כן אם: המשתמש בחר תשלום מיידי (0) OR לחץ על "תרומה ישירה" (forceImmediate) OR אין לו טוקן שמור ומשלם באשראי עכשיו
-        const shouldChargeNow = user.billingPreference === 0 || forceImmediate === true || (!useToken && ccDetails);
-
-        if (shouldChargeNow) {
-            console.log("🚀 מבצע חיוב מיידי...");
-            
-            // שימוש בפונקציית העזר לחיוב
-            const result = await chargeKesher(user, amount, note, !useToken ? ccDetails : null);
-
-            if (result.isSuccess) {
-                // עדכון טוקן אם הגיע חדש
-                if (!useToken && result.resData.Token) {
-                    user.token = fixToken(result.resData.Token);
-                    user.lastCardDigits = result.currentCardDigits;
-                    user.lastExpiry = result.finalExpiry;
-                }
-
-                user.totalDonated += parseFloat(amount);
-                user.donationsHistory.push({ 
-                    amount: parseFloat(amount), 
-                    note: note || "", 
-                    date: new Date(),
-                    status: 'success',
-                    cardDigits: user.lastCardDigits || result.currentCardDigits
-                });
-                
-                await user.save();
-                res.json({ success: true, user, message: "התרומה בוצעה בהצלחה!" });
-            } else {
-                const errorMsg = result.resData.RequestResult?.Description || result.resData.Description || "סירוב עסקה";
-                if (errorMsg.includes("טוקן")) user.token = "";
-                
-                user.donationsHistory.push({ 
-                    amount: parseFloat(amount), 
-                    note: note || "", 
-                    date: new Date(),
-                    status: 'failed',
-                    failReason: errorMsg,
-                    cardDigits: user.lastCardDigits
-                });
-                await user.save();
-                res.status(400).json({ success: false, error: errorMsg });
-            }
-
-        } else {
-            // הוספה לרשימת ההמתנה (מצטבר)
-            console.log("⏳ מוסיף לרשימת ההמתנה לחיוב מרוכז...");
-            user.pendingDonations.push({
-                amount: parseFloat(amount),
-                note: note || "",
-                date: new Date()
-            });
-            await user.save();
-            res.json({ success: true, user, message: `התרומה נוספה לסל ותחויב ב-${user.billingPreference} לחודש` });
-        }
-
-    } catch (e) {
-        console.error("🔥 Error:", e.message);
-        res.status(500).json({ success: false, error: "שגיאת תקשורת: " + e.message });
-    }
-});
-
-// --- ADMIN & LOGINS ---
+// התחברות ואימות
 app.post('/update-code', async (req, res) => {
     let { email, phone, code } = req.body;
     try {
-        let cleanEmail = undefined;
-        let cleanPhone = undefined;
-
-        if (email && email.toString().trim() !== "") cleanEmail = email.toString().toLowerCase().trim();
-        if (!cleanEmail && phone && phone.toString().trim() !== "") cleanPhone = phone.toString().replace(/\D/g, '').trim();
-
-        if (!cleanEmail && !cleanPhone) return res.status(400).json({ success: false, error: "חובה להזין מייל או טלפון" });
+        let cleanEmail = email ? email.toLowerCase().trim() : undefined;
+        let cleanPhone = phone ? phone.replace(/\D/g, '').trim() : undefined;
+        
+        if (!cleanEmail && !cleanPhone) return res.status(400).json({ success: false });
 
         const query = cleanEmail ? { email: cleanEmail } : { phone: cleanPhone };
-        let updateData = { tempCode: code };
-        if (cleanEmail) updateData.email = cleanEmail;
-        if (cleanPhone) updateData.phone = cleanPhone;
-        await User.findOneAndUpdate(query, { $set: updateData }, { upsert: true, new: true });
-
-        // EmailJS
+        
+        // כאן משתמשים ב-EmailJS אם יש מייל, אחרת זה לוג בקונסול
         if (cleanEmail) {
             try {
                 const PRIVATE_KEY = "b-Dz-J0Iq_yJvCfqX5Iw3"; 
@@ -412,8 +306,11 @@ app.post('/update-code', async (req, res) => {
                     template_params: { email: cleanEmail, code: code },
                     accessToken: PRIVATE_KEY
                 });
-            } catch (emailError) {}
+            } catch (e) {}
         }
+        
+        // עדכון הקוד בבסיס הנתונים
+        await User.findOneAndUpdate(query, { $set: { tempCode: code, email: cleanEmail, phone: cleanPhone } }, { upsert: true, new: true });
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }
 });
@@ -422,12 +319,10 @@ app.post('/verify-auth', async (req, res) => {
     let { email, phone, code } = req.body;
     try {
         if (code === 'check') return res.json({ success: true });
-        let cleanEmail = undefined; let cleanPhone = undefined;
-        if (email) cleanEmail = email.toString().toLowerCase().trim();
-        if (phone) cleanPhone = phone.toString().replace(/\D/g, '').trim();
-        const query = cleanEmail ? { email: cleanEmail } : { phone: cleanPhone };
-        if (Object.keys(query).length === 0) return res.json({ success: false, error: "חסר פרטים" });
+        
+        const query = email ? { email: email.toLowerCase().trim() } : { phone: phone.replace(/\D/g, '').trim() };
         let user = await User.findOne(query);
+
         if (user && String(user.tempCode).trim() === String(code).trim()) {
             res.json({ success: true, user });
         } else {
@@ -437,40 +332,104 @@ app.post('/verify-auth', async (req, res) => {
 });
 
 app.post('/login-by-id', async (req, res) => {
-    const { userId } = req.body;
     try {
-        let user = await User.findById(userId);
-        if (user) res.json({ success: true, user });
-        else res.json({ success: false });
+        let user = await User.findById(req.body.userId);
+        res.json({ success: !!user, user });
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
-// --- ADMIN SECTION ---
+// ניהול תרומות
+app.post('/donate', async (req, res) => {
+    const { userId, amount, ccDetails, fullName, tz, useToken, phone, email, note, forceImmediate } = req.body;
+
+    try {
+        let user = await User.findById(userId);
+        if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
+
+        if (fullName) user.name = fullName;
+        if (tz) user.tz = tz;
+        if (phone) user.phone = phone;
+        if (email) user.email = email;
+
+        // חיוב מיידי אם: הוגדר חיוב מיידי, או נלחץ כפתור מיידי, או אין טוקן (כרטיס חדש)
+        const shouldChargeNow = user.billingPreference === 0 || forceImmediate === true || (!useToken && ccDetails);
+
+        if (shouldChargeNow) {
+            console.log("🚀 Charging Immediately...");
+            const result = await chargeKesher(user, amount, note, !useToken ? ccDetails : null);
+
+            if (result.isSuccess) {
+                if (!useToken && result.resData.Token) {
+                    user.token = fixToken(result.resData.Token);
+                    user.lastCardDigits = result.currentCardDigits;
+                    user.lastExpiry = result.finalExpiry;
+                }
+                user.totalDonated += parseFloat(amount);
+                user.donationsHistory.push({ 
+                    amount: parseFloat(amount), 
+                    note: note || "", 
+                    date: new Date(),
+                    status: 'success',
+                    cardDigits: user.lastCardDigits || result.currentCardDigits
+                });
+                await user.save();
+                res.json({ success: true, user, message: "התרומה בוצעה בהצלחה!" });
+            } else {
+                const errorMsg = result.resData.RequestResult?.Description || result.resData.Description || "סירוב עסקה";
+                user.donationsHistory.push({ amount: parseFloat(amount), note: note, date: new Date(), status: 'failed', failReason: errorMsg });
+                await user.save();
+                res.status(400).json({ success: false, error: errorMsg });
+            }
+
+        } else {
+            console.log("⏳ Adding to Basket...");
+            user.pendingDonations.push({ amount: parseFloat(amount), note: note || "", date: new Date() });
+            await user.save();
+            res.json({ success: true, user, message: `התרומה נוספה לסל ותחויב ב-${user.billingPreference} לחודש` });
+        }
+    } catch (e) {
+        console.error("Donate Error:", e.message);
+        res.status(500).json({ success: false, error: "שגיאת שרת: " + e.message });
+    }
+});
+
+// ניהול סל והגדרות
+app.post('/update-settings', async (req, res) => {
+    try {
+        await User.findByIdAndUpdate(req.body.userId, { 
+            billingPreference: parseInt(req.body.billingPreference),
+            recurringDailyAmount: parseFloat(req.body.recurringDailyAmount) || 0
+        });
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ success: false }); }
+});
+
+app.post('/delete-pending', async (req, res) => {
+    try {
+        await User.findByIdAndUpdate(req.body.userId, {
+            $pull: { pendingDonations: { _id: req.body.donationId } }
+        });
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ success: false }); }
+});
+
+// ניהול אדמין
 const ADMIN_PASSWORD = "admin1234";
 
 app.post('/admin/login', (req, res) => {
-    const { password } = req.body;
-    if (password === ADMIN_PASSWORD) res.json({ success: true });
+    if (req.body.password === ADMIN_PASSWORD) res.json({ success: true });
     else res.json({ success: false, error: "סיסמה שגויה" });
 });
 
-// חיפוש מתקדם לאדמין
 app.post('/admin/search-users', async (req, res) => {
     const { password, searchQuery, startDate, endDate } = req.body;
     if (password !== ADMIN_PASSWORD) return res.status(403).json({ success: false });
 
     try {
         let query = {};
-
-        // חיפוש לפי טקסט (שם, מייל, טלפון, ת"ז)
         if (searchQuery) {
             const regex = new RegExp(searchQuery, 'i');
-            query.$or = [
-                { name: regex },
-                { email: regex },
-                { phone: regex },
-                { tz: regex }
-            ];
+            query.$or = [{ name: regex }, { email: regex }, { phone: regex }, { tz: regex }];
         }
 
         let users = await User.find(query).sort({ totalDonated: -1 });
@@ -491,57 +450,30 @@ app.post('/admin/search-users', async (req, res) => {
                 return userObj;
             });
         }
-
         res.json({ success: true, users });
-    } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+    } catch (e) { res.status(500).json({ success: false }); }
 });
 
-// שליחת הודעת פוש לכולם
 app.post('/admin/send-push', async (req, res) => {
     const { password, title, body } = req.body;
     if (password !== ADMIN_PASSWORD) return res.status(403).json({ success: false });
 
     try {
-        // משיכת כל הטוקנים מהמסד
         const users = await User.find({ fcmToken: { $exists: true, $ne: "" } });
         const tokens = users.map(u => u.fcmToken);
 
-        if (tokens.length === 0) return res.json({ success: false, error: "אין משתמשים רשומים לפוש" });
+        if (tokens.length === 0) return res.json({ success: false, error: "אין נרשמים לפוש" });
 
-        // שליחה בקבוצות (Firebase תומך עד 500 במכה)
-        const message = {
-            notification: { title, body },
-            tokens: tokens
-        };
-
+        const message = { notification: { title, body }, tokens: tokens };
         const response = await admin.messaging().sendMulticast(message);
-        console.log(response.successCount + ' messages were sent successfully');
         
-        res.json({ success: true, sentCount: response.successCount, failCount: response.failureCount });
-
+        res.json({ success: true, sentCount: response.successCount });
     } catch (e) { 
-        console.error("Push Error:", e);
-        res.status(500).json({ success: false, error: "שגיאה בשליחת הודעות" }); 
+        console.error(e);
+        res.status(500).json({ success: false, error: "שגיאה בשליחה" }); 
     }
 });
 
-app.post('/admin/delete-user', async (req, res) => {
-    const { password, userId } = req.body;
-    if (password !== ADMIN_PASSWORD) return res.status(403).json({ success: false });
-    try { await User.findByIdAndDelete(userId); res.json({ success: true }); } catch (e) { res.status(500).json({ success: false }); }
-});
-
-app.post('/admin/update-user', async (req, res) => {
-    const { password, userId, name, email, phone, tz, token } = req.body;
-    if (password !== ADMIN_PASSWORD) return res.status(403).json({ success: false });
-    try {
-        let updateData = { name, tz, token };
-        if (email) updateData.email = email;
-        if (phone) updateData.phone = phone;
-        await User.findByIdAndUpdate(userId, updateData);
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ success: false }); }
-});
-
+// הפעלת השרת
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`✅ Server Live`));
+app.listen(PORT, () => console.log(`✅ Server Live on Port ${PORT}`));
