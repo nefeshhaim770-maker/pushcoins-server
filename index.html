@@ -21,8 +21,22 @@
             display: flex; justify-content: space-between; align-items: center; 
             position: sticky; top: 0; z-index: 1000;
         }
-        .action-btn { background: rgba(255,255,255,0.25); border: none; color: white; width: 45px; height: 45px; border-radius: 50%; font-size: 1.2rem; cursor: pointer; }
-        .badge-count { position: absolute; top: -2px; right: -2px; background: #dc3545; color: white; font-size: 0.75rem; padding: 2px 6px; border-radius: 10px; border: 2px solid #198754; }
+        .action-btn { background: rgba(255,255,255,0.25); border: none; color: white; width: 45px; height: 45px; border-radius: 50%; font-size: 1.2rem; cursor: pointer; position: relative; }
+        
+        /* תיקון מיקום העיגול האדום */
+        .badge-count { 
+            position: absolute; 
+            top: -5px; 
+            left: -5px; /* שינוי: הצמדה לשמאל במקום לימין */
+            right: auto;
+            background: #dc3545; 
+            color: white; 
+            font-size: 0.75rem; 
+            padding: 2px 6px; 
+            border-radius: 10px; 
+            border: 2px solid #198754; 
+            z-index: 10;
+        }
         
         /* כפתורים וטאבים */
         .amount-btn { width: 60px; height: 60px; border-radius: 15px; font-weight: bold; border: 2px solid #e9ecef; background: white; margin: 5px; touch-action: manipulation; }
@@ -131,6 +145,7 @@
                 <select id="edit-billing-day" class="form-select mb-3">
                     <option value="0">חיוב מיידי (ללא סל)</option>
                     <option value="1">1 לחודש</option>
+                    <option value="2">2 לחודש</option>
                     <option value="10">10 לחודש</option>
                     <option value="20">20 לחודש</option>
                 </select>
