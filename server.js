@@ -9,26 +9,27 @@ app.use(express.json());
 app.use(cors());
 
 // ============================================================
-// ⚙️ הגדרות המייל - מאובטח דרך משתני סביבה ב-Render
+// ⚙️ הגדרות המייל - תיקון לפורט 587 (יציב יותר ב-Render)
 // ============================================================
 const transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
-    port: 465,              // פורט מאובטח (SSL)
-    secure: true,           
+    port: 587,              // ✅ שינוי לפורט 587
+    secure: false,          // ✅ חובה להיות false בפורט 587
     auth: {
-        // השרת מושך את הפרטים מתוך ההגדרות ב-Render
-        // כך הסיסמה לא חשופה בקוד ולא תיחסם ע"י גוגל
-        user: process.env.EMAIL_USER, 
-        pass: process.env.EMAIL_PASS       
+        user: process.env.EMAIL_USER, // לוקח מ-Render
+        pass: process.env.EMAIL_PASS  // לוקח מ-Render
+    },
+    tls: {
+        rejectUnauthorized: false // מונע שגיאות אבטחה בשרתים מסוימים
     }
 });
 
 // בדיקה שהמייל מחובר תקין
 transporter.verify((error, success) => {
     if (error) {
-        console.error("❌ שגיאה בחיבור למייל! וודא שהגדרת EMAIL_USER ו-EMAIL_PASS ב-Render:", error);
+        console.error("❌ שגיאה בחיבור לשרת המיילים:", error);
     } else {
-        console.log("✅ השרת מחובר לג'ימייל ומוכן לשליחה!");
+        console.log("✅ השרת מחובר לג'ימייל (פורט 587) ומוכן לשליחה!");
     }
 });
 // ============================================================
@@ -116,10 +117,11 @@ app.post('/update-code', async (req, res) => {
 
             try {
                 await transporter.sendMail(mailOptions);
-                console.log("📧 המייל נשלח בהצלחה!");
+                console.log("📧 המייל נשלח בהצלחה ל-" + cleanEmail);
                 res.json({ success: true });
             } catch (mailError) {
                 console.error("❌ שגיאה בשליחת המייל:", mailError);
+                // במקרה של שגיאה, נחזיר הודעה לאפליקציה
                 res.status(500).json({ success: false, error: "תקלה בשליחת המייל" });
             }
         } else {
@@ -225,10 +227,7 @@ app.post('/donate', async (req, res) => {
             FirstName: (fullName || user.name || "Torem").split(" ")[0],
             LastName: (fullName || user.name || "").split(" ").slice(1).join(" ") || "Family",
             Mail: email || user.email || "no-email@test.com",
-            
-            // ✅ זיהוי לקוח ב-CRM (נשאר תקין)
             ClientApiIdentity: realIdToSend,
-            
             Id: realIdToSend,
             Details: note || ""
         };
