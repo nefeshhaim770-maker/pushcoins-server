@@ -82,6 +82,7 @@ app.post('/verify-auth', async (req, res) => {
         const query = cleanEmail ? { email: cleanEmail } : { phone: cleanPhone };
         if (Object.keys(query).length === 0) return res.json({ success: false, error: "חסר פרטים" });
         let user = await User.findOne(query);
+        
         if (user && String(user.tempCode).trim() === String(code).trim()) {
             res.json({ success: true, user });
         } else {
@@ -99,15 +100,21 @@ app.post('/login-by-id', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
+// ✅ התיקון החשוב: קליטת TZ ושמירתו
 app.post('/update-profile', async (req, res) => {
-    const { userId, name, email, phone } = req.body;
+    const { userId, name, email, phone, tz } = req.body;
     try {
-        let updateData = { name };
+        let updateData = { name, tz }; // הוספנו את ה-tz כאן
+        
         if (email) updateData.email = email.toString().toLowerCase().trim();
         if (phone) updateData.phone = phone.toString().replace(/\D/g, '').trim();
+        
         let user = await User.findByIdAndUpdate(userId, updateData, { new: true });
         res.json({ success: true, user });
-    } catch (e) { res.status(500).json({ success: false }); }
+    } catch (e) { 
+        console.error("Update error:", e);
+        res.status(500).json({ success: false, error: "שגיאה בעדכון" }); 
+    }
 });
 
 app.post('/donate', async (req, res) => {
@@ -115,6 +122,11 @@ app.post('/donate', async (req, res) => {
     try {
         let user = await User.findById(userId);
         if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
+
+        // בדיקה שכל הפרטים קיימים
+        if (!fullName || !phone || !email || !tz) {
+            return res.status(400).json({ success: false, error: "חסרים פרטי חובה" });
+        }
 
         let finalExpiry = "";
         let currentCardDigits = user.lastCardDigits || "????"; 
@@ -160,8 +172,6 @@ app.post('/donate', async (req, res) => {
         }, { validateStatus: () => true });
 
         const resData = response.data;
-        
-        // --- תיקון קריטי: בדיקה אם זה BlockedCard ---
         const isActuallyBlocked = resData.TransactionType === "BlockedCard";
         const isSuccess = (resData.RequestResult?.Status === true || resData.Status === true) && !isActuallyBlocked;
 
@@ -248,7 +258,6 @@ app.post('/admin/update-user', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false, error: "שגיאה בעדכון" }); }
 });
 
-// ✅ כפתור הקסם: תיקון נתונים
 app.post('/admin/recalc-totals', async (req, res) => {
     const { password } = req.body;
     if (password !== ADMIN_PASSWORD) return res.status(403).json({ success: false });
@@ -259,11 +268,8 @@ app.post('/admin/recalc-totals', async (req, res) => {
 
         for (const user of users) {
             let correctTotal = 0;
-            // עובר על כל ההיסטוריה וסוכם רק הצלחות
             if (user.donationsHistory && user.donationsHistory.length > 0) {
                 user.donationsHistory.forEach(d => {
-                    // אם כתוב הצלחה, או אם זה היסטוריה ישנה (בלי שדה סטטוס) - נחשיב כהצלחה
-                    // אבל אם כתוב BlockedCard בסיבת הכישלון, זה כישלון
                     const isFailed = d.status === 'failed' || (d.failReason && d.failReason.includes('חסום'));
                     if (!isFailed) {
                         correctTotal += (d.amount || 0);
