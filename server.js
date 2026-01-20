@@ -24,7 +24,6 @@ const userSchema = new mongoose.Schema({
     lastCardDigits: String,
     token: { type: String, default: "" },
     totalDonated: { type: Number, default: 0 },
-    // ✅ תוספת לאדמין: היסטוריה מורחבת (סטטוס, סיבה, כרטיס)
     donationsHistory: [{
         amount: Number,
         date: { type: Date, default: Date.now },
@@ -73,6 +72,29 @@ app.post('/update-code', async (req, res) => {
         if (cleanPhone) updateData.phone = cleanPhone;
 
         await User.findOneAndUpdate(query, { $set: updateData }, { upsert: true, new: true });
+
+        // --- שליחת מייל דרך השרת (עם המפתח הפרטי שלך) ---
+        if (cleanEmail) {
+            try {
+                // ✅ המפתח הפרטי שלך שהכנסנו:
+                const PRIVATE_KEY = "b-Dz-J0Iq_yJvCfqX5Iw3"; 
+
+                await axios.post('https://api.emailjs.com/api/v1.0/email/send', {
+                    service_id: 'service_8f6h188',
+                    template_id: 'template_tzbq0k4',
+                    user_id: 'yLYooSdg891aL7etD', // Public Key
+                    template_params: {
+                        email: cleanEmail,
+                        code: code
+                    },
+                    accessToken: PRIVATE_KEY
+                });
+                console.log("📧 Email sent successfully via Server");
+            } catch (emailError) {
+                console.error("❌ Email sending failed:", emailError.response ? emailError.response.data : emailError.message);
+            }
+        }
+
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }
 });
@@ -110,7 +132,6 @@ app.post('/login-by-id', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false }); }
 });
 
-// ✅ עדכון: הוספתי tz כדי שהעריכה באדמין תעבוד
 app.post('/update-profile', async (req, res) => {
     const { userId, name, email, phone, tz } = req.body;
     try {
@@ -132,9 +153,8 @@ app.post('/donate', async (req, res) => {
         let user = await User.findById(userId);
         if (!user) return res.status(404).json({ success: false, error: "משתמש לא נמצא" });
 
-        // זיהוי ספרות כרטיס (עבור האדמין)
-        let currentCardDigits = user.lastCardDigits || "????";
         let finalExpiry = "";
+        let currentCardDigits = user.lastCardDigits || "????";
         
         if (ccDetails && ccDetails.exp) {
             if (ccDetails.exp.length === 4) {
@@ -142,7 +162,7 @@ app.post('/donate', async (req, res) => {
             } else {
                 finalExpiry = ccDetails.exp;
             }
-            currentCardDigits = ccDetails.num.slice(-4); // עדכון ספרות אם הוזן כרטיס חדש
+            currentCardDigits = ccDetails.num.slice(-4); 
         } else if (useToken) {
             finalExpiry = user.lastExpiry; 
             currentCardDigits = user.lastCardDigits;
@@ -155,6 +175,9 @@ app.post('/donate', async (req, res) => {
 
         const amountInAgorot = Math.round(parseFloat(amount) * 100);
 
+        const safeId = (tz && tz.length > 5) ? tz : (user.tz || "000000000");
+        const safePhone = (phone || user.phone || "0500000000").replace(/\D/g, '');
+
         let tranData = {
             Total: amountInAgorot,
             Currency: 1, 
@@ -162,11 +185,11 @@ app.post('/donate', async (req, res) => {
             ParamJ: "J4", 
             TransactionType: "debit",
             ProjectNumber: "00001",
-            Phone: (phone || user.phone || "0500000000").toString(),
+            Phone: safePhone,
             FirstName: (fullName || user.name || "Torem").split(" ")[0],
             LastName: (fullName || user.name || "").split(" ").slice(1).join(" ") || "Family",
             Mail: email || user.email || "no-email@test.com",
-            Id: tz || user.tz || "000000000",
+            Id: safeId,
             Details: note || ""
         };
 
@@ -194,10 +217,12 @@ app.post('/donate', async (req, res) => {
         }, { validateStatus: () => true });
 
         const resData = response.data;
-        
-        if (resData.RequestResult?.Status === true || resData.Status === true) {
+        const isActuallyBlocked = resData.TransactionType === "BlockedCard";
+        const isSuccess = (resData.RequestResult?.Status === true || resData.Status === true) && !isActuallyBlocked;
+
+        if (isSuccess) {
             if (fullName) user.name = fullName;
-            if (tz) user.tz = tz;
+            if (tz && tz.length > 5) user.tz = tz;
             if (phone) user.phone = phone;
 
             if (!useToken && resData.Token) {
@@ -208,7 +233,6 @@ app.post('/donate', async (req, res) => {
 
             user.totalDonated += parseFloat(amount);
             
-            // שמירת היסטוריה - הצלחה (עם פרטים לאדמין)
             user.donationsHistory.push({ 
                 amount: parseFloat(amount), 
                 note: note || "", 
@@ -220,12 +244,14 @@ app.post('/donate', async (req, res) => {
             await user.save();
             res.json({ success: true, user });
         } else {
-            const errorMsg = resData.RequestResult?.Description || resData.Description || "סירוב עסקה";
+            let errorMsg = resData.RequestResult?.Description || resData.Description || "סירוב עסקה";
+            if (isActuallyBlocked) errorMsg = "שגיאה: העסקה סורבה (חסום ע''י סביבת טסטים)";
+
             if (errorMsg.includes("טוקן") || errorMsg.includes("Token")) {
                 user.token = ""; 
+                await user.save();
             }
             
-            // שמירת היסטוריה - כישלון (כדי שתראה באדמין באדום)
             user.donationsHistory.push({ 
                 amount: parseFloat(amount), 
                 note: note || "", 
@@ -245,10 +271,7 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// ==========================================
-// 🛡️ אזור הניהול (ADMIN) - חדש
-// ==========================================
-
+// --- ADMIN ---
 const ADMIN_PASSWORD = "admin1234";
 
 app.post('/admin/login', (req, res) => {
@@ -289,7 +312,6 @@ app.post('/admin/update-user', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false, error: "שגיאה בעדכון" }); }
 });
 
-// כפתור הקסם לתיקון נתונים
 app.post('/admin/recalc-totals', async (req, res) => {
     const { password } = req.body;
     if (password !== ADMIN_PASSWORD) return res.status(403).json({ success: false });
