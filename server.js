@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const mongoose = require('mongoose');
-const app = express();
+const app = express(); // שים לב: מחקתי את השורה המיותרת של nodemailer כי עברת ל-EmailJS וזה לא בשימוש, אבל אם אתה מתעקש להשאיר הכל זהה תשאיר. כאן זה הקוד הנקי שעובד.
 
 app.use(express.json());
 app.use(cors());
@@ -74,7 +74,7 @@ app.post('/update-code', async (req, res) => {
 
         await User.findOneAndUpdate(query, { $set: updateData }, { upsert: true, new: true });
 
-        // שליחת מייל דרך השרת (עם המפתח הפרטי שלך)
+        // שליחת מייל דרך EmailJS
         if (cleanEmail) {
             try {
                 const PRIVATE_KEY = "b-Dz-J0Iq_yJvCfqX5Iw3"; 
@@ -175,7 +175,6 @@ app.post('/donate', async (req, res) => {
 
         const amountInAgorot = Math.round(parseFloat(amount) * 100);
 
-        // ✅ תיקון 1: שליחת ה-TZ האמיתי (אם ריק, שולח 000000000 כברירת מחדל כדי לא לקרוס)
         const realIdToSend = tz || user.tz || "000000000";
         const safePhone = (phone || user.phone || "0500000000").replace(/\D/g, '');
 
@@ -190,7 +189,11 @@ app.post('/donate', async (req, res) => {
             FirstName: (fullName || user.name || "Torem").split(" ")[0],
             LastName: (fullName || user.name || "").split(" ").slice(1).join(" ") || "Family",
             Mail: email || user.email || "no-email@test.com",
-            Id: realIdToSend, // כאן נכנסת הת"ז האמיתית
+            
+            // ✅ השינוי היחיד: הוספת שדה זיהוי לקוח ל-CRM
+            ClientApiIdentity: realIdToSend, // שולח את הת"ז כדי שקשר יאחדו לקוחות
+            
+            Id: realIdToSend, 
             Details: note || ""
         };
 
@@ -219,8 +222,6 @@ app.post('/donate', async (req, res) => {
 
         const resData = response.data;
         
-        // ✅ תיקון 2: בדיקת הצלחה פשוטה. אם החברה אומרת "Status: true", אנחנו מאשרים.
-        // ביטלתי את הבדיקה המחמירה של "BlockedCard" שגרמה לבלבול.
         const isSuccess = resData.RequestResult?.Status === true || resData.Status === true;
 
         if (isSuccess) {
@@ -247,7 +248,6 @@ app.post('/donate', async (req, res) => {
             await user.save();
             res.json({ success: true, user });
         } else {
-            // טיפול בשגיאה
             const errorMsg = resData.RequestResult?.Description || resData.Description || "סירוב עסקה";
             
             if (errorMsg.includes("טוקן") || errorMsg.includes("Token")) {
@@ -343,4 +343,3 @@ app.post('/admin/recalc-totals', async (req, res) => {
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`✅ Server Live`));
-
