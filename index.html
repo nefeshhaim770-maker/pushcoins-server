@@ -195,6 +195,11 @@
                     </div>
 
                     <button class="btn btn-primary w-100 py-3 rounded-pill fw-bold shadow-sm mt-2" onclick="saveSettings()">שמור שינויים</button>
+                    
+                    <hr class="my-4">
+                    <button class="btn btn-outline-danger w-100 rounded-pill py-2" onclick="logout()">
+                        <i class="fas fa-sign-out-alt me-2"></i> יציאה מהחשבון
+                    </button>
                 </div>
             </div>
         </div>
@@ -210,10 +215,10 @@
     // הגדרות מערכת ו-Firebase
     // ==========================================
     
-    // כתובת השרת שלך (וודא שזו הכתובת הנכונה מ-Render)
+    // כתובת השרת שלך
     const API_URL = "https://pushcoins-server.onrender.com"; 
 
-    // הגדרות Firebase - הועתק מהתמונות ששלחת
+    // הגדרות Firebase
     const firebaseConfig = {
         apiKey: "AIzaSyDuFnImbXAjc5fINUVNAMKf073kke4MSyo",
         authDomain: "pushkaapp-45e4f.firebaseapp.com",
@@ -223,7 +228,7 @@
         appId: "1:810482014009:web:0b4601cb35b6d88c91fae8"
     };
 
-    // מפתח VAPID מהתמונה השנייה
+    // מפתח VAPID
     const VAPID_KEY = "BDj7ELURxTEpypCdzF4aLo-RypB3iYSS181PoS5RsCpWF3HG7vsGgG36OGYWZvgQbXWHY43OtIv6VU9TEcTBjMO";
 
     // אתחול Firebase
@@ -237,28 +242,51 @@
     window.onload = () => { 
         if (currentUserId) {
             loadUserProfile();
-            registerForPush(); // ניסיון רישום לפוש ברקע
+            setTimeout(registerForPush, 3000); // מנסה להירשם לפוש ברקע אחרי 3 שניות
         }
     };
 
     function setAmount(val) { document.getElementById('custom-amount').value = val; }
 
+    // --- לוגיקה של יציאה מהחשבון ---
+    function logout() {
+        Swal.fire({
+            title: 'לצאת מהחשבון?',
+            text: "תצטרך להזין קוד חדש בכניסה הבאה",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'כן, צא',
+            cancelButtonText: 'ביטול'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                // מחיקת הזיכרון
+                localStorage.removeItem('userId');
+                // רענון הדף (יחזיר למסך הכניסה)
+                location.reload();
+            }
+        });
+    }
+
     // --- לוגיקה של פוש (Notification) ---
     async function registerForPush() {
         if (!currentUserId) return;
         try {
+            console.log("בודק הרשאות פוש...");
             const permission = await Notification.requestPermission();
             if (permission === 'granted') {
                 const token = await messaging.getToken({ vapidKey: VAPID_KEY });
                 if (token) {
-                    // שליחת הטוקן לשרת
                     await fetch(`${API_URL}/save-push-token`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ userId: currentUserId, token: token })
                     });
-                    console.log('Push Token Saved');
+                    console.log('✅ Push Token Saved successfully');
                 }
+            } else {
+                console.log('Push permission denied');
             }
         } catch (err) { console.error('Push Error:', err); }
     }
@@ -287,78 +315,109 @@
         const payload = isEmail ? { email: input } : { phone: input };
         const code = Math.floor(1000 + Math.random() * 9000); 
 
-        Swal.fire({title:'מתחבר...', didOpen:()=>Swal.showLoading()});
+        Swal.fire({title:'מתחבר לשרת...', didOpen:()=>Swal.showLoading()});
 
         try {
             await fetch(`${API_URL}/update-code`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ...payload, code: code.toString() })
             });
-            Swal.fire('קוד נשלח!', 'בדוק את המייל או הלוגים', 'success');
+            Swal.fire('קוד נשלח!', 'בדוק את המייל או בלוגים (Logs)', 'success');
             document.getElementById('btn-send-code').classList.add('d-none');
             document.getElementById('otp-area').classList.remove('d-none');
             document.getElementById('btn-verify').classList.remove('d-none');
-        } catch(e) { Swal.fire('תקלה', 'שגיאת רשת', 'error'); }
+        } catch(e) { 
+            Swal.close();
+            Swal.fire('תקלה', 'לא ניתן להתחבר לשרת', 'error'); 
+        }
     }
 
     async function verifyCode() {
         const input = document.getElementById('login-input').value;
         const code = document.getElementById('otp-input').value;
+        
+        if (!code) return Swal.fire('שגיאה', 'נא להזין קוד', 'warning');
+
         const isEmail = input.includes('@');
         
-        Swal.fire({title:'מאמת...', didOpen:()=>Swal.showLoading()});
-        const res = await fetch(`${API_URL}/verify-auth`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: isEmail?input:undefined, phone: isEmail?undefined:input, code })
+        // מציג חלונית טעינה שלא נסגרת לבד
+        Swal.fire({
+            title: 'מאמת נתונים...',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
         });
-        const data = await res.json();
-        if(data.success) {
-            currentUserId = data.user._id;
-            localStorage.setItem('userId', currentUserId);
+
+        try {
+            const res = await fetch(`${API_URL}/verify-auth`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    email: isEmail ? input : undefined, 
+                    phone: !isEmail ? input : undefined, 
+                    code: code 
+                })
+            });
+
+            const data = await res.json();
+            Swal.close(); // סגירה כפויה של הטעינה
+
+            if (data.success) {
+                currentUserId = data.user._id;
+                localStorage.setItem('userId', currentUserId);
+                
+                await loadUserProfile(); // טעינת המשתמש
+                registerForPush(); // בקשת פוש ברקע
+            } else {
+                Swal.fire('שגיאה', 'קוד שגוי', 'error');
+            }
+        } catch (e) {
             Swal.close();
-            loadUserProfile();
-            registerForPush(); // בקשת אישור לפוש מיד אחרי לוגין
-        } else Swal.fire('שגיאה', 'קוד שגוי', 'error');
+            Swal.fire('תקלה', 'שגיאת תקשורת עם השרת.\n' + e.message, 'error');
+        }
     }
 
     // --- טעינת נתונים ---
     async function loadUserProfile() {
-        const res = await fetch(`${API_URL}/login-by-id`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: currentUserId })
-        });
-        const data = await res.json();
-        if(data.success) {
-            currentUser = data.user;
-            document.getElementById('login-section').classList.add('d-none');
-            document.getElementById('app-section').classList.remove('d-none');
-            
-            // עדכון כותרת
-            document.getElementById('total-donated').innerText = `₪${(currentUser.totalDonated||0).toFixed(0)}`;
-            const pendingCount = currentUser.pendingDonations?.length || 0;
-            const badge = document.getElementById('basket-badge');
-            badge.innerText = pendingCount;
-            badge.classList.toggle('d-none', pendingCount === 0);
+        try {
+            const res = await fetch(`${API_URL}/login-by-id`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: currentUserId })
+            });
+            const data = await res.json();
+            if(data.success) {
+                currentUser = data.user;
+                document.getElementById('login-section').classList.add('d-none');
+                document.getElementById('app-section').classList.remove('d-none');
+                
+                // עדכון כותרת
+                document.getElementById('total-donated').innerText = `₪${(currentUser.totalDonated||0).toFixed(0)}`;
+                const pendingCount = currentUser.pendingDonations?.length || 0;
+                const badge = document.getElementById('basket-badge');
+                badge.innerText = pendingCount;
+                badge.classList.toggle('d-none', pendingCount === 0);
 
-            // מילוי טופס הגדרות
-            document.getElementById('edit-name').value = currentUser.name || "";
-            document.getElementById('edit-tz').value = currentUser.tz || "";
-            document.getElementById('edit-email').value = currentUser.email || "";
-            document.getElementById('edit-phone').value = currentUser.phone || "";
-            document.getElementById('edit-billing-day').value = currentUser.billingPreference || 0;
-            document.getElementById('edit-recurring').value = currentUser.recurringDailyAmount || "";
-            document.getElementById('edit-pin').value = currentUser.securityPin || "";
-            document.getElementById('billing-day-display').innerText = currentUser.billingPreference || "מיידי";
-            
-            // תצוגת אשראי
-            const creditInfo = document.getElementById('credit-info');
-            if(currentUser.lastCardDigits) {
-                creditInfo.innerHTML = `<span class='text-success'>כרטיס מסתיים ב-<strong>${currentUser.lastCardDigits}</strong></span>`;
-            } else {
-                creditInfo.innerHTML = "<span class='text-danger'>לא שמור כרטיס</span>";
+                // מילוי טופס הגדרות
+                document.getElementById('edit-name').value = currentUser.name || "";
+                document.getElementById('edit-tz').value = currentUser.tz || "";
+                document.getElementById('edit-email').value = currentUser.email || "";
+                document.getElementById('edit-phone').value = currentUser.phone || "";
+                document.getElementById('edit-billing-day').value = currentUser.billingPreference || 0;
+                document.getElementById('edit-recurring').value = currentUser.recurringDailyAmount || "";
+                document.getElementById('edit-pin').value = currentUser.securityPin || "";
+                document.getElementById('billing-day-display').innerText = currentUser.billingPreference || "מיידי";
+                
+                // תצוגת אשראי
+                const creditInfo = document.getElementById('credit-info');
+                if(currentUser.lastCardDigits) {
+                    creditInfo.innerHTML = `<span class='text-success'>כרטיס מסתיים ב-<strong>${currentUser.lastCardDigits}</strong></span>`;
+                } else {
+                    creditInfo.innerHTML = "<span class='text-danger'>לא שמור כרטיס</span>";
+                }
+
+                renderBasket();
             }
-
-            renderBasket();
+        } catch (e) {
+            console.error(e);
         }
     }
 
@@ -388,24 +447,31 @@
 
         Swal.fire({title: isImmediate ? 'מבצע חיוב...' : 'מוסיף לסל...', didOpen:()=>Swal.showLoading()});
         
-        const res = await fetch(`${API_URL}/donate`, {
-            method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ userId: currentUserId, amount, useToken: true, note, forceImmediate: isImmediate })
-        });
-        const data = await res.json();
-        
-        if(data.success) {
-            Swal.fire({
-                title: 'הצלחה!', 
-                text: data.message, 
-                icon: 'success',
-                timer: 2000,
-                showConfirmButton: false
+        try {
+            const res = await fetch(`${API_URL}/donate`, {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ userId: currentUserId, amount, useToken: true, note, forceImmediate: isImmediate })
             });
-            loadUserProfile();
-            document.getElementById('custom-amount').value = '';
-            document.getElementById('donation-note').value = '';
-        } else Swal.fire('שגיאה', data.error, 'error');
+            const data = await res.json();
+            
+            Swal.close();
+
+            if(data.success) {
+                Swal.fire({
+                    title: 'הצלחה!', 
+                    text: data.message, 
+                    icon: 'success',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+                loadUserProfile();
+                document.getElementById('custom-amount').value = '';
+                document.getElementById('donation-note').value = '';
+            } else Swal.fire('שגיאה', data.error, 'error');
+        } catch(e) {
+            Swal.close();
+            Swal.fire('תקלה', 'שגיאה בביצוע הפעולה', 'error');
+        }
     }
 
     // --- ניהול סל ---
@@ -437,7 +503,6 @@
     }
     
     async function deletePending(id) {
-        // מחיקה ללא שאלות מיותרות לחוויה חלקה יותר, או עם confirm עדין
         await fetch(`${API_URL}/delete-pending`, {
             method: 'POST', headers: {'Content-Type':'application/json'},
             body: JSON.stringify({ userId: currentUserId, donationId: id })
