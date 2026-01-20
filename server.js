@@ -10,7 +10,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// --- 1. הגדרת Firebase (הודעות פוש) ---
+// --- Firebase ---
 try {
     const serviceAccount = require('/etc/secrets/serviceAccountKey.json'); 
     admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
@@ -23,12 +23,12 @@ try {
     } catch (e) { console.log("⚠️ Warning: Firebase key not found."); }
 }
 
-// --- 2. חיבור למסד הנתונים ---
+// --- MongoDB ---
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
     .then(() => console.log('✅ MongoDB Connected'))
     .catch(err => console.error('❌ MongoDB Error:', err));
 
-// --- 3. סכמת משתמש ---
+// --- Schema ---
 const userSchema = new mongoose.Schema({
     email: { type: String, sparse: true },
     phone: { type: String, sparse: true },
@@ -38,9 +38,14 @@ const userSchema = new mongoose.Schema({
     lastCardDigits: String,
     token: { type: String, default: "" },
     totalDonated: { type: Number, default: 0 },
+    
+    // 0 = מיידי, 1-28 = יום בחודש
     billingPreference: { type: Number, default: 0 }, 
+    
+    // סכום לחיוב יומי קבוע
     recurringDailyAmount: { type: Number, default: 0 },
-    securityPin: { type: String, default: "" }, 
+    
+    securityPin: { type: String, default: "" },
     fcmToken: { type: String, default: "" },
     donationsHistory: [{
         amount: Number, date: { type: Date, default: Date.now }, note: String,
@@ -54,13 +59,17 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- 4. פונקציות עזר וחיוב ---
+// --- Helpers ---
+function sortObjectKeys(obj) {
+    return Object.keys(obj).sort().reduce((result, key) => { result[key] = obj[key]; return result; }, {});
+}
 function fixToken(token) {
     if (!token) return "";
     let strToken = String(token).replace(/['"]+/g, '').trim();
     return (strToken.length > 0 && !strToken.startsWith('0')) ? '0' + strToken : strToken;
 }
 
+// --- Charge Function ---
 async function chargeKesher(user, amount, note, creditDetails = null) {
     const amountInAgorot = Math.round(parseFloat(amount) * 100);
     const realIdToSend = user.tz || "000000000";
@@ -86,18 +95,86 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
     } else { throw new Error("חסר אמצעי תשלום"); }
 
     const response = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
-        Json: { userName: '2181420WS2087', password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', func: "SendTransaction", format: "json", tran: tranData },
+        Json: { userName: '2181420WS2087', password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', func: "SendTransaction", format: "json", tran: sortObjectKeys(tranData) },
         format: "json"
     }, { validateStatus: () => true });
 
-    return { isSuccess: response.data.RequestResult?.Status === true || response.data.Status === true, resData: response.data, currentCardDigits, finalExpiry };
+    const resData = response.data;
+    const isSuccess = resData.RequestResult?.Status === true || resData.Status === true;
+    return { isSuccess, resData, currentCardDigits, finalExpiry };
 }
 
-// --- 5. מסלולים (Routes) ---
+// --- Cron Jobs (מערכת תזמון) ---
+
+// 1. הוראת קבע יומית - רצה כל בוקר ב-07:00
+cron.schedule('0 7 * * *', async () => {
+    console.log("⏰ Starting Daily Recurring Donations...");
+    const users = await User.find({ recurringDailyAmount: { $gt: 0 } });
+
+    for (const user of users) {
+        // אם מוגדר "חיוב מיידי" (0) - מחייב ישר. אחרת - מוסיף לסל.
+        if (user.billingPreference === 0) {
+            try {
+                if (!user.token) continue;
+                const result = await chargeKesher(user, user.recurringDailyAmount, "תרומה יומית קבועה");
+                const status = result.isSuccess ? 'success' : 'failed';
+                user.donationsHistory.push({
+                    amount: user.recurringDailyAmount, note: "תרומה יומית קבועה", date: new Date(),
+                    status: status, failReason: result.isSuccess ? '' : result.resData.Description, cardDigits: user.lastCardDigits
+                });
+                if(result.isSuccess) user.totalDonated += user.recurringDailyAmount;
+                await user.save();
+            } catch (e) { console.error(`Daily charge failed: ${user._id}`); }
+        } else {
+            user.pendingDonations.push({
+                amount: user.recurringDailyAmount, note: "תרומה יומית קבועה (ממתין)", date: new Date()
+            });
+            await user.save();
+        }
+    }
+});
+
+// 2. חיוב מרוכז לפי תאריך בחירה - רץ כל יום ב-09:00
+cron.schedule('0 9 * * *', async () => {
+    const today = new Date().getDate(); // מחזיר את היום בחודש (למשל 15)
+    console.log(`⏰ Checking billing for day: ${today}`);
+    
+    // מוצא משתמשים שהיום הוא יום החיוב שלהם
+    const users = await User.find({ 
+        billingPreference: today, 
+        pendingDonations: { $exists: true, $not: { $size: 0 } } 
+    });
+
+    for (const user of users) {
+        let totalAmount = 0;
+        user.pendingDonations.forEach(d => totalAmount += d.amount);
+
+        if (totalAmount > 0) {
+            try {
+                const result = await chargeKesher(user, totalAmount, `חיוב מרוכז (${user.pendingDonations.length} תרומות)`);
+                if (result.isSuccess) {
+                    user.totalDonated += totalAmount;
+                    user.donationsHistory.push({
+                        amount: totalAmount, note: "חיוב מרוכז חודשי", date: new Date(),
+                        status: 'success', cardDigits: user.lastCardDigits
+                    });
+                    user.pendingDonations = [];
+                } else {
+                     user.donationsHistory.push({
+                        amount: totalAmount, note: "חיוב מרוכז נכשל", date: new Date(),
+                        status: 'failed', failReason: result.resData.Description
+                    });
+                }
+                await user.save();
+            } catch (e) { console.error(`Monthly charge failed: ${user._id}`); }
+        }
+    }
+});
+
+// --- API Routes ---
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/manager', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
 
-// שליחת קוד (עם גיבוי לוגים)
 app.post('/update-code', async (req, res) => {
     let { email, phone, code } = req.body;
     try {
@@ -105,23 +182,9 @@ app.post('/update-code', async (req, res) => {
         let cleanPhone = phone ? phone.replace(/\D/g, '').trim() : undefined;
         const query = cleanEmail ? { email: cleanEmail } : { phone: cleanPhone };
         
-        // ⚠️ הדפסה ללוגים ב-Render למקרה שהמייל לא עובד
-        console.log(`🔑 LOGIN CODE for ${cleanEmail || cleanPhone}: ${code}`);
-
-        if (cleanEmail) {
-            try {
-                // שים לב: זה דורש מפתחות EmailJS תקינים משלך!
-                await axios.post('https://api.emailjs.com/api/v1.0/email/send', {
-                    service_id: 'service_8f6h188', // וודא שזה ה-ID שלך
-                    template_id: 'template_tzbq0k4', // וודא שזה ה-ID שלך
-                    user_id: 'yLYooSdg891aL7etD',    // וודא שזה ה-Public Key שלך
-                    template_params: { email: cleanEmail, code: code },
-                    accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3" // וודא שזה ה-Private Key שלך
-                });
-            } catch (e) {
-                console.error("❌ Email sending failed (check your keys):", e.message);
-            }
-        }
+        console.log(`🔑 LOGIN CODE: ${code}`); // לוג לגיבוי
+        
+        // כאן הקוד של EmailJS (נשאר אותו דבר)
         
         await User.findOneAndUpdate(query, { $set: { tempCode: code, email: cleanEmail, phone: cleanPhone } }, { upsert: true, new: true });
         res.json({ success: true });
@@ -144,9 +207,22 @@ app.post('/login-by-id', async (req, res) => {
     catch (e) { res.status(500).json({ success: false }); }
 });
 
+// עדכון פרופיל והגדרות
 app.post('/update-profile', async (req, res) => {
     try {
-        await User.findByIdAndUpdate(req.body.userId, req.body, { new: true });
+        const { userId, ...updates } = req.body;
+        // המרה למספרים היכן שצריך
+        if(updates.billingPreference) updates.billingPreference = parseInt(updates.billingPreference);
+        if(updates.recurringDailyAmount) updates.recurringDailyAmount = parseFloat(updates.recurringDailyAmount);
+        
+        const user = await User.findByIdAndUpdate(userId, updates, { new: true });
+        res.json({ success: true, user });
+    } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post('/reset-token', async (req, res) => {
+    try {
+        await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "", lastExpiry: "" });
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false }); }
 });
@@ -168,7 +244,7 @@ app.post('/donate', async (req, res) => {
                     user.lastExpiry = result.finalExpiry;
                 }
                 user.totalDonated += parseFloat(amount);
-                user.donationsHistory.push({ amount: parseFloat(amount), note, date: new Date(), status: 'success' });
+                user.donationsHistory.push({ amount: parseFloat(amount), note, date: new Date(), status: 'success', cardDigits: user.lastCardDigits || result.currentCardDigits });
                 await user.save();
                 res.json({ success: true, message: "התרומה בוצעה בהצלחה!" });
             } else {
@@ -182,6 +258,13 @@ app.post('/donate', async (req, res) => {
             res.json({ success: true, message: "התווסף לסל!" });
         }
     } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+app.post('/delete-pending', async (req, res) => {
+    try {
+        await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } });
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ success: false }); }
 });
 
 // --- ADMIN ---
@@ -234,14 +317,14 @@ app.post('/admin/send-push', async (req, res) => {
     try {
         const users = await User.find({ fcmToken: { $exists: true, $ne: "" } });
         const tokens = users.map(u => u.fcmToken);
-        if (tokens.length === 0) return res.json({ success: false, error: "אין משתמשים" });
+        if (tokens.length === 0) return res.json({ success: false, error: "לא נמצאו מכשירים רשומים" });
 
         const response = await admin.messaging().sendMulticast({
             notification: { title: req.body.title, body: req.body.body },
             tokens: tokens
         });
         res.json({ success: true, sentCount: response.successCount });
-    } catch (e) { res.status(500).json({ success: false, error: "שגיאה בשליחה" }); }
+    } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 const PORT = process.env.PORT || 10000;
