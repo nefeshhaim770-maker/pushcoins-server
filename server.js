@@ -26,12 +26,12 @@ mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.
     .then(() => console.log('✅ DB Connected'))
     .catch(err => console.error('❌ DB Error:', err));
 
-// --- סכמת משתמש ---
+// --- סכמה ---
 const userSchema = new mongoose.Schema({
     email: String, phone: String, name: String, tz: String,
     lastExpiry: String, lastCardDigits: String, token: { type: String, default: "" },
     totalDonated: { type: Number, default: 0 },
-    billingPreference: { type: Number, default: 0 }, // 0 = מיידי
+    billingPreference: { type: Number, default: 0 }, // 0 = מיידי, 1-30 = יום בחודש
     recurringDailyAmount: { type: Number, default: 0 },
     securityPin: { type: String, default: "" },
     fcmToken: { type: String, default: "" },
@@ -79,7 +79,7 @@ async function chargeKesher(user, amount, note, cc = null) {
     return { success: res.data.RequestResult?.Status === true || res.data.Status === true, data: res.data };
 }
 
-// --- Cron Job ---
+// --- Cron Job (יומי) ---
 cron.schedule('0 8 * * *', async () => {
     const users = await User.find({ recurringDailyAmount: { $gt: 0 } });
     for (const u of users) {
@@ -124,16 +124,26 @@ app.post('/login-by-id', async (req, res) => {
     try { let user = await User.findById(req.body.userId); if(user) res.json({ success: true, user }); else res.json({ success: false }); } catch(e) { res.json({ success: false }); }
 });
 
+// ✅ התיקון הגדול לפונקציית התרומה
 app.post('/donate', async (req, res) => {
     const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin } = req.body;
     let u = await User.findById(userId);
     
+    // בדיקת PIN
     if (u.securityPin && u.securityPin.trim() !== "") {
         if (providedPin !== u.securityPin) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" });
     }
 
-    // לוגיקה חכמה: אם הכפתור הכריח מיידי - אז מיידי. אחרת, לפי ההגדרות.
-    let shouldChargeNow = (forceImmediate === true) ? true : (u.billingPreference === 0 && forceImmediate !== false);
+    // החלטה: האם לחייב עכשיו?
+    // אם forceImmediate הוא null/undefined (מגיע מגרירה/לחיצה על מטבע) -> הולכים לפי ההגדרות (u.billingPreference === 0)
+    // אם forceImmediate הוא true (כפתור תרום עכשיו) -> מחייבים
+    // אם forceImmediate הוא false (כפתור הוסף לסל) -> לסל
+    
+    let shouldChargeNow = false;
+    
+    if (forceImmediate === true) shouldChargeNow = true;
+    else if (forceImmediate === false) shouldChargeNow = false;
+    else shouldChargeNow = (u.billingPreference === 0); // לפי ההגדרות
 
     if (shouldChargeNow) {
         try {
@@ -149,7 +159,7 @@ app.post('/donate', async (req, res) => {
                 if (/Duplicate|double|כפולה/i.test(err)) err = "הסכום צריך להיות שונה שלא יחשב כתרומה כפולה";
                 res.json({ success: false, error: err });
             }
-        } catch(e) { res.json({ success: false, error: "תקלת תקשורת" }); }
+        } catch(e) { res.json({ success: false, error: "תקלת תקשורת: " + e.message }); }
     } else {
         u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() });
         await u.save();
@@ -157,12 +167,14 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// ✅ התיקון: עדכון מפורש של שדות
+// ✅ תיקון שמירת הגדרות
 app.post('/admin/update-profile', async (req, res) => {
     const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin } = req.body;
+    
+    // מוודא המרה למספרים
     await User.findByIdAndUpdate(userId, {
         name, phone, email, tz, 
-        billingPreference: parseInt(billingPreference), // המרה למספר חובה
+        billingPreference: parseInt(billingPreference), 
         recurringDailyAmount: parseInt(recurringDailyAmount),
         securityPin
     });
@@ -175,7 +187,7 @@ app.post('/reset-token', async (req, res) => { await User.findByIdAndUpdate(req.
 
 const PASS = "admin1234";
 app.post('/admin/stats', async (req, res) => {
-    if(req.body.password !== PASS) return res.json({ success: false });
+    if(req.body.password !== PASS) return res.json({ success: false }); // סיסמה שגויה = false
     const users = await User.find();
     let total = 0, count = 0;
     users.forEach(u => u.donationsHistory?.forEach(d => { if(d.status==='success') { total += d.amount||0; count++; } }));
