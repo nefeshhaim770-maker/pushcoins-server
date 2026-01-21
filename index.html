@@ -11,6 +11,24 @@
         :root { --primary: #1a237e; --gold: #ffd700; --bg: #e8eaf6; }
         body { background: var(--bg); font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: hidden; margin: 0; user-select: none; display: flex; flex-direction: column; }
         
+        /* --- מסך טעינה (Splash Screen) --- */
+        #app-loader {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #ffffff; z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 0.5s ease-out, visibility 0.5s;
+        }
+        .loader-logo { width: 120px; height: 120px; border-radius: 50%; margin-bottom: 20px; box-shadow: 0 5px 20px rgba(0,0,0,0.1); animation: pulse 2s infinite; }
+        .spinner {
+            width: 40px; height: 40px; border: 4px solid #e0e0e0;
+            border-top: 4px solid var(--primary); border-radius: 50%;
+            animation: spin 1s linear infinite; margin-bottom: 10px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        .loader-hidden { opacity: 0; visibility: hidden; }
+
+        /* --- עיצוב האפליקציה --- */
         .app-header { background: white; padding: 15px 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; z-index: 100; border-bottom-left-radius: 20px; border-bottom-right-radius: 20px; }
         .header-btn { background: #f5f5f5; border: none; width: 45px; height: 45px; border-radius: 50%; color: var(--primary); font-size: 1.2rem; position: relative; transition: 0.2s; }
         .header-btn:active { transform: scale(0.95); background: #e0e0e0; }
@@ -61,6 +79,12 @@
 </head>
 <body>
 
+<div id="app-loader">
+    <img src="logo.jpeg" class="loader-logo" alt="טוען...">
+    <div class="spinner"></div>
+    <div style="color: #1a237e; font-weight: bold;">טוען נתונים...</div>
+</div>
+
 <div class="app-header">
     <button class="header-btn" onclick="openSettings()"><i class="fas fa-cog"></i></button>
     <div class="text-center">
@@ -75,7 +99,8 @@
 
 <div class="display-container">
     <div class="pushka-card">
-        <div id="target-slot"></div> <img src="logo.jpeg" class="logo-img">
+        <div id="target-slot"></div>
+        <img src="logo.jpeg" class="logo-img">
         <h5 class="fw-bold text-dark">נפש החיים</h5>
         
         <div id="screen" class="digital-screen">₪0</div>
@@ -185,7 +210,10 @@
 
     window.onload = () => {
         if(userId) loadUser(userId);
-        else document.getElementById('login-modal').classList.add('open');
+        else {
+            document.getElementById('app-loader').classList.add('loader-hidden');
+            document.getElementById('login-modal').classList.add('open');
+        }
     };
 
     async function handleCustomCoin(el) {
@@ -279,7 +307,10 @@
                 localStorage.setItem('userId', user._id);
                 document.getElementById('login-modal').classList.remove('open');
                 
-                document.getElementById('total-donated').innerText = '₪' + (user.totalDonated||0).toLocaleString();
+                // הסתרת מסך טעינה
+                document.getElementById('app-loader').classList.add('loader-hidden');
+
+                document.getElementById('user-total').innerText = '₪' + (user.totalDonated||0).toLocaleString();
                 const basketCount = user.pendingDonations?.length || 0;
                 const badge = document.getElementById('basket-badge');
                 badge.innerText = basketCount;
@@ -308,9 +339,9 @@
             name: document.getElementById('set-name').value,
             phone: document.getElementById('set-phone').value,
             email: document.getElementById('set-email').value,
-            tz: document.getElementById('set-tz').value, // נוסף ה-TZ!
-            billingPreference: document.getElementById('set-pref').value,
-            recurringDailyAmount: document.getElementById('set-daily').value,
+            tz: document.getElementById('set-tz').value,
+            billingPreference: Number(document.getElementById('set-pref').value),
+            recurringDailyAmount: Number(document.getElementById('set-daily').value),
             securityPin: document.getElementById('set-pin').value
         };
         
@@ -330,8 +361,6 @@
         const list = document.getElementById('basket-list');
         list.innerHTML = '';
         const count = user.pendingDonations?.length || 0;
-        
-        // עדכון הודעה עליונה
         document.getElementById('basket-summary-text').innerText = count > 0 ? `יש לך ${count} תרומות הממתינות לחיוב` : 'הסל שלך ריק כרגע';
 
         if(count === 0) list.innerHTML = '<div class="text-center text-muted py-4">הסל ריק</div>';
