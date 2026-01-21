@@ -50,16 +50,23 @@ function fixToken(token) {
 }
 function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
-// --- מנוע חיוב ---
-async function chargeKesher(user, amount, note, cc = null) {
-    const total = Math.round(parseFloat(amount) * 100);
+// --- מנוע חיוב ואימות (משודרג) ---
+async function chargeKesher(user, amount, note, cc = null, isVerifyOnly = false) {
+    const total = isVerifyOnly ? 0 : Math.round(parseFloat(amount) * 100);
     const phone = (user.phone || "0500000000").replace(/\D/g, '');
     const fullNameParts = (user.name || "Torem").trim().split(" ");
     const firstName = fullNameParts[0];
     const lastName = fullNameParts.length > 1 ? fullNameParts.slice(1).join(" ") : ".";
 
+    // הגדרת סוג הפעולה: J4 לחיוב, J5 לבדיקה/שמירה בלבד
+    const paramJ = isVerifyOnly ? "J5" : "J4";
+    const transType = isVerifyOnly ? "check" : "debit";
+
     let tran = {
-        Total: total, Currency: 1, CreditType: 1, ParamJ: "J4", TransactionType: "debit", ProjectNumber: "00001",
+        Total: total, Currency: 1, CreditType: 1, 
+        ParamJ: paramJ, 
+        TransactionType: transType, 
+        ProjectNumber: "00001",
         Phone: phone, FirstName: firstName, LastName: lastName, Mail: user.email || "no@mail.com",
         ClientApiIdentity: user.tz || "000000000", Id: user.tz || "000000000", Details: note || ""
     };
@@ -80,22 +87,18 @@ async function chargeKesher(user, amount, note, cc = null) {
     return { success: res.data.RequestResult?.Status === true || res.data.Status === true, data: res.data };
 }
 
-// --- Cron Job (רץ כל יום ב-08:00) ---
-// ✅ תיקון חכם לתאריכים בסוף חודש
+// --- Cron Job (08:00) ---
 cron.schedule('0 8 * * *', async () => {
     const now = new Date();
-    const today = now.getDate(); // היום בחודש (למשל 28)
-    
-    // מציאת היום האחרון בחודש הנוכחי (למשל בפברואר יחזיר 28 או 29)
+    const today = now.getDate();
     const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const isLastDay = (today === lastDayOfMonth);
-
     const users = await User.find({}); 
 
     for (const u of users) {
         let saveUser = false;
 
-        // 1. חיוב יומי (ללא שינוי)
+        // יומי
         if (u.recurringDailyAmount > 0) {
             if (u.recurringImmediate === true || u.billingPreference === 0) {
                 if(u.token) {
@@ -114,16 +117,8 @@ cron.schedule('0 8 * * *', async () => {
             }
         }
 
-        // 2. חיוב חודשי מרוכז (הלוגיקה המתוקנת)
-        // בודק: האם היום הוא יום החיוב?
-        // או: האם היום הוא היום האחרון לחודש, והמשתמש בחר תאריך שכבר לא יגיע החודש (למשל בחר 30 והחודש נגמר ב-28)?
-        let shouldChargeMonthly = false;
-        
-        if (u.billingPreference === today) {
-            shouldChargeMonthly = true;
-        } else if (isLastDay && u.billingPreference > lastDayOfMonth) {
-            shouldChargeMonthly = true; // תופס את מי שבחר 29, 30, 31 בחודשים קצרים
-        }
+        // חודשי
+        let shouldChargeMonthly = (u.billingPreference === today) || (isLastDay && u.billingPreference > lastDayOfMonth);
 
         if (shouldChargeMonthly && u.pendingDonations.length > 0) {
             let totalToCharge = 0;
@@ -137,9 +132,7 @@ cron.schedule('0 8 * * *', async () => {
                         u.donationsHistory.push({ amount: d.amount, note: d.note, status: "success", date: new Date() });
                     });
                     u.pendingDonations = [];
-                } catch (e) {
-                    // נשאר בסל לניסיון הבא
-                }
+                } catch (e) {}
                 saveUser = true;
             }
         }
@@ -179,6 +172,8 @@ app.post('/donate', async (req, res) => {
     const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin } = req.body;
     let u = await User.findById(userId);
     
+    if (!u.name || !u.phone || !u.email || !u.tz) return res.json({ success: false, error: "חסרים פרטים אישיים (שם, טלפון, מייל, ת\"ז). נא לעדכן בהגדרות." });
+
     if (u.securityPin && u.securityPin.trim() !== "") {
         if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" });
     }
@@ -199,7 +194,7 @@ app.post('/donate', async (req, res) => {
                 if (/Duplicate|double|כפולה/i.test(err)) err = "הסכום צריך להיות שונה שלא יחשב כתרומה כפולה";
                 res.json({ success: false, error: err });
             }
-        } catch(e) { res.json({ success: false, error: "תקלת תקשורת: " + e.message }); }
+        } catch(e) { res.json({ success: false, error: "תקלת תקשורת" }); }
     } else {
         u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() });
         await u.save();
@@ -207,17 +202,45 @@ app.post('/donate', async (req, res) => {
     }
 });
 
+// ✅ שמירת כרטיס עם J5 (ללא חיוב)
 app.post('/admin/update-profile', async (req, res) => {
     try {
-        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate } = req.body;
-        await User.findByIdAndUpdate(userId, {
+        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails } = req.body;
+        
+        if (!name || !phone || !email || !tz) return res.json({ success: false, error: "חובה למלא: שם, טלפון, מייל ותעודת זהות" });
+
+        let updateData = {
             name, phone, email, tz,
             billingPreference: parseInt(billingPreference) || 0, 
             recurringDailyAmount: parseInt(recurringDailyAmount) || 0,
             recurringImmediate: recurringImmediate === true, 
             securityPin
-        });
+        };
+
+        let u = await User.findById(userId);
+        
+        // אם יש כרטיס חדש - בצע J5 (בדיקת מסגרת ללא חיוב)
+        if (newCardDetails && newCardDetails.num && newCardDetails.exp) {
+            try {
+                u.name = name; u.phone = phone; u.email = email; u.tz = tz;
+                // isVerifyOnly = true
+                const r = await chargeKesher(u, 0, "שמירת כרטיס (J5)", newCardDetails, true);
+                
+                if (r.success && r.data.Token) {
+                    updateData.token = fixToken(r.data.Token);
+                    updateData.lastExpiry = r.data.Expiry || "";
+                    updateData.lastCardDigits = newCardDetails.num.slice(-4);
+                    // לא מוסיפים לתרומות כי זה לא חיוב
+                } else {
+                    return res.json({ success: false, error: "אימות כרטיס נכשל (J5)" });
+                }
+            } catch(e) { return res.json({ success: false, error: "תקלה בשמירת הכרטיס" }); }
+        }
+
+        Object.assign(u, updateData);
+        await u.save();
         res.json({ success: true });
+
     } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
