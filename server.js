@@ -10,7 +10,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Firebase
+// --- הגדרות Firebase ---
 try {
     const serviceAccount = require('/etc/secrets/serviceAccountKey.json'); 
     admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
@@ -21,17 +21,17 @@ try {
     } catch (err) { console.log("⚠️ No Firebase Key"); }
 }
 
-// Mongo
+// --- חיבור ל-DB ---
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
     .then(() => console.log('✅ DB Connected'))
     .catch(err => console.error('❌ DB Error:', err));
 
-// Schema
+// --- סכמת משתמש ---
 const userSchema = new mongoose.Schema({
     email: String, phone: String, name: String, tz: String,
     lastExpiry: String, lastCardDigits: String, token: { type: String, default: "" },
     totalDonated: { type: Number, default: 0 },
-    billingPreference: { type: Number, default: 0 }, // 0=Immediate
+    billingPreference: { type: Number, default: 0 }, // 0 = מיידי
     recurringDailyAmount: { type: Number, default: 0 },
     securityPin: { type: String, default: "" },
     fcmToken: { type: String, default: "" },
@@ -41,7 +41,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// Utils
+// --- עזר ---
 function fixToken(token) {
     if (!token) return "";
     let strToken = String(token).replace(/['"]+/g, '').trim();
@@ -49,7 +49,7 @@ function fixToken(token) {
 }
 function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
-// Charge Logic
+// --- מנוע חיוב ---
 async function chargeKesher(user, amount, note, cc = null) {
     const total = Math.round(parseFloat(amount) * 100);
     const phone = (user.phone || "0500000000").replace(/\D/g, '');
@@ -79,7 +79,7 @@ async function chargeKesher(user, amount, note, cc = null) {
     return { success: res.data.RequestResult?.Status === true || res.data.Status === true, data: res.data };
 }
 
-// Cron
+// --- Cron Job ---
 cron.schedule('0 8 * * *', async () => {
     const users = await User.find({ recurringDailyAmount: { $gt: 0 } });
     for (const u of users) {
@@ -96,7 +96,7 @@ cron.schedule('0 8 * * *', async () => {
     }
 });
 
-// Routes
+// --- Routes ---
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/manager', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
 app.get('/firebase-messaging-sw.js', (req, res) => res.sendFile(path.join(__dirname, 'firebase-messaging-sw.js')));
@@ -132,8 +132,8 @@ app.post('/donate', async (req, res) => {
         if (providedPin !== u.securityPin) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" });
     }
 
-    // לוגיקה חכמה: אם נשלח forceImmediate (מהכפתור) משתמשים בו. אם לא (מגרירת מטבע), בודקים הגדרות משתמש.
-    let shouldChargeNow = (forceImmediate !== undefined) ? forceImmediate : (u.billingPreference === 0);
+    // לוגיקה חכמה: אם הכפתור הכריח מיידי - אז מיידי. אחרת, לפי ההגדרות.
+    let shouldChargeNow = (forceImmediate === true) ? true : (u.billingPreference === 0 && forceImmediate !== false);
 
     if (shouldChargeNow) {
         try {
@@ -157,7 +157,18 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-app.post('/admin/update-profile', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, req.body); res.json({ success: true }); });
+// ✅ התיקון: עדכון מפורש של שדות
+app.post('/admin/update-profile', async (req, res) => {
+    const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin } = req.body;
+    await User.findByIdAndUpdate(userId, {
+        name, phone, email, tz, 
+        billingPreference: parseInt(billingPreference), // המרה למספר חובה
+        recurringDailyAmount: parseInt(recurringDailyAmount),
+        securityPin
+    });
+    res.json({ success: true });
+});
+
 app.post('/save-push-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { fcmToken: req.body.token }); res.json({ success: true }); });
 app.post('/delete-pending', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } }); res.json({ success: true }); });
 app.post('/reset-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "" }); res.json({ success: true }); });
