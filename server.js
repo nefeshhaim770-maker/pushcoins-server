@@ -50,7 +50,7 @@ function fixToken(token) {
 }
 function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
-// --- מנוע חיוב (J4 - חיוב רגיל) ---
+// --- מנוע חיוב (J4 - הגרסה היציבה שעבדה) ---
 async function chargeKesher(user, amount, note, cc = null) {
     // ממיר לאגורות
     const total = Math.round(parseFloat(amount) * 100);
@@ -63,7 +63,7 @@ async function chargeKesher(user, amount, note, cc = null) {
         Total: total, 
         Currency: 1, 
         CreditType: 1, 
-        ParamJ: "J4", // חזרנו לחיוב רגיל שעובד תמיד
+        ParamJ: "J4", // תמיד J4 כי זה עובד
         TransactionType: "debit", 
         ProjectNumber: "00001",
         Phone: phone, FirstName: firstName, LastName: lastName, Mail: user.email || "no@mail.com",
@@ -72,6 +72,7 @@ async function chargeKesher(user, amount, note, cc = null) {
 
     if (cc) {
         tran.CreditNum = cc.num;
+        // המרת תוקף לפורמט YYMM
         tran.Expiry = (cc.exp.length === 4) ? cc.exp.substring(2, 4) + cc.exp.substring(0, 2) : cc.exp;
         if (cc.cvv) tran.Cvv = cc.cvv;
     } else if (user.token) {
@@ -202,7 +203,7 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// ✅ עדכון פרופיל + חיוב 0.10 ₪ לשמירה
+// ✅ עדכון פרופיל + חיוב 1 ₪ אמיתי לשמירת כרטיס
 app.post('/admin/update-profile', async (req, res) => {
     try {
         const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails } = req.body;
@@ -219,20 +220,21 @@ app.post('/admin/update-profile', async (req, res) => {
 
         let u = await User.findById(userId);
         
+        // אם הוזן כרטיס חדש - חייב 1 ש"ח (J4) כי זה עובד תמיד
         if (newCardDetails && newCardDetails.num && newCardDetails.exp) {
             try {
                 u.name = name; u.phone = phone; u.email = email; u.tz = tz;
                 
-                // ✅ חיוב 0.10 ₪ (J4)
-                const r = await chargeKesher(u, 0.10, "בדיקת כרטיס (0.10 ₪)", newCardDetails);
+                // חיוב 1 ₪ אמיתי (כדי למנוע סירוב)
+                const r = await chargeKesher(u, 1, "בדיקת כרטיס (חיוב 1 ₪)", newCardDetails);
                 
                 if (r.success && r.data.Token) {
                     updateData.token = fixToken(r.data.Token);
                     updateData.lastExpiry = r.data.Expiry || "";
                     updateData.lastCardDigits = newCardDetails.num.slice(-4);
                     // מוסיף להיסטוריה
-                    u.totalDonated += 0.10;
-                    u.donationsHistory.push({ amount: 0.10, note: "שמירת כרטיס (0.10 ₪)", status: 'success', date: new Date() });
+                    u.totalDonated += 1;
+                    u.donationsHistory.push({ amount: 1, note: "שמירת כרטיס (1 ₪)", status: 'success', date: new Date() });
                 } else {
                     return res.json({ success: false, error: "אימות נכשל: " + (r.data.Description || "סירוב") });
                 }
@@ -246,6 +248,7 @@ app.post('/admin/update-profile', async (req, res) => {
     } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+// Routes לניהול והודעות פוש (נשארו זהים)
 app.post('/save-push-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { fcmToken: req.body.token }); res.json({ success: true }); });
 app.post('/delete-pending', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } }); res.json({ success: true }); });
 app.post('/reset-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "" }); res.json({ success: true }); });
