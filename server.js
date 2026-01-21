@@ -26,12 +26,12 @@ mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.
     .then(() => console.log('✅ DB Connected'))
     .catch(err => console.error('❌ DB Error:', err));
 
-// --- סכמה ---
+// --- סכמת משתמש ---
 const userSchema = new mongoose.Schema({
     email: String, phone: String, name: String, tz: String,
     lastExpiry: String, lastCardDigits: String, token: { type: String, default: "" },
     totalDonated: { type: Number, default: 0 },
-    billingPreference: { type: Number, default: 0 }, // 0 = מיידי, 1-30 = יום בחודש
+    billingPreference: { type: Number, default: 0 }, // 0 = מיידי
     recurringDailyAmount: { type: Number, default: 0 },
     securityPin: { type: String, default: "" },
     fcmToken: { type: String, default: "" },
@@ -124,26 +124,18 @@ app.post('/login-by-id', async (req, res) => {
     try { let user = await User.findById(req.body.userId); if(user) res.json({ success: true, user }); else res.json({ success: false }); } catch(e) { res.json({ success: false }); }
 });
 
-// ✅ התיקון הגדול לפונקציית התרומה
+// ✅ פונקציית תרומה
 app.post('/donate', async (req, res) => {
     const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin } = req.body;
     let u = await User.findById(userId);
     
     // בדיקת PIN
     if (u.securityPin && u.securityPin.trim() !== "") {
-        if (providedPin !== u.securityPin) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" });
+        if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" });
     }
 
-    // החלטה: האם לחייב עכשיו?
-    // אם forceImmediate הוא null/undefined (מגיע מגרירה/לחיצה על מטבע) -> הולכים לפי ההגדרות (u.billingPreference === 0)
-    // אם forceImmediate הוא true (כפתור תרום עכשיו) -> מחייבים
-    // אם forceImmediate הוא false (כפתור הוסף לסל) -> לסל
-    
-    let shouldChargeNow = false;
-    
-    if (forceImmediate === true) shouldChargeNow = true;
-    else if (forceImmediate === false) shouldChargeNow = false;
-    else shouldChargeNow = (u.billingPreference === 0); // לפי ההגדרות
+    // החלטה האם לחייב: אם הלקוח לחץ "תרום עכשיו" (true) או שהגדרותיו הן 0 (מיידי) והוא לא לחץ "סל" (false)
+    let shouldChargeNow = (forceImmediate === true) ? true : (u.billingPreference === 0 && forceImmediate !== false);
 
     if (shouldChargeNow) {
         try {
@@ -167,18 +159,23 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// ✅ תיקון שמירת הגדרות
+// ✅ תיקון קריטי: עדכון הגדרות
 app.post('/admin/update-profile', async (req, res) => {
-    const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin } = req.body;
-    
-    // מוודא המרה למספרים
-    await User.findByIdAndUpdate(userId, {
-        name, phone, email, tz, 
-        billingPreference: parseInt(billingPreference), 
-        recurringDailyAmount: parseInt(recurringDailyAmount),
-        securityPin
-    });
-    res.json({ success: true });
+    try {
+        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin } = req.body;
+        
+        // וידוא שהערכים הם מספרים
+        const billingPrefInt = parseInt(billingPreference);
+        const recurringInt = parseInt(recurringDailyAmount);
+
+        await User.findByIdAndUpdate(userId, {
+            name, phone, email, tz, 
+            billingPreference: isNaN(billingPrefInt) ? 0 : billingPrefInt, 
+            recurringDailyAmount: isNaN(recurringInt) ? 0 : recurringInt,
+            securityPin
+        });
+        res.json({ success: true });
+    } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 app.post('/save-push-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { fcmToken: req.body.token }); res.json({ success: true }); });
@@ -187,7 +184,7 @@ app.post('/reset-token', async (req, res) => { await User.findByIdAndUpdate(req.
 
 const PASS = "admin1234";
 app.post('/admin/stats', async (req, res) => {
-    if(req.body.password !== PASS) return res.json({ success: false }); // סיסמה שגויה = false
+    if(req.body.password !== PASS) return res.json({ success: false }); 
     const users = await User.find();
     let total = 0, count = 0;
     users.forEach(u => u.donationsHistory?.forEach(d => { if(d.status==='success') { total += d.amount||0; count++; } }));
