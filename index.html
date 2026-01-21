@@ -3,385 +3,345 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>קופת צדקה</title>
-    
+    <title>קופת צדקה - נפש החיים</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    
     <style>
-        body { background-color: #f0f2f5; font-family: sans-serif; padding-bottom: 80px; margin: 0; user-select: none; }
-        .pushka-container { max-width: 500px; margin: 0 auto; background: white; min-height: 100vh; position: relative; }
-        
-        /* כותרת */
-        .header { 
-            background: linear-gradient(135deg, #198754, #20c997); 
-            color: white; padding: 15px 20px; 
-            border-bottom-left-radius: 25px; border-bottom-right-radius: 25px; 
-            display: flex; justify-content: space-between; align-items: center; 
-            position: sticky; top: 0; z-index: 1000;
+        body { 
+            background: linear-gradient(180deg, #a1c4fd 0%, #c2e9fb 100%);
+            font-family: 'Segoe UI', sans-serif; 
+            padding-bottom: 80px; margin: 0; 
+            overflow: hidden; height: 100vh; user-select: none;
         }
-        .action-btn { background: rgba(255,255,255,0.25); border: none; color: white; width: 45px; height: 45px; border-radius: 50%; font-size: 1.2rem; cursor: pointer; position: relative; }
-        
-        /* תיקון מיקום העיגול האדום */
-        .badge-count { 
-            position: absolute; 
-            top: -5px; 
-            left: -5px; /* שינוי: הצמדה לשמאל במקום לימין */
-            right: auto;
-            background: #dc3545; 
-            color: white; 
-            font-size: 0.75rem; 
-            padding: 2px 6px; 
-            border-radius: 10px; 
-            border: 2px solid #198754; 
-            z-index: 10;
-        }
-        
-        /* כפתורים וטאבים */
-        .amount-btn { width: 60px; height: 60px; border-radius: 15px; font-weight: bold; border: 2px solid #e9ecef; background: white; margin: 5px; touch-action: manipulation; }
-        .amount-btn:active { background-color: #e9ecef; transform: scale(0.95); }
-        
-        .custom-tab { flex: 1; text-align: center; padding: 10px; border-radius: 12px; background: #f8f9fa; color: #6c757d; border: 1px solid #dee2e6; margin: 0 5px; cursor: pointer; font-weight: bold; }
-        .custom-tab.active { background-color: #198754; color: white; border-color: #198754; }
-        
-        .custom-input { border-radius: 12px; padding: 12px; border: 2px solid #e9ecef; width: 100%; font-size: 1.1rem; }
 
-        /* מסך טעינה ומודלים (ידני ללא ספרייה) */
-        .overlay-screen { position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.5); z-index: 2000; display: flex; justify-content: center; align-items: center; }
-        .modal-card { background: white; width: 90%; max-width: 400px; border-radius: 20px; max-height: 85vh; overflow-y: auto; display: flex; flex-direction: column; }
-        .modal-header { padding: 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 1.2rem; }
-        .modal-body { padding: 20px; }
-        
-        #loading-screen { background: white; z-index: 9999; }
+        /* מטבעות */
+        .coins-container {
+            display: flex; justify-content: center; gap: 12px; padding-top: 60px;
+            flex-wrap: wrap; z-index: 10; position: relative; max-width: 400px; margin: 0 auto;
+        }
+        .coin {
+            width: 75px; height: 75px;
+            background: radial-gradient(circle at 30% 30%, #fff, #ffd700);
+            border-radius: 50%; border: 4px solid #b8860b;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            cursor: pointer; position: relative; z-index: 100; touch-action: none;
+        }
+        .coin.silver { background: radial-gradient(circle at 30% 30%, #fff, #e0e0e0); border-color: #a9a9a9; }
+        .coin span { font-weight: bold; font-size: 1.4rem; line-height: 1; color: #444; pointer-events: none; }
+        .coin small { font-size: 0.7rem; color: #666; pointer-events: none; }
+
+        /* שדה הערה */
+        .note-container {
+            width: 80%; max-width: 300px; margin: 20px auto 0;
+            position: relative; z-index: 5;
+        }
+        .note-input {
+            width: 100%; background: rgba(255,255,255,0.6); border: 1px solid rgba(255,255,255,0.8);
+            border-radius: 20px; padding: 8px 15px; text-align: center; font-size: 1rem; color: #1e3c72;
+            outline: none; transition: 0.3s;
+        }
+        .note-input:focus { background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .note-input::placeholder { color: #555; opacity: 0.7; }
+
+        /* קופה */
+        .pushka-box-container {
+            position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+            width: 280px; height: 300px; display: flex; flex-direction: column; align-items: center;
+        }
+        .slot-area {
+            width: 140px; height: 15px; background: #2a2a2a; border-radius: 10px;
+            margin-bottom: -5px; box-shadow: inset 0 2px 5px rgba(0,0,0,0.5); z-index: 5;
+        }
+        .pushka-body {
+            width: 100%; height: 100%;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            border-radius: 20px 20px 0 0;
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.4);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            color: white; padding-top: 20px; position: relative;
+        }
+        .pushka-logo {
+            width: 100px; height: 100px; background: white; border-radius: 50%;
+            padding: 5px; margin-bottom: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); object-fit: contain;
+        }
+
+        /* כפתורים עליונים */
+        .header-icons {
+            position: absolute; top: 15px; width: 100%; padding: 0 20px;
+            display: flex; justify-content: space-between; z-index: 200;
+        }
+        .icon-btn { 
+            background: rgba(255,255,255,0.8); border: none; width: 45px; height: 45px; border-radius: 50%; 
+            color: #1e3c72; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-size: 1.2rem; position: relative;
+        }
+        .badge-count { 
+            position: absolute; top: -5px; left: -5px; background: #dc3545; color: white; 
+            font-size: 0.75rem; padding: 2px 6px; border-radius: 10px; border: 2px solid white; 
+        }
+
+        .dropping { transition: all 0.5s ease-in !important; transform: translateY(200px) scale(0.3) !important; opacity: 0 !important; }
+
+        /* מודלים */
+        .overlay-screen { position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.8); z-index: 2000; display: flex; justify-content: center; align-items: center; }
+        .modal-card { background: white; width: 90%; max-width: 350px; border-radius: 20px; padding: 20px; max-height: 85vh; overflow-y: auto; }
+        .input-lg { font-size: 2rem; text-align: center; border: none; border-bottom: 2px solid #ddd; width: 150px; margin: 20px auto; outline: none; }
     </style>
 </head>
 <body>
 
-<div class="pushka-container">
-    
-    <div id="loading-screen" class="overlay-screen">
-        <div class="text-center">
-            <div class="spinner-border text-success mb-3" role="status"></div>
-            <h5 class="text-muted">טוען נתונים...</h5>
-        </div>
+<div class="header-icons">
+    <button class="icon-btn" onclick="openSettings()"><i class="fas fa-cog"></i></button>
+    <div class="bg-white px-3 py-2 rounded-pill shadow-sm text-primary fw-bold d-flex align-items-center" style="height: 45px;">
+        <span id="total-display">₪0</span>
     </div>
+    <button class="icon-btn" onclick="openBasket()">
+        <i class="fas fa-shopping-cart"></i>
+        <span class="badge-count d-none" id="basket-badge">0</span>
+    </button>
+</div>
 
-    <div id="login-section" class="p-4 pt-5 d-none">
-        <div class="text-center mb-5">
-            <i class="fas fa-hand-holding-heart fa-4x text-success mb-3"></i>
-            <h2 class="fw-bold">כניסה למערכת</h2>
-        </div>
-        <div class="form-floating mb-3">
-            <input type="text" id="login-input" class="form-control text-center" placeholder="פרטי זיהוי">
-            <label class="w-100 text-center">אימייל או נייד</label>
-        </div>
-        <div id="otp-area" class="d-none mb-3">
-            <input type="number" id="otp-input" class="form-control text-center p-3 fs-4" placeholder="קוד אימות">
-        </div>
-        <button onclick="sendCode()" id="btn-send-code" class="btn btn-success w-100 btn-lg rounded-pill py-3 fw-bold mb-3">שלח קוד</button>
-        <button onclick="verifyCode()" id="btn-verify" class="btn btn-primary w-100 btn-lg d-none rounded-pill py-3 fw-bold">כנס</button>
-    </div>
+<div class="coins-container">
+    <div class="coin silver" data-amount="1"><span>1</span><small>₪</small></div>
+    <div class="coin silver" data-amount="2"><span>2</span><small>₪</small></div>
+    <div class="coin silver" data-amount="5"><span>5</span><small>₪</small></div>
+    <div class="coin" data-amount="10"><span>10</span><small>₪</small></div>
+    <div class="coin" data-amount="18"><span>18</span><small>ח"י</small></div>
+    <div class="coin" onclick="openCustomAmount()"><i class="fas fa-pen"></i><small>אחר</small></div>
+</div>
 
-    <div id="app-section" class="d-none">
-        <div class="header">
-            <button class="action-btn" onclick="toggleModal('settingsModal', true)"><i class="fas fa-cog"></i></button>
-            <div class="stat-box">
-                <small class="opacity-75">סה"כ נתרם</small>
-                <h2 class="m-0 fw-bold" id="total-donated">₪0</h2>
-            </div>
-            <button class="action-btn" onclick="toggleModal('basketModal', true)">
-                <i class="fas fa-shopping-cart"></i>
-                <span class="badge-count d-none" id="basket-badge">0</span>
-            </button>
-        </div>
+<div class="note-container">
+    <input type="text" id="main-note" class="note-input" placeholder="הוסף הערה (לזכות/לעילוי נשמת...)">
+</div>
 
-        <div class="p-3 text-center">
-            <div class="d-flex justify-content-between mb-4">
-                <div id="tab-btn-basket" class="custom-tab active" onclick="switchTab('basket')">הוספה לסל</div>
-                <div id="tab-btn-now" class="custom-tab" onclick="switchTab('now')">חיוב מיידי</div>
-            </div>
-
-            <div class="d-flex justify-content-center flex-wrap mb-4">
-                <button class="amount-btn" onclick="setAmount(10)">10</button>
-                <button class="amount-btn" onclick="setAmount(18)">18</button>
-                <button class="amount-btn" onclick="setAmount(36)">36</button>
-                <button class="amount-btn" onclick="setAmount(50)">50</button>
-                <button class="amount-btn" onclick="setAmount(100)">100</button>
-            </div>
-            
-            <input type="number" id="custom-amount" class="custom-input text-center fs-3 mb-3" placeholder="סכום אחר">
-            <input type="text" id="donation-note" class="custom-input text-center mb-4" placeholder="הערה (אופציונלי)">
-
-            <button id="main-action-btn" class="btn btn-warning w-100 btn-lg rounded-pill py-3 fw-bold" onclick="handleMainAction()">
-                שמור בסל התרומות
+<div class="pushka-box-container">
+    <div class="slot-area" id="slot"></div>
+    <div class="pushka-body">
+        <img src="logo.jpeg" alt="Logo" class="pushka-logo"> 
+        <h4 class="fw-bold mb-0">נפש החיים</h4>
+        <small class="opacity-75 mb-3">גרור מטבע לקופה</small>
+        
+        <div class="w-100 px-4 mt-auto mb-4">
+            <button class="btn btn-light w-100 text-primary fw-bold shadow-sm rounded-pill" onclick="donateNowBtn()">
+                <i class="fas fa-bolt me-2"></i> חיוב מיידי
             </button>
         </div>
     </div>
+</div>
 
-    <div id="basketModal" class="overlay-screen d-none">
-        <div class="modal-card">
-            <div class="modal-header bg-warning-subtle">
-                <span>🛒 סל התרומות</span>
-                <button class="btn-close" onclick="toggleModal('basketModal', false)"></button>
-            </div>
-            <div class="modal-body">
-                <div id="basket-list"></div>
-                <div class="alert alert-light border mt-3 text-center small">
-                    חיוב ביום ה-<strong id="billing-day-display">--</strong> לחודש
-                </div>
-            </div>
+<div id="login-section" class="overlay-screen bg-white" style="z-index: 5000;">
+    <div class="text-center p-4 w-100" style="max-width: 350px;">
+        <img src="logo.jpeg" width="80" class="mb-3 rounded-circle shadow">
+        <h2 class="fw-bold text-primary">ברוכים הבאים</h2>
+        <div class="form-floating mb-3 border rounded-4 mt-4">
+            <input type="text" id="login-input" class="form-control border-0 bg-light text-center" placeholder="נייד">
+            <label class="w-100 text-center">מספר טלפון או אימייל</label>
+        </div>
+        <div id="otp-area" class="d-none mb-3 border rounded-4">
+            <input type="number" id="otp-input" class="form-control border-0 bg-light text-center fs-4" placeholder="קוד">
+        </div>
+        <button onclick="sendCode()" id="btn-send-code" class="btn btn-primary w-100 btn-lg rounded-pill shadow">שלח קוד אימות</button>
+        <button onclick="verifyCode()" id="btn-verify" class="btn btn-success w-100 btn-lg rounded-pill shadow d-none">כניסה</button>
+    </div>
+</div>
+
+<div id="customAmountModal" class="overlay-screen d-none">
+    <div class="modal-card">
+        <h5>סכום לתרומה</h5>
+        <input type="number" id="custom-amount-input" class="input-lg" placeholder="₪">
+        <button class="btn btn-primary w-100 rounded-pill py-2 fw-bold" onclick="donateCustom()">הוסף לקופה</button>
+        <button class="btn btn-link text-muted mt-2" onclick="toggleModal('customAmountModal', false)">ביטול</button>
+    </div>
+</div>
+
+<div id="basketModal" class="overlay-screen d-none">
+    <div class="modal-card">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="m-0 fw-bold">🛒 סל תרומות</h5>
+            <button class="btn-close" onclick="toggleModal('basketModal', false)"></button>
+        </div>
+        <div id="basket-list" class="mb-3"></div>
+        <div class="alert alert-info py-2 small text-center mb-0">
+            חיוב ביום ה-<strong id="billing-day-display">--</strong> לחודש
         </div>
     </div>
+</div>
 
-    <div id="settingsModal" class="overlay-screen d-none">
-        <div class="modal-card">
-            <div class="modal-header">
-                <span>⚙️ הגדרות</span>
-                <button class="btn-close" onclick="toggleModal('settingsModal', false)"></button>
-            </div>
-            <div class="modal-body">
-                <label class="fw-bold mb-1">יום חיוב חודשי</label>
-                <select id="edit-billing-day" class="form-select mb-3">
-                    <option value="0">חיוב מיידי (ללא סל)</option>
-                    <option value="1">1 לחודש</option>
-                    <option value="2">2 לחודש</option>
-                    <option value="10">10 לחודש</option>
-                    <option value="20">20 לחודש</option>
-                </select>
-
-                <input type="text" id="edit-name" class="form-control mb-2" placeholder="שם מלא">
-                <input type="text" id="edit-tz" class="form-control mb-2" placeholder="תעודת זהות">
-                <input type="email" id="edit-email" class="form-control mb-2" placeholder="אימייל">
-                <input type="tel" id="edit-phone" class="form-control mb-2" placeholder="טלפון">
-
-                <div class="d-flex justify-content-between border p-2 mb-3 rounded align-items-center">
-                    <small id="credit-info">טוען...</small>
-                    <button class="btn btn-sm btn-outline-danger" onclick="resetCreditCard()">החלף</button>
-                </div>
-
-                <button class="btn btn-primary w-100 mb-3" onclick="saveSettings()">שמור שינויים</button>
-                <button class="btn btn-outline-danger w-100" onclick="logout()">יציאה מהחשבון</button>
-            </div>
+<div id="settingsModal" class="overlay-screen d-none">
+    <div class="modal-card text-end">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="m-0 fw-bold">הגדרות ופרופיל</h5>
+            <button class="btn-close" onclick="toggleModal('settingsModal', false)"></button>
         </div>
-    </div>
+        
+        <label class="small text-muted fw-bold">מועד חיוב הסל</label>
+        <select id="edit-billing-day" class="form-select mb-3">
+            <option value="0">מיידי (ללא סל)</option>
+            <option value="1">1 לחודש</option>
+            <option value="2">2 לחודש</option>
+            <option value="10">10 לחודש</option>
+            <option value="20">20 לחודש</option>
+        </select>
 
+        <label class="small text-muted fw-bold">פרטים אישיים</label>
+        <input type="text" id="edit-name" class="form-control mb-2" placeholder="שם מלא">
+        <input type="text" id="edit-phone" class="form-control mb-2" placeholder="טלפון">
+        <input type="email" id="edit-email" class="form-control mb-2" placeholder="אימייל">
+        <input type="text" id="edit-tz" class="form-control mb-3" placeholder="תעודת זהות">
+        
+        <div class="d-flex justify-content-between border p-2 mb-3 rounded align-items-center bg-light">
+            <small id="credit-info">טוען...</small>
+            <button class="btn btn-sm btn-outline-danger" onclick="resetCreditCard()">החלף</button>
+        </div>
+
+        <button class="btn btn-primary w-100 rounded-pill mb-2" onclick="saveSettings()">שמור שינויים</button>
+        <button class="btn btn-outline-danger w-100 rounded-pill" onclick="logout()">יציאה</button>
+    </div>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-messaging.js"></script>
-
 <script>
-    // --- משתנים גלובליים ---
     var API_URL = "https://pushcoins-server.onrender.com";
-    var currentUserId = null;
-    var currentUser = null;
-    var currentMode = 'basket'; // מצב נוכחי: 'basket' או 'now'
+    var currentUserId = null, currentUser = null;
+    var currentDrag = null;
+    var startX, startY;
 
-    // אתחול Firebase בטוח
-    var firebaseConfig = {
-        apiKey: "AIzaSyDuFnImbXAjc5fINUVNAMKf073kke4MSyo",
-        authDomain: "pushkaapp-45e4f.firebaseapp.com",
-        projectId: "pushkaapp-45e4f",
-        storageBucket: "pushkaapp-45e4f.firebasestorage.app",
-        messagingSenderId: "810482014009",
-        appId: "1:810482014009:web:0b4601cb35b6d88c91fae8"
-    };
-    try {
-        firebase.initializeApp(firebaseConfig);
-    } catch(e) { console.log("Firebase init error", e); }
-
-    // --- אתחול ראשי ---
+    // אתחול
     window.onload = function() {
-        // טיימר בטיחות להסרת מסך טעינה
-        setTimeout(function(){ 
-            document.getElementById('loading-screen').classList.add('d-none');
-            if(!currentUser && !currentUserId) document.getElementById('login-section').classList.remove('d-none');
-        }, 5000);
-
-        try {
-            currentUserId = localStorage.getItem('userId');
-            if(currentUserId) {
-                loadUserProfile();
-            } else {
-                document.getElementById('loading-screen').classList.add('d-none');
-                document.getElementById('login-section').classList.remove('d-none');
-            }
-        } catch(e) {
-            document.getElementById('loading-screen').classList.add('d-none');
-            document.getElementById('login-section').classList.remove('d-none');
-        }
+        initDrag();
+        try { currentUserId = localStorage.getItem('userId'); if(currentUserId) loadUser(); } catch(e){}
     };
 
-    // --- ניהול טאבים (ידני) ---
-    function switchTab(mode) {
-        currentMode = mode;
-        var btnBasket = document.getElementById('tab-btn-basket');
-        var btnNow = document.getElementById('tab-btn-now');
-        var mainBtn = document.getElementById('main-action-btn');
-
-        if(mode === 'basket') {
-            btnBasket.classList.add('active');
-            btnNow.classList.remove('active');
-            mainBtn.className = "btn btn-warning w-100 btn-lg rounded-pill py-3 fw-bold";
-            mainBtn.innerText = "שמור בסל התרומות";
-        } else {
-            btnBasket.classList.remove('active');
-            btnNow.classList.add('active');
-            mainBtn.className = "btn btn-success w-100 btn-lg rounded-pill py-3 fw-bold";
-            mainBtn.innerText = "חיוב אשראי מיידי";
-        }
-    }
-
-    function setAmount(val) { document.getElementById('custom-amount').value = val; }
-
-    function handleMainAction() {
-        if(currentMode === 'basket') donate('basket');
-        else donate('immediate');
-    }
-
-    // --- ניהול מודלים (ידני) ---
-    function toggleModal(modalId, show) {
-        var modal = document.getElementById(modalId);
-        if(show) modal.classList.remove('d-none');
-        else modal.classList.add('d-none');
-    }
-
-    // --- לוגיקת שרת ---
-    function loadUserProfile() {
-        fetch(API_URL + '/login-by-id', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ userId: currentUserId })
-        })
-        .then(function(res){ return res.json(); })
-        .then(function(data){
-            document.getElementById('loading-screen').classList.add('d-none');
-            if(data.success) {
-                currentUser = data.user;
+    function loadUser() {
+        fetch(API_URL + '/login-by-id', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({userId:currentUserId}) })
+        .then(r=>r.json()).then(d=>{
+            if(d.success) { 
+                currentUser = d.user; 
                 document.getElementById('login-section').classList.add('d-none');
-                document.getElementById('app-section').classList.remove('d-none');
                 updateUI();
-            } else {
-                logout();
-            }
-        })
-        .catch(function(e){ 
-            console.log(e);
-            document.getElementById('loading-screen').classList.add('d-none');
-            // אם יש שגיאה (למשל אין אינטרנט), ננסה להראות מסך התחברות
-            if(!currentUser) document.getElementById('login-section').classList.remove('d-none');
+            } else document.getElementById('login-section').classList.remove('d-none');
         });
     }
 
     function updateUI() {
-        document.getElementById('total-donated').innerText = '₪' + (currentUser.totalDonated||0).toFixed(0);
+        document.getElementById('total-display').innerText = '₪' + (currentUser.totalDonated||0).toFixed(0);
         
+        // עדכון באדג' סל
         var count = currentUser.pendingDonations ? currentUser.pendingDonations.length : 0;
         var badge = document.getElementById('basket-badge');
         badge.innerText = count;
-        if(count > 0) badge.classList.remove('d-none');
-        else badge.classList.add('d-none');
+        count > 0 ? badge.classList.remove('d-none') : badge.classList.add('d-none');
 
         // עדכון טופס הגדרות
         document.getElementById('edit-name').value = currentUser.name || "";
-        document.getElementById('edit-tz').value = currentUser.tz || "";
-        document.getElementById('edit-email').value = currentUser.email || "";
         document.getElementById('edit-phone').value = currentUser.phone || "";
+        document.getElementById('edit-email').value = currentUser.email || "";
+        document.getElementById('edit-tz').value = currentUser.tz || "";
         document.getElementById('edit-billing-day').value = currentUser.billingPreference || 0;
         document.getElementById('billing-day-display').innerText = currentUser.billingPreference || "מיידי";
-
-        var creditInfo = document.getElementById('credit-info');
-        creditInfo.innerHTML = currentUser.lastCardDigits ? 
-            "<span class='text-success fw-bold'>כרטיס: " + currentUser.lastCardDigits + "</span>" : 
-            "<span class='text-danger'>אין כרטיס שמור</span>";
-
-        renderBasketList();
+        document.getElementById('credit-info').innerHTML = currentUser.lastCardDigits ? "<span class='text-success fw-bold'>**** " + currentUser.lastCardDigits + "</span>" : "אין כרטיס";
     }
 
-    function renderBasketList() {
-        var list = document.getElementById('basket-list');
-        list.innerHTML = '';
-        if(!currentUser.pendingDonations || currentUser.pendingDonations.length === 0) {
-            list.innerHTML = '<div class="text-center p-3 text-muted">הסל ריק</div>';
-            return;
+    // --- גרירה ---
+    function initDrag() {
+        const coins = document.querySelectorAll('.coin[data-amount]');
+        coins.forEach(coin => {
+            coin.addEventListener('touchstart', dragStart, {passive: false});
+            coin.addEventListener('touchmove', dragMove, {passive: false});
+            coin.addEventListener('touchend', dragEnd);
+            coin.addEventListener('mousedown', dragStart);
+        });
+    }
+
+    function dragStart(e) {
+        if(e.target.tagName === 'I' || e.target.closest('div').onclick) return;
+        e.preventDefault();
+        currentDrag = e.currentTarget;
+        const touch = e.touches ? e.touches[0] : e;
+        const rect = currentDrag.getBoundingClientRect();
+        startX = touch.clientX - rect.left;
+        startY = touch.clientY - rect.top;
+        currentDrag.style.position = 'fixed';
+        currentDrag.style.zIndex = 1000;
+        moveAt(touch.clientX, touch.clientY);
+    }
+
+    function dragMove(e) {
+        if(!currentDrag) return;
+        e.preventDefault();
+        const touch = e.touches ? e.touches[0] : e;
+        moveAt(touch.clientX, touch.clientY);
+    }
+
+    function dragEnd(e) {
+        if(!currentDrag) return;
+        const rect = currentDrag.getBoundingClientRect();
+        const slot = document.getElementById('slot').getBoundingClientRect();
+
+        if (rect.top + rect.height > slot.top && rect.left + rect.width > slot.left && rect.left < slot.left + slot.width) {
+            dropCoin(currentDrag);
+        } else {
+            currentDrag.style.position = 'relative';
+            currentDrag.style.left = 'auto';
+            currentDrag.style.top = 'auto';
         }
-        currentUser.pendingDonations.forEach(function(item) {
-            var div = document.createElement('div');
-            div.className = "d-flex justify-content-between border-bottom py-2 align-items-center";
-            div.innerHTML = '<div><b class="fs-5">₪'+item.amount+'</b> <div class="small text-muted">'+(item.note||'')+'</div></div>';
-            
-            var btn = document.createElement('button');
-            btn.className = "btn btn-sm text-danger border";
-            btn.innerText = "הסר";
-            btn.onclick = function() { deletePending(item._id); };
-            
-            div.appendChild(btn);
-            list.appendChild(div);
-        });
+        
+        document.removeEventListener('mousemove', dragMove);
+        document.removeEventListener('mouseup', dragEnd);
+        currentDrag = null;
     }
 
-    // --- פעולות ---
-    function sendCode() {
-        var input = document.getElementById('login-input').value;
-        if(!input) return alert("נא להזין פרטים");
-        
-        var code = Math.floor(1000 + Math.random() * 9000).toString();
-        Swal.fire({title:'שולח...', didOpen: function(){Swal.showLoading()}});
+    document.addEventListener('mouseup', dragEnd);
+    document.addEventListener('mousemove', dragMove);
 
-        fetch(API_URL + '/update-code', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                email: input.includes('@') ? input : undefined,
-                phone: !input.includes('@') ? input : undefined,
-                code: code
-            })
-        }).then(function(){
-            Swal.fire('נשלח!', 'הקוד נשלח בהצלחה', 'success');
-            document.getElementById('btn-send-code').classList.add('d-none');
-            document.getElementById('otp-area').classList.remove('d-none');
-            document.getElementById('btn-verify').classList.remove('d-none');
-        });
+    function moveAt(x, y) {
+        currentDrag.style.left = x - startX + 'px';
+        currentDrag.style.top = y - startY + 'px';
     }
 
-    function verifyCode() {
-        var input = document.getElementById('login-input').value;
-        var code = document.getElementById('otp-input').value;
-        
-        Swal.fire({title:'מאמת...', didOpen: function(){Swal.showLoading()}});
+    function dropCoin(coin) {
+        const amt = coin.getAttribute('data-amount');
+        coin.classList.add('dropping');
+        setTimeout(() => {
+            coin.classList.remove('dropping');
+            coin.style.position = 'relative'; coin.style.left = 'auto'; coin.style.top = 'auto';
+            processDonation(amt, false); // false = לא לכפות מיידי (תלוי בהגדרות)
+        }, 500);
+    }
 
-        fetch(API_URL + '/verify-auth', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                email: input.includes('@') ? input : undefined,
-                phone: !input.includes('@') ? input : undefined,
-                code: code
-            })
-        })
-        .then(function(res){ return res.json(); })
-        .then(function(data){
-            Swal.close();
-            if(data.success) {
-                currentUserId = data.user._id;
-                localStorage.setItem('userId', currentUserId);
-                loadUserProfile();
-            } else {
-                alert("קוד שגוי");
+    // --- תרומות ---
+    function openCustomAmount() { toggleModal('customAmountModal', true); }
+    function donateCustom() {
+        const val = document.getElementById('custom-amount-input').value;
+        if(val > 0) { toggleModal('customAmountModal', false); processDonation(val, false); }
+    }
+    function donateNowBtn() {
+        // כפתור חיוב מיידי - פותח מודל סכום אם לא נבחר, או מבקש סכום
+        Swal.fire({
+            title: 'חיוב מיידי',
+            text: 'הכנס סכום לתרומה',
+            input: 'number',
+            showCancelButton: true,
+            confirmButtonText: 'חייב עכשיו'
+        }).then((result) => {
+            if (result.isConfirmed && result.value > 0) {
+                processDonation(result.value, true); // true = כפיית מיידי
             }
         });
     }
 
-    function donate(mode) {
-        var amount = document.getElementById('custom-amount').value;
-        var note = document.getElementById('donation-note').value;
+    function processDonation(amount, forceImmediate) {
+        const note = document.getElementById('main-note').value;
         
-        if(!amount || amount <= 0) return alert("נא להזין סכום");
+        // אם למשתמש אין טוקן והוא מנסה לתרום - הוא ייכנס לסל בכל מקרה, אלא אם זה מיידי ואז צריך אשראי
+        if(!currentUser.token && forceImmediate) {
+            return Swal.fire('שגיאה', 'אין כרטיס אשראי שמור. נא להוסיף לסל.', 'error');
+        }
+
+        Swal.fire({title: 'מעבד...', didOpen: () => Swal.showLoading()});
         
-        var isImmediate = (mode === 'immediate');
-        if(isImmediate && !currentUser.token) return alert("אין כרטיס אשראי שמור. נא להוסיף לסל או לפנות למנהל.");
-
-        Swal.fire({title: 'מעבד...', didOpen: function(){Swal.showLoading()}});
-
         fetch(API_URL + '/donate', {
             method: 'POST', headers: {'Content-Type':'application/json'},
             body: JSON.stringify({
@@ -389,67 +349,94 @@
                 amount: amount,
                 useToken: true,
                 note: note,
-                forceImmediate: isImmediate
+                forceImmediate: forceImmediate
             })
         })
-        .then(function(res){ return res.json(); })
-        .then(function(data){
+        .then(r => r.json())
+        .then(data => {
             Swal.close();
             if(data.success) {
-                Swal.fire('הצלחה', data.message, 'success');
-                document.getElementById('custom-amount').value = '';
-                document.getElementById('donation-note').value = '';
-                loadUserProfile();
+                Swal.fire({title: data.message, icon: 'success', timer: 1500, showConfirmButton: false});
+                document.getElementById('main-note').value = ''; // ניקוי הערה
+                loadUser();
             } else {
-                alert("שגיאה: " + (data.error || "לא ידועה"));
+                Swal.fire('שגיאה', data.error, 'error');
             }
         });
     }
 
-    function deletePending(id) {
-        fetch(API_URL + '/delete-pending', {
-            method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ userId: currentUserId, donationId: id })
-        }).then(function(){ loadUserProfile(); });
+    // --- מודלים וניהול ---
+    function toggleModal(id, show) {
+        const el = document.getElementById(id);
+        show ? el.classList.remove('d-none') : el.classList.add('d-none');
+    }
+    function openSettings() { toggleModal('settingsModal', true); }
+    function openBasket() { 
+        toggleModal('basketModal', true);
+        renderBasket();
     }
 
-    function saveSettings() {
-        var data = {
-            userId: currentUserId,
-            name: document.getElementById('edit-name').value,
-            tz: document.getElementById('edit-tz').value,
-            email: document.getElementById('edit-email').value,
-            phone: document.getElementById('edit-phone').value,
-            billingPreference: document.getElementById('edit-billing-day').value
-        };
-        
-        Swal.fire({title:'שומר...', didOpen: function(){Swal.showLoading()}});
-        fetch(API_URL + '/update-profile', {
-            method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify(data)
-        }).then(function(){
-            Swal.close();
-            toggleModal('settingsModal', false);
-            loadUserProfile();
+    function renderBasket() {
+        const list = document.getElementById('basket-list');
+        list.innerHTML = '';
+        if(!currentUser.pendingDonations?.length) { list.innerHTML = '<div class="text-center text-muted">הסל ריק</div>'; return; }
+        currentUser.pendingDonations.forEach(item => {
+            list.innerHTML += `
+                <div class="d-flex justify-content-between border-bottom py-2 align-items-center">
+                    <div><b>₪${item.amount}</b> <small class="text-muted">${item.note||''}</small></div>
+                    <button class="btn btn-sm text-danger" onclick="delPending('${item._id}')"><i class="fas fa-trash"></i></button>
+                </div>`;
         });
     }
 
+    function delPending(id) {
+        fetch(API_URL + '/delete-pending', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUserId, donationId: id }) })
+        .then(() => loadUser()).then(() => renderBasket()); // רענון
+    }
+
+    function saveSettings() {
+        const data = {
+            userId: currentUserId,
+            name: document.getElementById('edit-name').value,
+            phone: document.getElementById('edit-phone').value,
+            email: document.getElementById('edit-email').value,
+            tz: document.getElementById('edit-tz').value,
+            billingPreference: document.getElementById('edit-billing-day').value
+        };
+        Swal.fire({title:'שומר...', didOpen:()=>Swal.showLoading()});
+        fetch(API_URL + '/update-profile', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) })
+        .then(() => { Swal.close(); toggleModal('settingsModal', false); loadUser(); });
+    }
+
     function resetCreditCard() {
-        if(confirm('למחוק את הכרטיס השמור?')) {
-            fetch(API_URL + '/reset-token', {
-                method: 'POST', headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({ userId: currentUserId })
-            }).then(function(){ loadUserProfile(); });
+        if(confirm('למחוק כרטיס?')) {
+            fetch(API_URL + '/reset-token', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ userId: currentUserId }) })
+            .then(() => loadUser());
         }
     }
 
-    function logout() {
-        if(confirm('לצאת מהחשבון?')) {
-            localStorage.removeItem('userId');
-            location.reload();
-        }
+    function logout() { localStorage.removeItem('userId'); location.reload(); }
+
+    // --- לוגין ---
+    function sendCode() {
+        const val = document.getElementById('login-input').value;
+        if(!val) return;
+        const code = Math.floor(1000+Math.random()*9000);
+        fetch(API_URL+'/update-code', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({phone:val, code:code})});
+        document.getElementById('btn-send-code').classList.add('d-none');
+        document.getElementById('otp-area').classList.remove('d-none');
+        document.getElementById('btn-verify').classList.remove('d-none');
+    }
+    
+    function verifyCode() {
+        const val = document.getElementById('login-input').value;
+        const code = document.getElementById('otp-input').value;
+        fetch(API_URL+'/verify-auth', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({phone:val, code:code})})
+        .then(r=>r.json()).then(d=>{
+            if(d.success) { currentUserId = d.user._id; localStorage.setItem('userId', currentUserId); loadUser(); } 
+            else alert('קוד שגוי');
+        });
     }
 </script>
-
 </body>
 </html>
