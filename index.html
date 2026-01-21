@@ -8,28 +8,21 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        /* --- עיצוב כללי ותיקון מבנה --- */
+        /* --- עיצוב כללי --- */
         body { 
             background: linear-gradient(180deg, #a1c4fd 0%, #c2e9fb 100%);
             font-family: 'Segoe UI', sans-serif; 
             margin: 0; height: 100vh; 
-            display: flex; flex-direction: column; /* מבנה גמיש */
-            overflow: hidden; user-select: none;
+            display: flex; flex-direction: column; overflow: hidden; user-select: none;
         }
 
-        /* עוטף ראשי לתוכן כדי למנוע חפיפה בשימוש במקלדת */
         .main-content-wrapper {
-            flex: 1; /* תופס את כל הגובה הפנוי */
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between; /* מרווח בין המטבעות לקופה */
-            align-items: center;
-            padding-top: 80px; /* מקום להידר */
-            padding-bottom: 20px;
-            overflow-y: auto; /* מאפשר גלילה אם המקלדת מסתירה תוכן */
+            flex: 1; display: flex; flex-direction: column;
+            justify-content: space-between; align-items: center;
+            padding-top: 80px; padding-bottom: 20px; overflow-y: auto;
         }
 
-        /* --- מסך טעינה (Splash Screen) --- */
+        /* --- מסך טעינה --- */
         #app-loader {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #ffffff; z-index: 99999;
@@ -60,8 +53,7 @@
         .coins-container {
             display: flex; justify-content: center; gap: 12px;
             flex-wrap: wrap; z-index: 10; position: relative; max-width: 400px;
-            flex-shrink: 0; /* מונע כיווץ */
-            margin-bottom: 20px;
+            flex-shrink: 0; margin-bottom: 20px;
         }
         .coin {
             width: 75px; height: 75px;
@@ -75,15 +67,12 @@
         .coin.silver { background: radial-gradient(circle at 30% 30%, #fff, #e0e0e0); border-color: #a9a9a9; }
         .coin span { font-weight: bold; font-size: 1.4rem; line-height: 1; color: #444; pointer-events: none; }
         .coin small { font-size: 0.7rem; color: #666; pointer-events: none; }
-        
         .flying-coin { position: fixed; z-index: 9999; pointer-events: none; transition: all 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
 
         /* --- קופה --- */
         .pushka-box-container {
-            position: relative; 
-            width: 290px; height: 340px;
-            display: flex; flex-direction: column; align-items: center;
-            flex-shrink: 0;
+            position: relative; width: 290px; height: 340px;
+            display: flex; flex-direction: column; align-items: center; flex-shrink: 0;
         }
         .slot-area {
             width: 140px; height: 15px; background: #2a2a2a;
@@ -103,16 +92,11 @@
             padding: 5px; margin-bottom: 5px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); object-fit: contain;
         }
 
-        /* --- צג דיגיטלי --- */
         .digital-screen {
-            background: #222; color: #00e676;
-            font-family: 'Courier New', monospace;
-            padding: 5px 15px; border-radius: 5px;
-            font-size: 1.8rem; font-weight: bold;
-            border: 3px solid #444; margin-bottom: 10px;
-            min-width: 140px; text-align: center;
-            box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
-            text-shadow: 0 0 5px rgba(0,230,118,0.5);
+            background: #222; color: #00e676; font-family: 'Courier New', monospace;
+            padding: 5px 15px; border-radius: 5px; font-size: 1.8rem; font-weight: bold;
+            border: 3px solid #444; margin-bottom: 10px; min-width: 140px; text-align: center;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.8); text-shadow: 0 0 5px rgba(0,230,118,0.5);
         }
 
         .actions-block { width: 100%; padding: 0 20px; display: flex; gap: 10px; margin-top: auto; margin-bottom: 15px; }
@@ -132,7 +116,6 @@
         .overlay-screen { position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.7); z-index: 5000; display: flex; justify-content: center; align-items: center; visibility: hidden; opacity: 0; transition: 0.3s; }
         .overlay-screen.open { visibility: visible; opacity: 1; }
         .modal-card { background: white; width: 90%; max-width: 350px; border-radius: 25px; padding: 25px; text-align: center; max-height: 85vh; overflow-y: auto; }
-        
         .list-item { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 10px 0; align-items: center; }
     </style>
 </head>
@@ -169,16 +152,12 @@
         <div class="slot-area" id="target-slot"></div>
         <div class="pushka-body">
             <img src="https://www.nefesh-ha-chaim.org/icons/logo.png" alt="Logo" class="pushka-logo"> 
-            
             <div id="screen" class="digital-screen">₪0</div>
-            
             <input type="text" id="donation-note" class="note-input" placeholder="הוסף הערה / הקדשה">
-            
             <div class="actions-block">
                 <button class="btn-game btn-basket" onclick="submit(false)">הוסף לסל</button>
                 <button class="btn-game btn-pay" onclick="submit(true)">תרום</button>
             </div>
-            
             <small id="status-text" style="color: rgba(255,255,255,0.7); font-size: 0.75rem;">מצב: טוען...</small>
         </div>
     </div>
@@ -208,14 +187,17 @@
         </div>
         <div class="alert alert-info py-2 small fw-bold" id="basket-summary-text">טוען...</div>
         <div id="basket-list" class="mb-3 text-start"></div>
-        <div class="text-muted small">חיוב ב-<span id="basket-date">--</span> לחודש</div>
+        <div class="text-muted small bg-light p-2 rounded">
+            חיוב מרוכז יתבצע ב-<span id="basket-date" class="fw-bold">--</span> לחודש<br>
+            <span style="font-size: 0.8em; color: #666;">(בשעה 08:00 בבוקר)</span>
+        </div>
     </div>
 </div>
 
 <div id="history-modal" class="overlay-screen">
     <div class="modal-card">
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="m-0 fw-bold">📜 היסטוריית תרומות</h5>
+            <h5 class="m-0 fw-bold">📜 היסטוריה</h5>
             <button class="btn-close" onclick="closeModal('history-modal')"></button>
         </div>
         <div class="modal-body p-0" style="max-height: 60vh; overflow-y: auto;">
@@ -231,24 +213,28 @@
 </div>
 
 <div id="settings-modal" class="overlay-screen">
-    <div class="modal-card text-end">
+    <div class="modal-card text-end" style="max-width: 400px;">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="m-0 fw-bold">הגדרות</h5>
             <button class="btn-close" onclick="closeModal('settings-modal')"></button>
         </div>
         
-        <label class="small fw-bold text-primary">מועד חיוב הסל</label>
-        <select id="set-pref" class="form-select mb-2">
-            <option value="0">מיידי (ללא סל)</option>
-            <option value="1">1 לחודש</option>
-            <option value="2">2 לחודש</option>
-            <option value="10">10 לחודש</option>
-            <option value="15">15 לחודש</option>
-            <option value="20">20 לחודש</option>
-        </select>
+        <label class="small fw-bold text-primary">יום חיוב הסל</label>
+        <div class="input-group mb-2">
+            <select id="billing-type" class="form-select text-center" onchange="toggleBillingInput()">
+                <option value="immediate">מיידי (ללא סל)</option>
+                <option value="monthly">יום בחודש</option>
+            </select>
+            <input type="number" id="set-billing-day" class="form-control text-center d-none" placeholder="יום (1-31)" min="1" max="31" oninput="validateDay(this)">
+        </div>
+        <div class="text-muted small mb-3" style="font-size: 0.75rem;">* החיוב מתבצע בשעה 08:00 בבוקר</div>
 
         <label class="small fw-bold text-primary">הוראת קבע יומית (₪)</label>
-        <input type="number" id="set-daily" class="form-control mb-2" placeholder="0">
+        <input type="number" id="set-daily" class="form-control mb-1" placeholder="0">
+        <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" id="set-daily-immediate">
+            <label class="form-check-label small" for="set-daily-immediate">חייב אשראי מידית (ולא לסל)</label>
+        </div>
 
         <label class="small fw-bold text-primary">קוד אבטחה (PIN)</label>
         <input type="password" id="set-pin" class="form-control mb-2" placeholder="4 ספרות" maxlength="4">
@@ -265,7 +251,6 @@
         </div>
 
         <button class="btn btn-outline-primary w-100 rounded-pill mb-2" onclick="openHistory()">📜 היסטוריית תרומות</button>
-
         <button class="btn btn-primary w-100 rounded-pill mb-2" onclick="saveSettings()">שמור שינויים</button>
         <button class="btn btn-outline-danger w-100 rounded-pill" onclick="logout()">יציאה</button>
     </div>
@@ -286,7 +271,24 @@
         }
     };
 
-    // --- מטבעות ---
+    function toggleBillingInput() {
+        const type = document.getElementById('billing-type').value;
+        const input = document.getElementById('set-billing-day');
+        if (type === 'monthly') {
+            input.classList.remove('d-none');
+            if(!input.value || input.value == 0) input.value = 1;
+        } else {
+            input.classList.add('d-none');
+            input.value = 0;
+        }
+    }
+
+    function validateDay(el) {
+        if(el.value > 31) el.value = 31;
+        if(el.value < 1 && el.value !== "") el.value = 1;
+        el.value = el.value.replace(/[^0-9]/g, '');
+    }
+
     async function handleCustomCoin(el) {
         if (customAmountValue > 0 && el.innerText.includes('₪')) {
             clickCoin(customAmountValue, el);
@@ -306,28 +308,22 @@
     function clickCoin(amount, element) {
         tempSum += amount;
         updateScreen();
-
         const clone = element.cloneNode(true);
         const rect = element.getBoundingClientRect();
         const target = document.getElementById('target-slot').getBoundingClientRect();
-        
         clone.className = 'coin flying-coin';
         if(element.classList.contains('silver')) clone.classList.add('silver');
-        
         clone.style.width = rect.width + 'px';
         clone.style.height = rect.height + 'px';
         clone.style.left = rect.left + 'px';
         clone.style.top = rect.top + 'px';
-        
         document.body.appendChild(clone);
-
         setTimeout(() => {
             clone.style.left = (target.left + target.width/2 - 37) + 'px';
             clone.style.top = (target.top - 10) + 'px';
             clone.style.transform = 'scale(0.3)';
             clone.style.opacity = '0';
         }, 10);
-
         setTimeout(() => clone.remove(), 600);
     }
 
@@ -338,47 +334,37 @@
         setTimeout(() => screen.style.color = '#00e676', 150);
     }
 
-    // --- שליחה ---
     async function submit(forceImmediate) {
         if(tempSum === 0) return Swal.fire('הקופה ריקה', 'לחץ על המטבעות', 'info');
-        
         let pin = "";
         if(user.securityPin) {
             const res = await Swal.fire({title: 'קוד אבטחה', input: 'password', inputAttributes:{maxlength:4, inputmode:'numeric'}, showCancelButton: true});
             if(!res.isConfirmed) return;
             pin = res.value;
         }
-
         if(forceImmediate && !user.token) return Swal.fire('שגיאה', 'חסר כרטיס אשראי לחיוב מיידי', 'warning');
-
         Swal.fire({title: 'מעבד...', didOpen: () => Swal.showLoading()});
         const note = document.getElementById('donation-note').value;
-
         try {
             const res = await fetch(`${API}/donate`, {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ userId: user._id, amount: tempSum, note, forceImmediate, providedPin: pin, useToken: true })
             });
             const d = await res.json();
-            
             if(d.success) {
                 Swal.fire({icon: 'success', title: d.message, timer: 1500, showConfirmButton: false});
                 tempSum = 0;
                 updateScreen();
                 document.getElementById('donation-note').value = '';
                 loadUser(user._id);
-            } else {
-                Swal.fire('שגיאה', d.error, 'error');
-            }
+            } else { Swal.fire('שגיאה', d.error, 'error'); }
         } catch(e) { Swal.fire('תקלה', 'בעיית תקשורת', 'error'); }
     }
 
-    // --- טעינת משתמש ---
-    function loadUser(id) {
-        fetch(`${API}/login-by-id`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({userId:id})})
+    async function loadUser(id) {
+        return fetch(`${API}/login-by-id`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({userId:id})})
         .then(r=>r.json()).then(d => {
             document.getElementById('app-loader').classList.add('fade-out');
-
             if(d.success) {
                 user = d.user;
                 localStorage.setItem('userId', user._id);
@@ -394,56 +380,62 @@
                 document.getElementById('status-text').innerText = isImmediate ? "מצב: חיוב מיידי" : `מצב: צבירה ל-${user.billingPreference} בחודש`;
                 document.getElementById('basket-date').innerText = isImmediate ? "מיידי" : user.billingPreference;
 
-                // עדכון טופס הגדרות
                 document.getElementById('set-name').value = user.name||'';
                 document.getElementById('set-phone').value = user.phone||'';
                 document.getElementById('set-email').value = user.email||'';
                 document.getElementById('set-tz').value = user.tz||'';
-                document.getElementById('set-pref').value = user.billingPreference;
+                
+                if (user.billingPreference > 0) {
+                    document.getElementById('billing-type').value = 'monthly';
+                    document.getElementById('set-billing-day').value = user.billingPreference;
+                    document.getElementById('set-billing-day').classList.remove('d-none');
+                } else {
+                    document.getElementById('billing-type').value = 'immediate';
+                    document.getElementById('set-billing-day').classList.add('d-none');
+                }
+
                 document.getElementById('set-daily').value = user.recurringDailyAmount||'';
+                document.getElementById('set-daily-immediate').checked = user.recurringImmediate === true;
+                
                 document.getElementById('set-pin').value = user.securityPin||'';
                 document.getElementById('card-digits').innerText = user.lastCardDigits ? `**** ${user.lastCardDigits}` : 'אין כרטיס';
-            } else {
-                document.getElementById('login-modal').classList.add('open');
-            }
+            } else { document.getElementById('login-modal').classList.add('open'); }
         });
     }
 
-    // --- היסטוריה ---
     function openHistory() {
         closeModal('settings-modal');
         const list = document.getElementById('history-list');
         const noHistory = document.getElementById('no-history');
         list.innerHTML = '';
-
         if (!user.donationsHistory || user.donationsHistory.length === 0) {
             noHistory.classList.remove('d-none');
         } else {
             noHistory.classList.add('d-none');
             [...user.donationsHistory].reverse().forEach(item => {
                 const date = new Date(item.date).toLocaleDateString('he-IL');
-                let statusBadge = '';
-                if (item.status === 'success') statusBadge = '<span class="badge bg-success">בוצע</span>';
-                else if (item.status === 'failed') statusBadge = '<span class="badge bg-danger">נכשל</span>';
-                else statusBadge = '<span class="badge bg-secondary">ממתין</span>';
-
-                // הוספת עמודת הערה
+                let statusBadge = item.status === 'success' ? '<span class="badge bg-success">בוצע</span>' : '<span class="badge bg-danger">נכשל</span>';
                 list.innerHTML += `<tr><td>${date}</td><td class="fw-bold">₪${item.amount}</td><td class="small text-muted">${item.note||'-'}</td><td>${statusBadge}</td></tr>`;
             });
         }
         document.getElementById('history-modal').classList.add('open');
     }
 
-    // --- שמירת הגדרות ---
     function saveSettings() {
+        let billingPref = 0;
+        if (document.getElementById('billing-type').value === 'monthly') {
+            billingPref = document.getElementById('set-billing-day').value || 1;
+        }
+
         const data = {
             userId: user._id,
             name: document.getElementById('set-name').value,
             phone: document.getElementById('set-phone').value,
             email: document.getElementById('set-email').value,
             tz: document.getElementById('set-tz').value,
-            billingPreference: Number(document.getElementById('set-pref').value),
+            billingPreference: Number(billingPref),
             recurringDailyAmount: Number(document.getElementById('set-daily').value),
+            recurringImmediate: document.getElementById('set-daily-immediate').checked,
             securityPin: document.getElementById('set-pin').value
         };
         Swal.fire({title:'שומר...', didOpen:()=>Swal.showLoading()});
@@ -457,15 +449,14 @@
         });
     }
 
-    // --- סל ---
     function openBasket() {
         const list = document.getElementById('basket-list');
         list.innerHTML = '';
         const count = user.pendingDonations?.length || 0;
-        document.getElementById('basket-summary-text').innerText = count > 0 ? `יש לך ${count} תרומות ממתינות לחיוב` : 'הסל שלך ריק';
-
+        document.getElementById('basket-summary-text').innerText = count > 0 ? `יש לך ${count} תרומות הממתינות לחיוב` : 'הסל שלך ריק';
         if(count > 0) {
-            user.pendingDonations.forEach(item => {
+            // הפיכת הסדר: החדשים למעלה
+            [...user.pendingDonations].reverse().forEach(item => {
                 list.innerHTML += `
                 <div class="list-item">
                     <div><span class="fw-bold">₪${item.amount}</span> <small class="text-muted ms-2">${item.note||''}</small></div>
@@ -476,18 +467,18 @@
         document.getElementById('basket-modal').classList.add('open');
     }
 
-    function deleteItem(itemId) {
-        fetch(`${API}/delete-pending`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({userId: user._id, donationId: itemId})})
-        .then(() => { loadUser(user._id); openBasket(); });
+    async function deleteItem(itemId) {
+        Swal.fire({title:'מוחק...', timer: 1000, didOpen:()=>Swal.showLoading(), showConfirmButton:false});
+        await fetch(`${API}/delete-pending`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({userId: user._id, donationId: itemId})});
+        await loadUser(user._id); 
+        openBasket(); // קריאה חוזרת לרענון ה-HTML אחרי שהמידע התעדכן
     }
 
-    // --- ניהול ---
     function closeModal(id) { document.getElementById(id).classList.remove('open'); }
     function openSettings() { document.getElementById('settings-modal').classList.add('open'); }
     function logout() { localStorage.removeItem('userId'); location.reload(); }
     function resetCard() { if(confirm('למחוק כרטיס?')) fetch(`${API}/reset-token`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({userId:user._id})}).then(()=>loadUser(user._id)); }
 
-    // --- לוגין ---
     function sendCode() {
         const val = document.getElementById('login-val').value;
         const code = Math.floor(1000+Math.random()*9000);
