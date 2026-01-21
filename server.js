@@ -26,10 +26,15 @@ mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.
     .then(() => console.log('✅ DB Connected'))
     .catch(err => console.error('❌ DB Error:', err));
 
-// --- סכמת משתמש ---
+// --- סכמת משתמש (גמישה יותר) ---
 const userSchema = new mongoose.Schema({
-    email: String, phone: String, name: String, tz: String,
-    lastExpiry: String, lastCardDigits: String, token: { type: String, default: "" },
+    email: { type: String, sparse: true },
+    phone: { type: String, sparse: true },
+    name: String,
+    tz: String,
+    lastExpiry: String,
+    lastCardDigits: String,
+    token: { type: String, default: "" },
     totalDonated: { type: Number, default: 0 },
     billingPreference: { type: Number, default: 0 }, 
     recurringDailyAmount: { type: Number, default: 0 },
@@ -42,21 +47,27 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- עזר: התיקון הקריטי של הטוקן ---
+// --- עזר ---
+function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
+
+// ✅ התיקון הקריטי לטוקן (מהקוד שעבד)
 function fixToken(token) {
     if (!token) return "";
     let strToken = String(token).replace(/['"]+/g, '').trim();
-    // ✅ הוספת ה-0 בהתחלה כפי שביקשת (זה מה שעבד)
+    // מוסיף 0 בהתחלה אם חסר
     return (strToken.length > 0 && !strToken.startsWith('0')) ? '0' + strToken : strToken;
 }
 
-function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
-
-// --- מנוע חיוב (J4) ---
+// --- מנוע חיוב (לוגיקה מהקוד שעבד) ---
 async function chargeKesher(user, amount, note, cc = null) {
     const total = Math.round(parseFloat(amount) * 100);
+    // ברירת מחדל אם חסרים פרטים (כמו בקוד המקורי)
     const phone = (user.phone || "0500000000").replace(/\D/g, '');
-    const fullNameParts = (user.name || "Torem").trim().split(" ");
+    const realIdToSend = user.tz || "000000000"; 
+    
+    // טיפול בשם ריק
+    const nameStr = user.name || "Torem";
+    const fullNameParts = nameStr.trim().split(" ");
     const firstName = fullNameParts[0];
     const lastName = fullNameParts.length > 1 ? fullNameParts.slice(1).join(" ") : ".";
 
@@ -68,16 +79,15 @@ async function chargeKesher(user, amount, note, cc = null) {
         TransactionType: "debit", 
         ProjectNumber: "00001",
         Phone: phone, FirstName: firstName, LastName: lastName, Mail: user.email || "no@mail.com",
-        ClientApiIdentity: user.tz || "000000000", Id: user.tz || "000000000", Details: note || ""
+        ClientApiIdentity: realIdToSend, Id: realIdToSend, Details: note || ""
     };
 
     if (cc) {
         tran.CreditNum = cc.num;
-        tran.Expiry = cc.exp; // שליחת תוקף כמו שהוא
+        tran.Expiry = cc.exp; 
         if (cc.cvv) tran.Cvv = cc.cvv;
     } else if (user.token) {
-        // ✅ שימוש בטוקן המתוקן (עם ה-0)
-        tran.Token = fixToken(user.token);
+        tran.Token = fixToken(user.token); // ✅ שימוש ב-fixToken
         tran.Expiry = user.lastExpiry;
     } else throw new Error("No Payment Method");
 
@@ -174,8 +184,8 @@ app.post('/donate', async (req, res) => {
     const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin } = req.body;
     let u = await User.findById(userId);
     
-    if (!u.name || !u.phone || !u.email || !u.tz) return res.json({ success: false, error: "חסרים פרטים אישיים. נא לעדכן בהגדרות." });
-
+    // ✅ בוטלה הבדיקה הקשוחה של פרטים אישיים (חוזר למקור)
+    
     if (u.securityPin && u.securityPin.trim() !== "") {
         if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" });
     }
@@ -186,7 +196,6 @@ app.post('/donate', async (req, res) => {
         try {
             const r = await chargeKesher(u, amount, note, !useToken ? ccDetails : null);
             if (r.success) {
-                // ✅ שימוש בפונקצית התיקון גם כאן
                 if(r.data.Token) { 
                     u.token = fixToken(r.data.Token); 
                     u.lastExpiry = r.data.Expiry || ""; 
@@ -209,32 +218,38 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// ✅ עדכון פרופיל + חיוב 0.1 עם תיקון טוקן
+// ✅ עדכון פרופיל + שמירת כרטיס (חיוב 0.1)
 app.post('/admin/update-profile', async (req, res) => {
     try {
         const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails } = req.body;
         
-        if (!name || !phone || !email || !tz) return res.json({ success: false, error: "חובה למלא: שם, טלפון, מייל ותעודת זהות" });
-
+        // ✅ בוטלה הבדיקה הקשוחה - שומר מה שיש
         let updateData = {
-            name, phone, email, tz,
             billingPreference: parseInt(billingPreference) || 0, 
             recurringDailyAmount: parseInt(recurringDailyAmount) || 0,
             recurringImmediate: recurringImmediate === true, 
             securityPin
         };
+        // מעדכן שדות רק אם נשלחו
+        if(name) updateData.name = name;
+        if(phone) updateData.phone = phone;
+        if(email) updateData.email = email;
+        if(tz) updateData.tz = tz;
 
         let u = await User.findById(userId);
         
         if (newCardDetails && newCardDetails.num && newCardDetails.exp) {
             try {
-                u.name = name; u.phone = phone; u.email = email; u.tz = tz;
+                // מעדכן פרטים בזיכרון לשליחה לקשר (אם ריק ישלח ברירת מחדל בפונקציה)
+                u.name = name || u.name; 
+                u.phone = phone || u.phone; 
+                u.email = email || u.email; 
+                u.tz = tz || u.tz;
                 
-                // ✅ חיוב 0.1 ₪ כפי שביקשת
+                // ✅ חיוב 0.1 כפי שביקשת
                 const r = await chargeKesher(u, 0.1, "בדיקת כרטיס (0.1 ₪)", newCardDetails);
                 
                 if (r.success && r.data.Token) {
-                    // ✅ שמירה עם ה-0 בהתחלה!
                     updateData.token = fixToken(r.data.Token);
                     updateData.lastExpiry = r.data.Expiry || "";
                     updateData.lastCardDigits = newCardDetails.num.slice(-4);
@@ -254,6 +269,7 @@ app.post('/admin/update-profile', async (req, res) => {
     } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+// שאר ה-Routes ללא שינוי
 app.post('/save-push-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { fcmToken: req.body.token }); res.json({ success: true }); });
 app.post('/delete-pending', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } }); res.json({ success: true }); });
 app.post('/reset-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "" }); res.json({ success: true }); });
