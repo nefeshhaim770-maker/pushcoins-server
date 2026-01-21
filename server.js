@@ -26,14 +26,14 @@ mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.
     .then(() => console.log('✅ DB Connected'))
     .catch(err => console.error('❌ DB Error:', err));
 
-// --- סכמת משתמש (מעודכנת) ---
+// --- סכמת משתמש ---
 const userSchema = new mongoose.Schema({
     email: String, phone: String, name: String, tz: String,
     lastExpiry: String, lastCardDigits: String, token: { type: String, default: "" },
     totalDonated: { type: Number, default: 0 },
-    billingPreference: { type: Number, default: 0 }, // 0 = מיידי, 1-31 = יום בחודש
+    billingPreference: { type: Number, default: 0 }, 
     recurringDailyAmount: { type: Number, default: 0 },
-    recurringImmediate: { type: Boolean, default: false }, // האם החיוב היומי יורד מיד
+    recurringImmediate: { type: Boolean, default: false },
     securityPin: { type: String, default: "" },
     fcmToken: { type: String, default: "" },
     donationsHistory: [{ amount: Number, date: { type: Date, default: Date.now }, note: String, status: String, failReason: String }],
@@ -81,16 +81,22 @@ async function chargeKesher(user, amount, note, cc = null) {
 }
 
 // --- Cron Job (רץ כל יום ב-08:00) ---
+// ✅ תיקון חכם לתאריכים בסוף חודש
 cron.schedule('0 8 * * *', async () => {
-    const today = new Date().getDate(); // היום בחודש (1-31)
+    const now = new Date();
+    const today = now.getDate(); // היום בחודש (למשל 28)
+    
+    // מציאת היום האחרון בחודש הנוכחי (למשל בפברואר יחזיר 28 או 29)
+    const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const isLastDay = (today === lastDayOfMonth);
+
     const users = await User.find({}); 
 
     for (const u of users) {
         let saveUser = false;
 
-        // 1. טיפול בהוראת קבע יומית
+        // 1. חיוב יומי (ללא שינוי)
         if (u.recurringDailyAmount > 0) {
-            // אם המשתמש בחר חיוב מיידי ליומי - או - שהוא במצב "חיוב מיידי כללי" (0)
             if (u.recurringImmediate === true || u.billingPreference === 0) {
                 if(u.token) {
                     try {
@@ -103,14 +109,23 @@ cron.schedule('0 8 * * *', async () => {
                     saveUser = true;
                 }
             } else {
-                // אחרת, מוסיף לסל
                 u.pendingDonations.push({ amount: u.recurringDailyAmount, note: "יומי קבוע (הצטברות)" });
                 saveUser = true;
             }
         }
 
-        // 2. טיפול בחיוב הסל החודשי (אם היום זה יום החיוב)
-        if (u.billingPreference === today && u.pendingDonations.length > 0) {
+        // 2. חיוב חודשי מרוכז (הלוגיקה המתוקנת)
+        // בודק: האם היום הוא יום החיוב?
+        // או: האם היום הוא היום האחרון לחודש, והמשתמש בחר תאריך שכבר לא יגיע החודש (למשל בחר 30 והחודש נגמר ב-28)?
+        let shouldChargeMonthly = false;
+        
+        if (u.billingPreference === today) {
+            shouldChargeMonthly = true;
+        } else if (isLastDay && u.billingPreference > lastDayOfMonth) {
+            shouldChargeMonthly = true; // תופס את מי שבחר 29, 30, 31 בחודשים קצרים
+        }
+
+        if (shouldChargeMonthly && u.pendingDonations.length > 0) {
             let totalToCharge = 0;
             u.pendingDonations.forEach(d => totalToCharge += d.amount);
             
@@ -118,18 +133,16 @@ cron.schedule('0 8 * * *', async () => {
                 try {
                     await chargeKesher(u, totalToCharge, "חיוב סל חודשי מרוכז");
                     u.totalDonated += totalToCharge;
-                    // מעביר להיסטוריה
                     u.pendingDonations.forEach(d => {
                         u.donationsHistory.push({ amount: d.amount, note: d.note, status: "success", date: new Date() });
                     });
-                    u.pendingDonations = []; // מרוקן סל
+                    u.pendingDonations = [];
                 } catch (e) {
-                    // אם נכשל, נשאר בסל
+                    // נשאר בסל לניסיון הבא
                 }
                 saveUser = true;
             }
         }
-
         if (saveUser) await u.save();
     }
 });
@@ -194,7 +207,6 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// ✅ עדכון פרופיל עם כל השדות החדשים
 app.post('/admin/update-profile', async (req, res) => {
     try {
         const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate } = req.body;
