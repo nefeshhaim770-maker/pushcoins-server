@@ -31,7 +31,7 @@ const userSchema = new mongoose.Schema({
     email: String, phone: String, name: String, tz: String,
     lastExpiry: String, lastCardDigits: String, token: { type: String, default: "" },
     totalDonated: { type: Number, default: 0 },
-    billingPreference: { type: Number, default: 0 }, // 0 = מיידי
+    billingPreference: { type: Number, default: 0 },
     recurringDailyAmount: { type: Number, default: 0 },
     securityPin: { type: String, default: "" },
     fcmToken: { type: String, default: "" },
@@ -79,7 +79,7 @@ async function chargeKesher(user, amount, note, cc = null) {
     return { success: res.data.RequestResult?.Status === true || res.data.Status === true, data: res.data };
 }
 
-// --- Cron Job (יומי) ---
+// --- Cron Job ---
 cron.schedule('0 8 * * *', async () => {
     const users = await User.find({ recurringDailyAmount: { $gt: 0 } });
     for (const u of users) {
@@ -101,14 +101,31 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/manager', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
 app.get('/firebase-messaging-sw.js', (req, res) => res.sendFile(path.join(__dirname, 'firebase-messaging-sw.js')));
 
+// ✅ תיקון שליחת המייל
 app.post('/update-code', async (req, res) => {
     let { email, phone, code } = req.body;
     let cleanEmail = email ? email.toLowerCase().trim() : undefined;
     let cleanPhone = phone ? phone.replace(/\D/g, '').trim() : undefined;
+    
+    console.log(`CODE REQUEST: ${code} for ${cleanEmail || cleanPhone}`); // לוג לבדיקה
+
     if (cleanEmail) {
-        try { await axios.post('https://api.emailjs.com/api/v1.0/email/send', { service_id: 'service_8f6h188', template_id: 'template_tzbq0k4', user_id: 'yLYooSdg891aL7etD', template_params: { email: cleanEmail, code: code }, accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3" }); } catch (e) {}
+        try {
+            await axios.post('https://api.emailjs.com/api/v1.0/email/send', {
+                service_id: 'service_8f6h188',
+                template_id: 'template_tzbq0k4',
+                user_id: 'yLYooSdg891aL7etD',
+                template_params: { email: cleanEmail, code: code },
+                accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3"
+            });
+            console.log("Email sent successfully");
+        } catch (e) {
+            console.error("Email Error:", e.response ? e.response.data : e.message);
+        }
     }
-    await User.findOneAndUpdate(cleanEmail ? { email: cleanEmail } : { phone: cleanPhone }, { tempCode: code, email: cleanEmail, phone: cleanPhone }, { upsert: true });
+    
+    await User.findOneAndUpdate(cleanEmail ? { email: cleanEmail } : { phone: cleanPhone }, 
+        { tempCode: code, email: cleanEmail, phone: cleanPhone }, { upsert: true });
     res.json({ success: true });
 });
 
@@ -124,17 +141,14 @@ app.post('/login-by-id', async (req, res) => {
     try { let user = await User.findById(req.body.userId); if(user) res.json({ success: true, user }); else res.json({ success: false }); } catch(e) { res.json({ success: false }); }
 });
 
-// ✅ פונקציית תרומה
 app.post('/donate', async (req, res) => {
     const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin } = req.body;
     let u = await User.findById(userId);
     
-    // בדיקת PIN
     if (u.securityPin && u.securityPin.trim() !== "") {
         if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" });
     }
 
-    // החלטה האם לחייב: אם הלקוח לחץ "תרום עכשיו" (true) או שהגדרותיו הן 0 (מיידי) והוא לא לחץ "סל" (false)
     let shouldChargeNow = (forceImmediate === true) ? true : (u.billingPreference === 0 && forceImmediate !== false);
 
     if (shouldChargeNow) {
@@ -159,19 +173,13 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// ✅ תיקון קריטי: עדכון הגדרות
 app.post('/admin/update-profile', async (req, res) => {
     try {
         const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin } = req.body;
-        
-        // וידוא שהערכים הם מספרים
-        const billingPrefInt = parseInt(billingPreference);
-        const recurringInt = parseInt(recurringDailyAmount);
-
         await User.findByIdAndUpdate(userId, {
             name, phone, email, tz, 
-            billingPreference: isNaN(billingPrefInt) ? 0 : billingPrefInt, 
-            recurringDailyAmount: isNaN(recurringInt) ? 0 : recurringInt,
+            billingPreference: parseInt(billingPreference), 
+            recurringDailyAmount: parseInt(recurringDailyAmount),
             securityPin
         });
         res.json({ success: true });
