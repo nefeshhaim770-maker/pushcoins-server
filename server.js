@@ -50,7 +50,7 @@ function fixToken(token) {
 }
 function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
-// --- מנוע חיוב ואימות (משודרג) ---
+// --- מנוע חיוב ואימות ---
 async function chargeKesher(user, amount, note, cc = null, isVerifyOnly = false) {
     const total = isVerifyOnly ? 0 : Math.round(parseFloat(amount) * 100);
     const phone = (user.phone || "0500000000").replace(/\D/g, '');
@@ -58,7 +58,6 @@ async function chargeKesher(user, amount, note, cc = null, isVerifyOnly = false)
     const firstName = fullNameParts[0];
     const lastName = fullNameParts.length > 1 ? fullNameParts.slice(1).join(" ") : ".";
 
-    // הגדרת סוג הפעולה: J4 לחיוב, J5 לבדיקה/שמירה בלבד
     const paramJ = isVerifyOnly ? "J5" : "J4";
     const transType = isVerifyOnly ? "check" : "debit";
 
@@ -74,6 +73,7 @@ async function chargeKesher(user, amount, note, cc = null, isVerifyOnly = false)
     if (cc) {
         tran.CreditNum = cc.num;
         tran.Expiry = (cc.exp.length === 4) ? cc.exp.substring(2, 4) + cc.exp.substring(0, 2) : cc.exp;
+        if (cc.cvv) tran.Cvv = cc.cvv; // ✅ הוספת CVV לשידור
     } else if (user.token) {
         tran.Token = fixToken(user.token);
         tran.Expiry = user.lastExpiry;
@@ -202,7 +202,7 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// ✅ שמירת כרטיס עם J5 (ללא חיוב)
+// ✅ שמירת כרטיס עם J5 (ללא חיוב) וקליטת CVV
 app.post('/admin/update-profile', async (req, res) => {
     try {
         const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails } = req.body;
@@ -219,18 +219,15 @@ app.post('/admin/update-profile', async (req, res) => {
 
         let u = await User.findById(userId);
         
-        // אם יש כרטיס חדש - בצע J5 (בדיקת מסגרת ללא חיוב)
         if (newCardDetails && newCardDetails.num && newCardDetails.exp) {
             try {
                 u.name = name; u.phone = phone; u.email = email; u.tz = tz;
-                // isVerifyOnly = true
                 const r = await chargeKesher(u, 0, "שמירת כרטיס (J5)", newCardDetails, true);
                 
                 if (r.success && r.data.Token) {
                     updateData.token = fixToken(r.data.Token);
                     updateData.lastExpiry = r.data.Expiry || "";
                     updateData.lastCardDigits = newCardDetails.num.slice(-4);
-                    // לא מוסיפים לתרומות כי זה לא חיוב
                 } else {
                     return res.json({ success: false, error: "אימות כרטיס נכשל (J5)" });
                 }
