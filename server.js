@@ -105,20 +105,8 @@ app.post('/update-code', async (req, res) => {
     let { email, phone, code } = req.body;
     let cleanEmail = email ? email.toLowerCase().trim() : undefined;
     let cleanPhone = phone ? phone.replace(/\D/g, '').trim() : undefined;
-    
-    // לוג כדי שנראה שהבקשה הגיעה
-    console.log(`Sending code ${code} to email: ${cleanEmail} or phone: ${cleanPhone}`);
-
     if (cleanEmail) {
-        try {
-            await axios.post('https://api.emailjs.com/api/v1.0/email/send', {
-                service_id: 'service_8f6h188',
-                template_id: 'template_tzbq0k4',
-                user_id: 'yLYooSdg891aL7etD',
-                template_params: { email: cleanEmail, code: code },
-                accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3"
-            });
-        } catch (e) { console.error("Email Error:", e.message); }
+        try { await axios.post('https://api.emailjs.com/api/v1.0/email/send', { service_id: 'service_8f6h188', template_id: 'template_tzbq0k4', user_id: 'yLYooSdg891aL7etD', template_params: { email: cleanEmail, code: code }, accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3" }); } catch (e) {}
     }
     await User.findOneAndUpdate(cleanEmail ? { email: cleanEmail } : { phone: cleanPhone }, { tempCode: code, email: cleanEmail, phone: cleanPhone }, { upsert: true });
     res.json({ success: true });
@@ -168,11 +156,12 @@ app.post('/donate', async (req, res) => {
     }
 });
 
+// ✅ תיקון: הוספת שדה TZ ועדכון כללי
 app.post('/admin/update-profile', async (req, res) => {
     try {
         const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin } = req.body;
         await User.findByIdAndUpdate(userId, {
-            name, phone, email, tz, 
+            name, phone, email, tz,
             billingPreference: parseInt(billingPreference) || 0, 
             recurringDailyAmount: parseInt(recurringDailyAmount) || 0,
             securityPin
