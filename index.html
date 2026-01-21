@@ -123,33 +123,57 @@
 
     window.onload = () => { if(userId) loadUser(); else document.getElementById('login-screen').classList.remove('d-none'); };
 
+    // --- 1. מטבע אחר (לוגיקה כפולה: קביעה -> תרומה)
     async function handleCustomCoin(el) {
-        if (customAmountValue > 0 && el.querySelector('span')) {
+        if (customAmountValue > 0 && el.innerText.includes('₪')) {
             clickCoin(customAmountValue, el);
-            setTimeout(() => { customAmountValue = 0; el.innerHTML = '<i class="fas fa-pen"></i><small>אחר</small>'; }, 1000);
+            setTimeout(() => {
+                customAmountValue = 0;
+                el.innerHTML = '<i class="fas fa-pen"></i><small>אחר</small>';
+            }, 1000);
         } else {
             const { value: amount } = await Swal.fire({ title: 'סכום לתרומה', input: 'number', confirmButtonText: 'אישור' });
-            if (amount > 0) { customAmountValue = Number(amount); el.innerHTML = `<span>${amount}</span><small>₪</small>`; }
+            if (amount > 0) {
+                customAmountValue = Number(amount);
+                el.innerHTML = `<span>${amount}</span><small>₪</small>`;
+            }
         }
     }
 
+    // --- 2. תהליך מטבע: אנימציה -> פעולה לפי הגדרות
     function clickCoin(amount, element) {
         const clone = element.cloneNode(true);
         const rect = element.getBoundingClientRect();
         const target = document.getElementById('target-slot').getBoundingClientRect();
+        
         clone.className = 'coin flying-coin';
         if(element.classList.contains('silver')) clone.classList.add('silver');
         clone.style.left = rect.left+'px'; clone.style.top = rect.top+'px';
         document.body.appendChild(clone);
-        setTimeout(() => { clone.style.left = (target.left + target.width/2 - 36)+'px'; clone.style.top = target.top+'px'; clone.style.transform = 'scale(0.4)'; clone.style.opacity = '0'; }, 10);
+        
+        setTimeout(() => { 
+            clone.style.left = (target.left + target.width/2 - 36)+'px'; 
+            clone.style.top = target.top+'px'; 
+            clone.style.transform = 'scale(0.4)'; 
+            clone.style.opacity = '0'; 
+        }, 10);
+        
         setTimeout(() => clone.remove(), 600);
-        process(amount);
+
+        // שולחים לשרת עם forceImmediate = null (השרת יחליט לפי ההגדרות)
+        processDonation(amount, null);
     }
 
-    async function process(amount) {
+    async function processDonation(amount, forceImmediate) {
         let providedPin = "";
         if(user.securityPin && user.securityPin.trim() !== "") {
-            const { value: pin } = await Swal.fire({ title: '🔒 אבטחה', text: 'הקש קוד PIN לאישור', input: 'password', inputAttributes: { maxlength: 4, inputmode: 'numeric' }, showCancelButton: true });
+            const { value: pin } = await Swal.fire({
+                title: '🔒 אבטחה',
+                text: 'הקש קוד PIN לאישור',
+                input: 'password',
+                inputAttributes: { maxlength: 4, inputmode: 'numeric' },
+                showCancelButton: true
+            });
             if(!pin) return;
             providedPin = pin;
         }
@@ -159,7 +183,7 @@
         
         fetch(API + '/donate', {
             method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ userId, amount, useToken: true, note, providedPin })
+            body: JSON.stringify({ userId, amount, useToken: true, note, providedPin, forceImmediate })
         })
         .then(r => r.json()).then(d => {
             if(d.success) {
@@ -179,11 +203,11 @@
                 user = d.user;
                 document.getElementById('login-screen').classList.add('d-none');
                 document.getElementById('user-total').innerText = '₪' + (user.totalDonated||0).toFixed(0);
+                
                 const count = user.pendingDonations?.length || 0;
                 document.getElementById('basket-badge').innerText = count;
                 document.getElementById('basket-badge').classList.toggle('d-none', count === 0);
                 
-                // עדכון טקסט מצב
                 const modeText = user.billingPreference === 0 ? "חיוב מיידי" : `צבירה לסל (${user.billingPreference} לחודש)`;
                 document.getElementById('status-text').innerText = "מצב: " + modeText;
                 document.getElementById('billing-date').innerText = user.billingPreference === 0 ? "מיידי" : user.billingPreference;
