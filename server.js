@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const mongoose = require('mongoose');
-const cron = require('node-cron');
 const admin = require('firebase-admin');
 const path = require('path');
 const app = express();
@@ -82,8 +81,6 @@ app.post('/update-code', async (req, res) => {
     let cleanEmail = email ? email.toLowerCase().trim() : undefined;
     let cleanPhone = phone ? phone.replace(/\D/g, '').trim() : undefined;
     
-    console.log(`CODE: ${code}`); // לוג לגיבוי
-    
     if (cleanEmail) {
         try {
             await axios.post('https://api.emailjs.com/api/v1.0/email/send', {
@@ -129,13 +126,40 @@ app.post('/donate', async (req, res) => {
     }
 });
 
+app.post('/admin/update-profile', async (req, res) => {
+    await User.findByIdAndUpdate(req.body.userId, req.body);
+    res.json({ success: true });
+});
+
+app.post('/save-push-token', async (req, res) => {
+    await User.findByIdAndUpdate(req.body.userId, { fcmToken: req.body.token });
+    res.json({ success: true });
+});
+
+app.post('/delete-pending', async (req, res) => {
+    await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } });
+    res.json({ success: true });
+});
+
+app.post('/reset-token', async (req, res) => {
+    await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "" });
+    res.json({ success: true });
+});
+
 // אדמין
 const PASS = "admin1234";
 app.post('/admin/stats', async (req, res) => {
     if(req.body.password !== PASS) return res.json({ success: false });
     const users = await User.find();
-    let total = 0; users.forEach(u => u.donationsHistory?.forEach(d => { if(d.status==='success') total += d.amount||0; }));
-    res.json({ success: true, stats: { totalDonated: total, totalUsers: users.length } });
+    let total = 0;
+    let count = 0; // מונה תרומות
+    users.forEach(u => u.donationsHistory?.forEach(d => { 
+        if(d.status==='success') {
+            total += d.amount||0; 
+            count++;
+        }
+    }));
+    res.json({ success: true, stats: { totalDonated: total, totalUsers: users.length, totalDonations: count } });
 });
 
 app.post('/admin/get-users', async (req, res) => {
