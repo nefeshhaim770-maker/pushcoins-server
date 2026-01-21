@@ -1,307 +1,309 @@
-<!DOCTYPE html>
-<html lang="he" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ניהול מערכת</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <style>
-        body { background: #f8f9fa; font-family: sans-serif; margin: 0; overflow-x: hidden; }
-        
-        /* סרגל צד */
-        .sidebar { 
-            width: 250px; height: 100vh; background: #2b2d42; color: white; 
-            position: fixed; right: 0; top: 0; padding: 20px; 
-            display: flex; flex-direction: column; z-index: 1000;
-            transition: transform 0.3s ease;
-        }
-        .main { margin-right: 250px; padding: 30px; transition: margin 0.3s ease; }
-        
-        /* כפתור תפריט לנייד */
-        .menu-toggle { display: none; position: fixed; top: 15px; right: 15px; z-index: 1100; background: #2b2d42; color: white; border: none; padding: 8px 12px; border-radius: 8px; font-size: 1.2rem; cursor: pointer; }
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
+const mongoose = require('mongoose');
+const admin = require('firebase-admin');
+const path = require('path');
+const app = express();
 
-        .nav-btn { color: #ddd; text-decoration: none; padding: 12px; display: block; border-radius: 8px; margin-bottom: 5px; cursor: pointer; }
-        .nav-btn:hover, .nav-btn.active { background: rgba(255,255,255,0.1); color: white; }
-        
-        .stat-card { background: white; border-radius: 15px; padding: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 15px; text-align: center; }
-        .table-card { background: white; border-radius: 15px; border: none; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+app.use(express.json());
+app.use(cors());
 
-        @media (max-width: 768px) {
-            .sidebar { transform: translateX(100%); width: 260px; box-shadow: -5px 0 15px rgba(0,0,0,0.2); }
-            .sidebar.active { transform: translateX(0); }
-            .main { margin-right: 0; padding: 15px; padding-top: 70px; }
-            .menu-toggle { display: block; }
-            .stat-row { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 5px; }
-            .stat-col { min-width: 140px; flex: 1; }
-            .filter-bar { flex-direction: column; gap: 10px; }
-            .filter-bar input { width: 100% !important; }
-        }
+// --- 1. הגדרות Firebase (הודעות פוש) ---
+try {
+    const serviceAccount = require('/etc/secrets/serviceAccountKey.json'); 
+    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    console.log("✅ Firebase Initialized");
+} catch (e) {
+    try {
+        const serviceAccount = require('./serviceAccountKey.json');
+        admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+        console.log("✅ Firebase Local");
+    } catch (err) { console.log("⚠️ Warning: No Firebase Key found"); }
+}
 
-        #login-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:white; z-index:9999; display:flex; justify-content:center; align-items:center; }
-    </style>
-</head>
-<body>
+// --- 2. חיבור למסד הנתונים ---
+mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
+    .then(() => console.log('✅ DB Connected'))
+    .catch(err => console.error('❌ DB Error:', err));
 
-<button class="menu-toggle shadow" onclick="toggleMenu()"><i class="fas fa-bars"></i></button>
+// --- 3. סכמת משתמש ---
+const userSchema = new mongoose.Schema({
+    email: String, 
+    phone: String, 
+    name: String, 
+    tz: String,
+    lastExpiry: String, 
+    lastCardDigits: String, 
+    token: { type: String, default: "" },
+    totalDonated: { type: Number, default: 0 },
+    billingPreference: { type: Number, default: 0 }, 
+    recurringDailyAmount: { type: Number, default: 0 },
+    securityPin: { type: String, default: "" },
+    fcmToken: { type: String, default: "" },
+    donationsHistory: [{ 
+        amount: Number, 
+        date: { type: Date, default: Date.now }, 
+        note: String, 
+        status: String, 
+        failReason: String 
+    }],
+    pendingDonations: [{ 
+        _id: { type: mongoose.Schema.Types.ObjectId, auto: true },
+        amount: Number, 
+        date: { type: Date, default: Date.now }, 
+        note: String 
+    }],
+    tempCode: String
+});
+const User = mongoose.model('User', userSchema);
 
-<div id="login-overlay">
-    <div class="text-center p-4 border rounded shadow-sm bg-white mx-3" style="max-width: 350px; width: 100%;">
-        <h3>כניסת מנהל</h3>
-        <input type="password" id="admin-pass" class="form-control text-center my-3" placeholder="סיסמה">
-        <button class="btn btn-primary w-100" onclick="login()">כניסה</button>
-    </div>
-</div>
+// --- 4. פונקציות עזר ---
+function fixToken(token) {
+    if (!token) return "";
+    let strToken = String(token).replace(/['"]+/g, '').trim();
+    return (strToken.length > 0 && !strToken.startsWith('0')) ? '0' + strToken : strToken;
+}
 
-<div class="sidebar shadow" id="sidebar">
-    <h4 class="fw-bold mb-4 mt-2">ניהול קופה</h4>
-    <div class="nav-btn active" onclick="closeMenu()"><i class="fas fa-home me-2"></i> ראשי</div>
-    <div class="nav-btn" onclick="openPush(); closeMenu()"><i class="fas fa-paper-plane me-2"></i> שלח הודעה</div>
-    <div class="nav-btn" onclick="recalc(); closeMenu()"><i class="fas fa-sync me-2"></i> תיקון סכומים</div>
-    <div class="mt-auto nav-btn text-danger" onclick="location.reload()"><i class="fas fa-sign-out-alt me-2"></i> יציאה</div>
-</div>
+function sortObjectKeys(obj) { 
+    return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); 
+}
 
-<div id="backdrop" onclick="closeMenu()" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.3); z-index:999;"></div>
+// --- 5. פונקציית החיוב (המעודכנת) ---
+async function chargeKesher(user, amount, note, cc = null) {
+    const total = Math.round(parseFloat(amount) * 100);
+    const phone = (user.phone || "0500000000").replace(/\D/g, '');
+    
+    // ✅ פיצול השם לפרטי ומשפחה
+    const fullNameParts = (user.name || "Torem").trim().split(" ");
+    const firstName = fullNameParts[0];
+    const lastName = fullNameParts.length > 1 ? fullNameParts.slice(1).join(" ") : ".";
 
-<div class="main" id="main" style="display: none;">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2 class="m-0 fs-3">לוח בקרה</h2>
-    </div>
+    let tran = {
+        Total: total, 
+        Currency: 1, 
+        CreditType: 1, 
+        ParamJ: "J4", 
+        TransactionType: "debit", 
+        ProjectNumber: "00001",
+        Phone: phone, 
+        FirstName: firstName, 
+        LastName: lastName,
+        Mail: user.email || "no@mail.com",
+        ClientApiIdentity: user.tz || "000000000", 
+        Id: user.tz || "000000000", 
+        Details: note || ""
+    };
 
-    <div class="d-flex filter-bar mb-4 bg-white p-2 rounded shadow-sm">
-        <input type="text" id="search" class="form-control border-0" placeholder="🔍 חיפוש..." onkeyup="filter()">
-        <div class="border-start mx-1 d-none d-md-block"></div>
-        <input type="date" id="date-start" class="form-control border-0" onchange="filter()">
-        <input type="date" id="date-end" class="form-control border-0" onchange="filter()">
-    </div>
+    if (cc) {
+        tran.CreditNum = cc.num;
+        tran.Expiry = (cc.exp.length === 4) ? cc.exp.substring(2, 4) + cc.exp.substring(0, 2) : cc.exp;
+    } else if (user.token) {
+        tran.Token = fixToken(user.token);
+        tran.Expiry = user.lastExpiry;
+    } else throw new Error("No Payment Method");
 
-    <div class="stat-row mb-4">
-        <div class="stat-col"><div class="stat-card border-bottom border-4 border-primary">
-            <small class="text-muted d-block">סה"כ נתרם</small><h4 class="fw-bold m-0 text-primary" id="s-total">₪0</h4>
-        </div></div>
-        <div class="stat-col"><div class="stat-card border-bottom border-4 border-success">
-            <small class="text-muted d-block">משתמשים</small><h4 class="fw-bold m-0 text-success" id="s-users">0</h4>
-        </div></div>
-        <div class="stat-col"><div class="stat-card border-bottom border-4 border-warning">
-            <small class="text-muted d-block">תרומות</small><h4 class="fw-bold m-0 text-warning" id="s-count">0</h4>
-        </div></div>
-    </div>
+    // שליחת הבקשה לקשר
+    const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
+        Json: { 
+            userName: '2181420WS2087', 
+            password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', 
+            func: "SendTransaction", 
+            format: "json", 
+            tran: sortObjectKeys(tran) 
+        },
+        format: "json"
+    }, { validateStatus: () => true });
 
-    <div class="card table-card">
-        <div class="card-header bg-white d-flex justify-content-between py-3">
-            <span class="fw-bold">משתמשים</span>
-            <span class="badge bg-light text-dark border" id="rows-count">0</span>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle" style="min-width: 600px;">
-                <thead class="table-light"><tr><th>שם</th><th>פרטים</th><th>מזהים</th><th>סה"כ</th><th>פעולות</th></tr></thead>
-                <tbody id="tbody"></tbody>
-            </table>
-        </div>
-    </div>
-</div>
+    return { 
+        success: res.data.RequestResult?.Status === true || res.data.Status === true, 
+        data: res.data 
+    };
+}
 
-<div class="modal fade" id="editModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
-    <div class="modal-header fw-bold">עריכה</div>
-    <div class="modal-body">
-        <input type="hidden" id="e-id">
-        <label>שם</label><input type="text" id="e-name" class="form-control mb-2">
-        <label>טלפון</label><input type="text" id="e-phone" class="form-control mb-2">
-        <label>מייל</label><input type="text" id="e-email" class="form-control mb-2">
-        <label>ת"ז</label><input type="text" id="e-tz" class="form-control mb-2">
-        <label class="text-danger">Token</label><input type="text" id="e-token" class="form-control mb-3 text-danger">
-        <button class="btn btn-primary w-100" onclick="save()">שמור</button>
-    </div>
-</div></div></div>
+// --- 6. נתיבים (Routes) ---
 
-<div class="modal fade" id="historyModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
-    <div class="modal-header fw-bold bg-light">היסטוריית תרומות</div>
-    <div class="modal-body p-0">
-        <table class="table table-striped mb-0 text-center" style="font-size: 0.9rem;">
-            <thead><tr><th>תאריך</th><th>סכום</th><th>הערה</th></tr></thead>
-            <tbody id="history-tbody"></tbody>
-        </table>
-    </div>
-</div></div></div>
+// קבצים סטטיים
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get('/manager', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
+app.get('/firebase-messaging-sw.js', (req, res) => res.sendFile(path.join(__dirname, 'firebase-messaging-sw.js')));
 
-<div class="modal fade" id="pushModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
-    <div class="modal-header fw-bold bg-primary text-white">שליחת הודעה</div>
-    <div class="modal-body">
-        <input type="text" id="p-title" class="form-control mb-2" placeholder="כותרת">
-        <textarea id="p-body" class="form-control mb-3" placeholder="תוכן"></textarea>
-        <button class="btn btn-primary w-100" onclick="sendPush()">שלח</button>
-    </div>
-</div></div></div>
+// --- צד לקוח (אפליקציה) ---
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-    const API = "https://pushcoins-server.onrender.com";
-    const PASS = "admin1234";
-    let users = [];
-    let editModalObj, pushModalObj, historyModalObj;
-
-    document.addEventListener('DOMContentLoaded', function() {
-        editModalObj = new bootstrap.Modal(document.getElementById('editModal'));
-        pushModalObj = new bootstrap.Modal(document.getElementById('pushModal'));
-        historyModalObj = new bootstrap.Modal(document.getElementById('historyModal'));
-    });
-
-    function toggleMenu() {
-        const sb = document.getElementById('sidebar');
-        const bd = document.getElementById('backdrop');
-        sb.classList.toggle('active');
-        bd.style.display = sb.classList.contains('active') ? 'block' : 'none';
-    }
-    function closeMenu() {
-        document.getElementById('sidebar').classList.remove('active');
-        document.getElementById('backdrop').style.display = 'none';
-    }
-
-    function login() {
-        if(document.getElementById('admin-pass').value === PASS) {
-            document.getElementById('login-overlay').classList.add('d-none');
-            document.getElementById('main').style.display = 'block';
-            loadData();
-        } else Swal.fire('שגיאה', 'סיסמה שגויה', 'error');
-    }
-
-    async function loadData() {
+app.post('/update-code', async (req, res) => {
+    let { email, phone, code } = req.body;
+    let cleanEmail = email ? email.toLowerCase().trim() : undefined;
+    let cleanPhone = phone ? phone.replace(/\D/g, '').trim() : undefined;
+    
+    // שליחת מייל
+    if (cleanEmail) {
         try {
-            fetch(`${API}/admin/stats`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:PASS})})
-                .then(r=>r.json()).then(d=>{ if(d.success) {
-                    document.getElementById('s-total').innerText = '₪' + d.stats.totalDonated.toLocaleString();
-                    document.getElementById('s-users').innerText = d.stats.totalUsers;
-                    // תיקון: מציג עכשיו את הכמות האמיתית מהשרת
-                    document.getElementById('s-count').innerText = d.stats.totalDonations || 0; 
-                }});
-
-            const res = await fetch(`${API}/admin/get-users`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:PASS})});
-            const data = await res.json();
-            if(data.success) {
-                users = data.users;
-                filter();
-            }
-        } catch(e) { Swal.fire('שגיאת תקשורת', '', 'error'); }
-    }
-
-    function filter() {
-        const q = document.getElementById('search').value.toLowerCase();
-        const start = document.getElementById('date-start').value;
-        const end = document.getElementById('date-end').value;
-        const tbody = document.getElementById('tbody');
-        tbody.innerHTML = '';
-
-        const filtered = users.filter(u => {
-            const txt = (u.name+u.phone+u.email+u.tz).toLowerCase();
-            if(!txt.includes(q)) return false;
-            
-            // סינון לפי תאריך תרומה אחרונה
-            if(start || end) {
-                const lastDate = u.donationsHistory?.length ? new Date(u.donationsHistory[u.donationsHistory.length-1].date) : null;
-                if(!lastDate) return false;
-                if(start && lastDate < new Date(start)) return false;
-                if(end && lastDate > new Date(end)) return false;
-            }
-            return true;
-        });
-
-        document.getElementById('rows-count').innerText = filtered.length;
-
-        filtered.forEach(u => {
-            tbody.innerHTML += `<tr>
-                <td><b>${u.name||'-'}</b></td>
-                <td><small>${u.phone||''}<br>${u.email||''}</small></td>
-                <td><small>${u.tz||'-'}</small><br>${u.token?'✅':'❌'}</td>
-                <td class="text-success fw-bold">₪${u.totalDonated}</td>
-                <td>
-                    <button class="btn btn-sm btn-outline-info" onclick="openHistory('${u._id}')"><i class="fas fa-history"></i></button>
-                    <button class="btn btn-sm btn-outline-primary" onclick="openEdit('${u._id}')"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="del('${u._id}')"><i class="fas fa-trash"></i></button>
-                </td>
-            </tr>`;
-        });
-    }
-
-    function openEdit(id) {
-        const u = users.find(x => x._id === id);
-        if(!u) return;
-        document.getElementById('e-id').value = u._id;
-        document.getElementById('e-name').value = u.name||'';
-        document.getElementById('e-phone').value = u.phone||'';
-        document.getElementById('e-email').value = u.email||'';
-        document.getElementById('e-tz').value = u.tz||'';
-        document.getElementById('e-token').value = u.token||'';
-        editModalObj.show();
-    }
-
-    // פונקציית היסטוריה החדשה
-    function openHistory(id) {
-        const u = users.find(x => x._id === id);
-        if(!u) return;
-        
-        const tbody = document.getElementById('history-tbody');
-        tbody.innerHTML = '';
-        
-        if(!u.donationsHistory || u.donationsHistory.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="3">אין תרומות</td></tr>';
-        } else {
-            // ממיין מהחדש לישן
-            const sorted = [...u.donationsHistory].reverse();
-            sorted.forEach(d => {
-                if(d.status === 'success') {
-                    const date = new Date(d.date).toLocaleDateString('he-IL');
-                    tbody.innerHTML += `<tr>
-                        <td>${date}</td>
-                        <td class="fw-bold text-success">₪${d.amount}</td>
-                        <td><small>${d.note || '-'}</small></td>
-                    </tr>`;
-                }
+            await axios.post('https://api.emailjs.com/api/v1.0/email/send', {
+                service_id: 'service_8f6h188', 
+                template_id: 'template_tzbq0k4', 
+                user_id: 'yLYooSdg891aL7etD',
+                template_params: { email: cleanEmail, code: code }, 
+                accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3"
             });
+        } catch (e) { console.error("Email Error"); }
+    }
+    
+    // שמירת הקוד ב-DB
+    await User.findOneAndUpdate(
+        cleanEmail ? { email: cleanEmail } : { phone: cleanPhone }, 
+        { tempCode: code, email: cleanEmail, phone: cleanPhone }, 
+        { upsert: true }
+    );
+    res.json({ success: true });
+});
+
+app.post('/verify-auth', async (req, res) => {
+    let { email, phone, code } = req.body;
+    if(code === 'check') return res.json({ success: true }); // עקיפה לפיתוח
+    
+    let u = await User.findOne(email ? { email: email.toLowerCase().trim() } : { phone: phone.replace(/\D/g, '').trim() });
+    
+    if (u && String(u.tempCode).trim() === String(code).trim()) {
+        res.json({ success: true, user: u });
+    } else {
+        res.json({ success: false });
+    }
+});
+
+app.post('/login-by-id', async (req, res) => {
+    try { 
+        let user = await User.findById(req.body.userId);
+        if(user) res.json({ success: true, user });
+        else res.json({ success: false });
+    } catch(e) { res.json({ success: false }); }
+});
+
+app.post('/donate', async (req, res) => {
+    const { userId, amount, useToken, note, forceImmediate, ccDetails } = req.body;
+    let u = await User.findById(userId);
+    
+    // אם זה חיוב מיידי או שהמשתמש מוגדר לחיוב מיידי (0)
+    if (forceImmediate || u.billingPreference === 0) {
+        try {
+            const r = await chargeKesher(u, amount, note, !useToken ? ccDetails : null);
+            
+            if (r.success) {
+                // שמירת טוקן אם נוצר חדש
+                if(r.data.Token) { 
+                    u.token = fixToken(r.data.Token); 
+                    u.lastExpiry = r.data.Expiry || ""; 
+                    if(ccDetails) u.lastCardDigits = ccDetails.num.slice(-4);
+                }
+                
+                u.totalDonated += parseFloat(amount);
+                u.donationsHistory.push({ amount: parseFloat(amount), note, date: new Date(), status: 'success' });
+                await u.save();
+                res.json({ success: true, message: "תרומה התקבלה בהצלחה!" });
+            } else {
+                res.json({ success: false, error: r.data.Description || "סירוב" });
+            }
+        } catch(e) { 
+            res.json({ success: false, error: "שגיאה בחיוב: " + e.message }); 
         }
-        historyModalObj.show();
+    } else {
+        // הוספה לסל
+        u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() });
+        await u.save();
+        res.json({ success: true, message: "נוסף לסל" });
     }
+});
 
-    function openPush() { pushModalObj.show(); }
+app.post('/admin/update-profile', async (req, res) => {
+    await User.findByIdAndUpdate(req.body.userId, req.body); // לעדכון מהאפליקציה
+    res.json({ success: true });
+});
 
-    async function save() {
-        const id = document.getElementById('e-id').value;
-        const data = {
-            name: document.getElementById('e-name').value,
-            phone: document.getElementById('e-phone').value,
-            email: document.getElementById('e-email').value,
-            tz: document.getElementById('e-tz').value,
-            token: document.getElementById('e-token').value
-        };
-        await fetch(`${API}/admin/update-user-full`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:PASS, userId:id, userData:data})});
-        editModalObj.hide();
-        loadData();
-    }
+app.post('/save-push-token', async (req, res) => {
+    await User.findByIdAndUpdate(req.body.userId, { fcmToken: req.body.token });
+    res.json({ success: true });
+});
 
-    async function del(id) {
-        if(confirm('למחוק לצמיתות?')) {
-            await fetch(`${API}/admin/delete-user`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:PASS, userId:id})});
-            loadData();
+app.post('/delete-pending', async (req, res) => {
+    await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } });
+    res.json({ success: true });
+});
+
+app.post('/reset-token', async (req, res) => {
+    await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "" });
+    res.json({ success: true });
+});
+
+
+// --- צד אדמין (ניהול) ---
+const PASS = "admin1234";
+
+app.post('/admin/stats', async (req, res) => {
+    if(req.body.password !== PASS) return res.json({ success: false });
+    const users = await User.find();
+    let total = 0;
+    let count = 0; 
+    users.forEach(u => u.donationsHistory?.forEach(d => { 
+        if(d.status==='success') {
+            total += d.amount||0; 
+            count++;
+        }
+    }));
+    res.json({ success: true, stats: { totalDonated: total, totalUsers: users.length, totalDonations: count } });
+});
+
+app.post('/admin/get-users', async (req, res) => {
+    if(req.body.password !== PASS) return res.json({ success: false });
+    const users = await User.find().sort({ _id: -1 }); // הכי חדשים למעלה
+    res.json({ success: true, users });
+});
+
+app.post('/admin/update-user-full', async (req, res) => {
+    if(req.body.password !== PASS) return res.json({ success: false });
+    await User.findByIdAndUpdate(req.body.userId, req.body.userData);
+    res.json({ success: true });
+});
+
+app.post('/admin/delete-user', async (req, res) => {
+    if(req.body.password !== PASS) return res.json({ success: false });
+    await User.findByIdAndDelete(req.body.userId);
+    res.json({ success: true });
+});
+
+app.post('/admin/recalc-totals', async (req, res) => {
+    if(req.body.password !== PASS) return res.json({ success: false });
+    const users = await User.find();
+    let c = 0;
+    for (const u of users) {
+        let t = 0;
+        if(u.donationsHistory) u.donationsHistory.forEach(d => { if(d.status==='success') t += d.amount||0; });
+        if(u.totalDonated !== t) { 
+            u.totalDonated = t; 
+            await u.save(); 
+            c++; 
         }
     }
+    res.json({ success: true, count: c });
+});
 
-    async function recalc() {
-        Swal.fire({title:'מתקן...', didOpen:()=>Swal.showLoading()});
-        const res = await fetch(`${API}/admin/recalc-totals`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:PASS})});
-        const d = await res.json();
-        Swal.fire(d.success?'בוצע':'שגיאה', d.success?`עודכנו ${d.count}`:d.error, d.success?'success':'error');
-        loadData();
+app.post('/admin/send-push', async (req, res) => {
+    if(req.body.password !== PASS) return res.json({ success: false });
+    const users = await User.find({ fcmToken: { $exists: true, $ne: "" } });
+    const tokens = users.map(u => u.fcmToken);
+    
+    if(tokens.length) {
+        try {
+            const response = await admin.messaging().sendMulticast({ 
+                notification: { title: req.body.title, body: req.body.body }, 
+                tokens 
+            });
+            res.json({ success: true, sentCount: response.successCount });
+        } catch(e) {
+            res.json({ success: false, error: e.message });
+        }
+    } else {
+        res.json({ success: false, error: "אין משתמשים רשומים לפוש" });
     }
+});
 
-    async function sendPush() {
-        const title = document.getElementById('p-title').value;
-        const body = document.getElementById('p-body').value;
-        pushModalObj.hide();
-        Swal.fire({title:'שולח...', didOpen:()=>Swal.showLoading()});
-        const res = await fetch(`${API}/admin/send-push`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:PASS, title, body})});
-        const d = await res.json();
-        Swal.fire(d.success?'נשלח':'שגיאה', '', d.success?'success':'error');
-    }
-</script>
-</body>
-</html>
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`✅ Server Live on port ${PORT}`));
