@@ -10,40 +10,31 @@
     <style>
         body { background: #f8f9fa; font-family: sans-serif; margin: 0; overflow-x: hidden; }
         
-        /* סרגל צד - עיצוב למחשב */
+        /* סרגל צד */
         .sidebar { 
             width: 250px; height: 100vh; background: #2b2d42; color: white; 
             position: fixed; right: 0; top: 0; padding: 20px; 
             display: flex; flex-direction: column; z-index: 1000;
             transition: transform 0.3s ease;
         }
-        
-        /* תוכן ראשי - עיצוב למחשב */
         .main { margin-right: 250px; padding: 30px; transition: margin 0.3s ease; }
         
         /* כפתור תפריט לנייד */
         .menu-toggle { display: none; position: fixed; top: 15px; right: 15px; z-index: 1100; background: #2b2d42; color: white; border: none; padding: 8px 12px; border-radius: 8px; font-size: 1.2rem; cursor: pointer; }
 
-        /* כפתורי ניווט */
         .nav-btn { color: #ddd; text-decoration: none; padding: 12px; display: block; border-radius: 8px; margin-bottom: 5px; cursor: pointer; }
         .nav-btn:hover, .nav-btn.active { background: rgba(255,255,255,0.1); color: white; }
         
-        /* כרטיסיות */
         .stat-card { background: white; border-radius: 15px; padding: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 15px; text-align: center; }
         .table-card { background: white; border-radius: 15px; border: none; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
 
-        /* --- התאמה לנייד (Mobile) --- */
         @media (max-width: 768px) {
-            .sidebar { transform: translateX(100%); width: 260px; box-shadow: -5px 0 15px rgba(0,0,0,0.2); } /* מוסתר ימינה */
-            .sidebar.active { transform: translateX(0); } /* מוצג */
-            .main { margin-right: 0; padding: 15px; padding-top: 70px; } /* רווח מלמעלה לכפתור */
-            .menu-toggle { display: block; } /* הצגת כפתור התפריט */
-            
-            /* התאמת כרטיסיות לשורה אחת */
+            .sidebar { transform: translateX(100%); width: 260px; box-shadow: -5px 0 15px rgba(0,0,0,0.2); }
+            .sidebar.active { transform: translateX(0); }
+            .main { margin-right: 0; padding: 15px; padding-top: 70px; }
+            .menu-toggle { display: block; }
             .stat-row { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 5px; }
             .stat-col { min-width: 140px; flex: 1; }
-            
-            /* פילטרים בטור */
             .filter-bar { flex-direction: column; gap: 10px; }
             .filter-bar input { width: 100% !important; }
         }
@@ -53,9 +44,7 @@
 </head>
 <body>
 
-<button class="menu-toggle shadow" onclick="toggleMenu()">
-    <i class="fas fa-bars"></i>
-</button>
+<button class="menu-toggle shadow" onclick="toggleMenu()"><i class="fas fa-bars"></i></button>
 
 <div id="login-overlay">
     <div class="text-center p-4 border rounded shadow-sm bg-white mx-3" style="max-width: 350px; width: 100%;">
@@ -76,7 +65,6 @@
 <div id="backdrop" onclick="closeMenu()" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.3); z-index:999;"></div>
 
 <div class="main" id="main" style="display: none;">
-    
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2 class="m-0 fs-3">לוח בקרה</h2>
     </div>
@@ -84,7 +72,8 @@
     <div class="d-flex filter-bar mb-4 bg-white p-2 rounded shadow-sm">
         <input type="text" id="search" class="form-control border-0" placeholder="🔍 חיפוש..." onkeyup="filter()">
         <div class="border-start mx-1 d-none d-md-block"></div>
-        <input type="date" id="date-filter" class="form-control border-0" onchange="filter()">
+        <input type="date" id="date-start" class="form-control border-0" onchange="filter()">
+        <input type="date" id="date-end" class="form-control border-0" onchange="filter()">
     </div>
 
     <div class="stat-row mb-4">
@@ -105,7 +94,8 @@
             <span class="badge bg-light text-dark border" id="rows-count">0</span>
         </div>
         <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle" style="min-width: 600px;"> <thead class="table-light"><tr><th>שם</th><th>פרטים</th><th>מזהים</th><th>סה"כ</th><th>פעולות</th></tr></thead>
+            <table class="table table-hover mb-0 align-middle" style="min-width: 600px;">
+                <thead class="table-light"><tr><th>שם</th><th>פרטים</th><th>מזהים</th><th>סה"כ</th><th>פעולות</th></tr></thead>
                 <tbody id="tbody"></tbody>
             </table>
         </div>
@@ -125,6 +115,16 @@
     </div>
 </div></div></div>
 
+<div class="modal fade" id="historyModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+    <div class="modal-header fw-bold bg-light">היסטוריית תרומות</div>
+    <div class="modal-body p-0">
+        <table class="table table-striped mb-0 text-center" style="font-size: 0.9rem;">
+            <thead><tr><th>תאריך</th><th>סכום</th><th>הערה</th></tr></thead>
+            <tbody id="history-tbody"></tbody>
+        </table>
+    </div>
+</div></div></div>
+
 <div class="modal fade" id="pushModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
     <div class="modal-header fw-bold bg-primary text-white">שליחת הודעה</div>
     <div class="modal-body">
@@ -139,14 +139,14 @@
     const API = "https://pushcoins-server.onrender.com";
     const PASS = "admin1234";
     let users = [];
-    let editModalObj, pushModalObj;
+    let editModalObj, pushModalObj, historyModalObj;
 
     document.addEventListener('DOMContentLoaded', function() {
         editModalObj = new bootstrap.Modal(document.getElementById('editModal'));
         pushModalObj = new bootstrap.Modal(document.getElementById('pushModal'));
+        historyModalObj = new bootstrap.Modal(document.getElementById('historyModal'));
     });
 
-    // --- לוגיקה לנייד ---
     function toggleMenu() {
         const sb = document.getElementById('sidebar');
         const bd = document.getElementById('backdrop');
@@ -168,43 +168,40 @@
 
     async function loadData() {
         try {
-            // סטטיסטיקה
             fetch(`${API}/admin/stats`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:PASS})})
                 .then(r=>r.json()).then(d=>{ if(d.success) {
                     document.getElementById('s-total').innerText = '₪' + d.stats.totalDonated.toLocaleString();
                     document.getElementById('s-users').innerText = d.stats.totalUsers;
+                    // תיקון: מציג עכשיו את הכמות האמיתית מהשרת
+                    document.getElementById('s-count').innerText = d.stats.totalDonations || 0; 
                 }});
 
-            // משתמשים
             const res = await fetch(`${API}/admin/get-users`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:PASS})});
-            
-            // בדיקה שזה לא HTML (שגיאה נפוצה בשרת לא מעודכן)
-            const text = await res.text();
-            try {
-                const data = JSON.parse(text);
-                if(data.success) {
-                    users = data.users;
-                    filter();
-                } else { Swal.fire('שגיאה בטעינה', '', 'error'); }
-            } catch(e) {
-                console.error("HTML Error:", text);
-                Swal.fire('שגיאת שרת', 'נא לעדכן את server.js', 'error');
+            const data = await res.json();
+            if(data.success) {
+                users = data.users;
+                filter();
             }
         } catch(e) { Swal.fire('שגיאת תקשורת', '', 'error'); }
     }
 
     function filter() {
         const q = document.getElementById('search').value.toLowerCase();
-        const date = document.getElementById('date-filter').value;
+        const start = document.getElementById('date-start').value;
+        const end = document.getElementById('date-end').value;
         const tbody = document.getElementById('tbody');
         tbody.innerHTML = '';
 
         const filtered = users.filter(u => {
             const txt = (u.name+u.phone+u.email+u.tz).toLowerCase();
             if(!txt.includes(q)) return false;
-            if(date) {
-                const last = u.donationsHistory?.length ? new Date(u.donationsHistory[u.donationsHistory.length-1].date).toISOString().split('T')[0] : '';
-                if(last !== date) return false;
+            
+            // סינון לפי תאריך תרומה אחרונה
+            if(start || end) {
+                const lastDate = u.donationsHistory?.length ? new Date(u.donationsHistory[u.donationsHistory.length-1].date) : null;
+                if(!lastDate) return false;
+                if(start && lastDate < new Date(start)) return false;
+                if(end && lastDate > new Date(end)) return false;
             }
             return true;
         });
@@ -218,6 +215,7 @@
                 <td><small>${u.tz||'-'}</small><br>${u.token?'✅':'❌'}</td>
                 <td class="text-success fw-bold">₪${u.totalDonated}</td>
                 <td>
+                    <button class="btn btn-sm btn-outline-info" onclick="openHistory('${u._id}')"><i class="fas fa-history"></i></button>
                     <button class="btn btn-sm btn-outline-primary" onclick="openEdit('${u._id}')"><i class="fas fa-pen"></i></button>
                     <button class="btn btn-sm btn-outline-danger" onclick="del('${u._id}')"><i class="fas fa-trash"></i></button>
                 </td>
@@ -237,6 +235,33 @@
         editModalObj.show();
     }
 
+    // פונקציית היסטוריה החדשה
+    function openHistory(id) {
+        const u = users.find(x => x._id === id);
+        if(!u) return;
+        
+        const tbody = document.getElementById('history-tbody');
+        tbody.innerHTML = '';
+        
+        if(!u.donationsHistory || u.donationsHistory.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3">אין תרומות</td></tr>';
+        } else {
+            // ממיין מהחדש לישן
+            const sorted = [...u.donationsHistory].reverse();
+            sorted.forEach(d => {
+                if(d.status === 'success') {
+                    const date = new Date(d.date).toLocaleDateString('he-IL');
+                    tbody.innerHTML += `<tr>
+                        <td>${date}</td>
+                        <td class="fw-bold text-success">₪${d.amount}</td>
+                        <td><small>${d.note || '-'}</small></td>
+                    </tr>`;
+                }
+            });
+        }
+        historyModalObj.show();
+    }
+
     function openPush() { pushModalObj.show(); }
 
     async function save() {
@@ -248,10 +273,8 @@
             tz: document.getElementById('e-tz').value,
             token: document.getElementById('e-token').value
         };
-        Swal.fire({title:'שומר...', didOpen:()=>Swal.showLoading()});
         await fetch(`${API}/admin/update-user-full`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:PASS, userId:id, userData:data})});
         editModalObj.hide();
-        Swal.fire('נשמר', '', 'success');
         loadData();
     }
 
