@@ -101,13 +101,13 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/manager', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
 app.get('/firebase-messaging-sw.js', (req, res) => res.sendFile(path.join(__dirname, 'firebase-messaging-sw.js')));
 
-// ✅ תיקון שליחת המייל
 app.post('/update-code', async (req, res) => {
     let { email, phone, code } = req.body;
     let cleanEmail = email ? email.toLowerCase().trim() : undefined;
     let cleanPhone = phone ? phone.replace(/\D/g, '').trim() : undefined;
     
-    console.log(`CODE REQUEST: ${code} for ${cleanEmail || cleanPhone}`); // לוג לבדיקה
+    // לוג כדי שנראה שהבקשה הגיעה
+    console.log(`Sending code ${code} to email: ${cleanEmail} or phone: ${cleanPhone}`);
 
     if (cleanEmail) {
         try {
@@ -118,14 +118,9 @@ app.post('/update-code', async (req, res) => {
                 template_params: { email: cleanEmail, code: code },
                 accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3"
             });
-            console.log("Email sent successfully");
-        } catch (e) {
-            console.error("Email Error:", e.response ? e.response.data : e.message);
-        }
+        } catch (e) { console.error("Email Error:", e.message); }
     }
-    
-    await User.findOneAndUpdate(cleanEmail ? { email: cleanEmail } : { phone: cleanPhone }, 
-        { tempCode: code, email: cleanEmail, phone: cleanPhone }, { upsert: true });
+    await User.findOneAndUpdate(cleanEmail ? { email: cleanEmail } : { phone: cleanPhone }, { tempCode: code, email: cleanEmail, phone: cleanPhone }, { upsert: true });
     res.json({ success: true });
 });
 
@@ -178,8 +173,8 @@ app.post('/admin/update-profile', async (req, res) => {
         const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin } = req.body;
         await User.findByIdAndUpdate(userId, {
             name, phone, email, tz, 
-            billingPreference: parseInt(billingPreference), 
-            recurringDailyAmount: parseInt(recurringDailyAmount),
+            billingPreference: parseInt(billingPreference) || 0, 
+            recurringDailyAmount: parseInt(recurringDailyAmount) || 0,
             securityPin
         });
         res.json({ success: true });
