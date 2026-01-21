@@ -8,7 +8,6 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        /* --- עיצוב כללי --- */
         body { 
             background: linear-gradient(180deg, #a1c4fd 0%, #c2e9fb 100%);
             font-family: 'Segoe UI', sans-serif; 
@@ -22,7 +21,6 @@
             padding-top: 80px; padding-bottom: 20px; overflow-y: auto;
         }
 
-        /* --- מסך טעינה --- */
         #app-loader {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #ffffff; z-index: 99999;
@@ -35,7 +33,6 @@
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
         .fade-out { opacity: 0; pointer-events: none; }
 
-        /* --- Top Bar --- */
         .header-icons {
             position: absolute; top: 15px; width: 100%; padding: 0 20px;
             display: flex; justify-content: space-between; z-index: 200;
@@ -49,7 +46,6 @@
             font-size: 0.75rem; padding: 2px 6px; border-radius: 10px; border: 2px solid white; 
         }
 
-        /* --- מטבעות --- */
         .coins-container {
             display: flex; justify-content: center; gap: 12px;
             flex-wrap: wrap; z-index: 10; position: relative; max-width: 400px;
@@ -69,7 +65,6 @@
         .coin small { font-size: 0.7rem; color: #666; pointer-events: none; }
         .flying-coin { position: fixed; z-index: 9999; pointer-events: none; transition: all 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
 
-        /* --- קופה --- */
         .pushka-box-container {
             position: relative; width: 290px; height: 340px;
             display: flex; flex-direction: column; align-items: center; flex-shrink: 0;
@@ -112,11 +107,30 @@
         }
         .note-input::placeholder { color: rgba(255,255,255,0.7); }
 
-        /* --- מודלים --- */
-        .overlay-screen { position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.7); z-index: 5000; display: flex; justify-content: center; align-items: center; visibility: hidden; opacity: 0; transition: 0.3s; }
+        /* --- מודלים (תיקון גלילה קריטי) --- */
+        .overlay-screen { 
+            position: fixed; top:0; left:0; right:0; bottom:0; 
+            background: rgba(0,0,0,0.7); z-index: 5000; 
+            display: flex; 
+            align-items: flex-start; /* מתחיל מלמעלה - מונע חיתוך במקלדת */
+            justify-content: center; 
+            padding-top: 40px;
+            overflow-y: auto; /* מאפשר גלילה של כל המסך */
+            visibility: hidden; opacity: 0; transition: 0.3s; 
+        }
         .overlay-screen.open { visibility: visible; opacity: 1; }
-        .modal-card { background: white; width: 90%; max-width: 350px; border-radius: 25px; padding: 25px; text-align: center; max-height: 85vh; overflow-y: auto; }
+        
+        .modal-card { 
+            background: white; width: 90%; max-width: 400px; 
+            border-radius: 25px; padding: 25px; 
+            text-align: center; 
+            margin-bottom: 50px; /* רווח למטה לגלילה נוחה */
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
         .list-item { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 10px 0; align-items: center; }
+        
+        /* סימון שדות חובה */
+        .required-mark::after { content: " *"; color: red; }
     </style>
 </head>
 <body>
@@ -213,12 +227,30 @@
 </div>
 
 <div id="settings-modal" class="overlay-screen">
-    <div class="modal-card text-end" style="max-width: 400px;">
+    <div class="modal-card text-end">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h5 class="m-0 fw-bold">הגדרות</h5>
             <button class="btn-close" onclick="closeModal('settings-modal')"></button>
         </div>
         
+        <label class="small fw-bold text-primary required-mark">פרטים אישיים</label>
+        <input id="set-name" class="form-control mb-1" placeholder="שם מלא">
+        <input id="set-phone" class="form-control mb-1" placeholder="טלפון">
+        <input id="set-email" class="form-control mb-1" placeholder="אימייל">
+        <input id="set-tz" class="form-control mb-3" placeholder="תעודת זהות">
+
+        <hr>
+
+        <label class="small fw-bold text-primary">אמצעי תשלום</label>
+        <div id="cc-saved-area" class="d-none justify-content-between border p-2 mb-3 rounded align-items-center bg-light">
+            <small id="card-digits" class="fw-bold text-success">****</small>
+            <button class="btn btn-sm btn-outline-danger" onclick="resetCard()">מחק</button>
+        </div>
+        <div id="cc-input-area">
+            <input id="set-cc-num" class="form-control mb-1" placeholder="מספר כרטיס אשראי" maxlength="16">
+            <input id="set-cc-exp" class="form-control mb-3" placeholder="תוקף (MMYY)" maxlength="4">
+        </div>
+
         <label class="small fw-bold text-primary">יום חיוב הסל</label>
         <div class="input-group mb-2">
             <select id="billing-type" class="form-select text-center" onchange="toggleBillingInput()">
@@ -227,7 +259,6 @@
             </select>
             <input type="number" id="set-billing-day" class="form-control text-center d-none" placeholder="יום (1-31)" min="1" max="31" oninput="validateDay(this)">
         </div>
-        <div class="text-muted small mb-3" style="font-size: 0.75rem;">* החיוב מתבצע בשעה 08:00 בבוקר</div>
 
         <label class="small fw-bold text-primary">הוראת קבע יומית (₪)</label>
         <input type="number" id="set-daily" class="form-control mb-1" placeholder="0">
@@ -237,18 +268,7 @@
         </div>
 
         <label class="small fw-bold text-primary">קוד אבטחה (PIN)</label>
-        <input type="password" id="set-pin" class="form-control mb-2" placeholder="4 ספרות" maxlength="4">
-
-        <label class="small fw-bold text-primary">פרטים אישיים</label>
-        <input id="set-name" class="form-control mb-1" placeholder="שם מלא">
-        <input id="set-phone" class="form-control mb-1" placeholder="טלפון">
-        <input id="set-email" class="form-control mb-1" placeholder="אימייל">
-        <input id="set-tz" class="form-control mb-3" placeholder="תעודת זהות (חובה)">
-        
-        <div class="d-flex justify-content-between border p-2 mb-3 rounded align-items-center bg-light">
-            <small id="card-digits">טוען...</small>
-            <button class="btn btn-sm btn-outline-danger" onclick="resetCard()">מחק</button>
-        </div>
+        <input type="password" id="set-pin" class="form-control mb-3" placeholder="4 ספרות" maxlength="4">
 
         <button class="btn btn-outline-primary w-100 rounded-pill mb-2" onclick="openHistory()">📜 היסטוריית תרומות</button>
         <button class="btn btn-primary w-100 rounded-pill mb-2" onclick="saveSettings()">שמור שינויים</button>
@@ -336,13 +356,26 @@
 
     async function submit(forceImmediate) {
         if(tempSum === 0) return Swal.fire('הקופה ריקה', 'לחץ על המטבעות', 'info');
+        
+        // בדיקת שדות חובה לפני שליחה
+        if(!user.name || !user.phone || !user.email || !user.tz) {
+            Swal.fire({icon: 'error', title: 'חסרים פרטים', text: 'נא למלא פרטים אישיים בהגדרות'});
+            openSettings();
+            return;
+        }
+
         let pin = "";
         if(user.securityPin) {
             const res = await Swal.fire({title: 'קוד אבטחה', input: 'password', inputAttributes:{maxlength:4, inputmode:'numeric'}, showCancelButton: true});
             if(!res.isConfirmed) return;
             pin = res.value;
         }
-        if(forceImmediate && !user.token) return Swal.fire('שגיאה', 'חסר כרטיס אשראי לחיוב מיידי', 'warning');
+        if(forceImmediate && !user.token) {
+            Swal.fire({icon: 'warning', title: 'חסר אשראי', text: 'נא להוסיף כרטיס אשראי בהגדרות'});
+            openSettings();
+            return;
+        }
+        
         Swal.fire({title: 'מעבד...', didOpen: () => Swal.showLoading()});
         const note = document.getElementById('donation-note').value;
         try {
@@ -380,6 +413,7 @@
                 document.getElementById('status-text').innerText = isImmediate ? "מצב: חיוב מיידי" : `מצב: צבירה ל-${user.billingPreference} בחודש`;
                 document.getElementById('basket-date').innerText = isImmediate ? "מיידי" : user.billingPreference;
 
+                // עדכון טופס הגדרות
                 document.getElementById('set-name').value = user.name||'';
                 document.getElementById('set-phone').value = user.phone||'';
                 document.getElementById('set-email').value = user.email||'';
@@ -398,7 +432,19 @@
                 document.getElementById('set-daily-immediate').checked = user.recurringImmediate === true;
                 
                 document.getElementById('set-pin').value = user.securityPin||'';
-                document.getElementById('card-digits').innerText = user.lastCardDigits ? `**** ${user.lastCardDigits}` : 'אין כרטיס';
+                
+                // ניהול תצוגת אשראי
+                if (user.token) {
+                    document.getElementById('cc-saved-area').classList.remove('d-none');
+                    document.getElementById('cc-saved-area').classList.add('d-flex');
+                    document.getElementById('cc-input-area').classList.add('d-none');
+                    document.getElementById('card-digits').innerText = 'כרטיס שמור (' + (user.lastCardDigits || '****') + ')';
+                } else {
+                    document.getElementById('cc-saved-area').classList.add('d-none');
+                    document.getElementById('cc-saved-area').classList.remove('d-flex');
+                    document.getElementById('cc-input-area').classList.remove('d-none');
+                }
+
             } else { document.getElementById('login-modal').classList.add('open'); }
         });
     }
@@ -422,30 +468,51 @@
     }
 
     function saveSettings() {
+        // וולידציה קשוחה בלקוח
+        const name = document.getElementById('set-name').value;
+        const phone = document.getElementById('set-phone').value;
+        const email = document.getElementById('set-email').value;
+        const tz = document.getElementById('set-tz').value;
+
+        if (!name || !phone || !email || !tz) {
+            Swal.fire('חסרים פרטים', 'חובה למלא: שם, טלפון, מייל ותעודת זהות', 'error');
+            return;
+        }
+
         let billingPref = 0;
         if (document.getElementById('billing-type').value === 'monthly') {
             billingPref = document.getElementById('set-billing-day').value || 1;
         }
 
+        // איסוף פרטי אשראי אם הוזנו
+        let newCardDetails = null;
+        const ccNum = document.getElementById('set-cc-num').value;
+        const ccExp = document.getElementById('set-cc-exp').value;
+        if (ccNum && ccExp) {
+            newCardDetails = { num: ccNum, exp: ccExp };
+        }
+
         const data = {
-            userId: user._id,
-            name: document.getElementById('set-name').value,
-            phone: document.getElementById('set-phone').value,
-            email: document.getElementById('set-email').value,
-            tz: document.getElementById('set-tz').value,
+            userId: user._id, name, phone, email, tz,
             billingPreference: Number(billingPref),
             recurringDailyAmount: Number(document.getElementById('set-daily').value),
             recurringImmediate: document.getElementById('set-daily-immediate').checked,
-            securityPin: document.getElementById('set-pin').value
+            securityPin: document.getElementById('set-pin').value,
+            newCardDetails // שולח רק אם יש כרטיס חדש
         };
+
         Swal.fire({title:'שומר...', didOpen:()=>Swal.showLoading()});
+        
         fetch(`${API}/admin/update-profile`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)})
         .then(r=>r.json()).then(d => {
             if(d.success) {
                 closeModal('settings-modal');
+                // ניקוי שדות אשראי
+                document.getElementById('set-cc-num').value = '';
+                document.getElementById('set-cc-exp').value = '';
                 loadUser(user._id);
                 Swal.fire('נשמר', '', 'success');
-            } else Swal.fire('שגיאה', 'לא נשמר', 'error');
+            } else Swal.fire('שגיאה', d.error || 'לא נשמר', 'error');
         });
     }
 
@@ -471,7 +538,7 @@
         Swal.fire({title:'מוחק...', timer: 1000, didOpen:()=>Swal.showLoading(), showConfirmButton:false});
         await fetch(`${API}/delete-pending`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({userId: user._id, donationId: itemId})});
         await loadUser(user._id); 
-        openBasket(); // קריאה חוזרת לרענון ה-HTML אחרי שהמידע התעדכן
+        openBasket(); 
     }
 
     function closeModal(id) { document.getElementById(id).classList.remove('open'); }
