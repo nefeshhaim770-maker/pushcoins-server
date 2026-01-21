@@ -8,196 +8,230 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        :root { --primary: #1a237e; --gold: #ffd700; --bg: #e8eaf6; }
-        body { background: var(--bg); font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: hidden; margin: 0; user-select: none; display: flex; flex-direction: column; }
-        
+        body { 
+            background: linear-gradient(180deg, #a1c4fd 0%, #c2e9fb 100%);
+            font-family: 'Segoe UI', sans-serif; 
+            padding-bottom: 80px; margin: 0; 
+            height: 100vh; overflow: hidden; user-select: none;
+        }
+
         /* --- מסך טעינה (Splash Screen) --- */
         #app-loader {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #ffffff; z-index: 9999;
+            background: #ffffff; z-index: 99999;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            transition: opacity 0.5s ease-out, visibility 0.5s;
+            transition: opacity 0.5s ease-out;
         }
-        .loader-logo { width: 120px; height: 120px; border-radius: 50%; margin-bottom: 20px; box-shadow: 0 5px 20px rgba(0,0,0,0.1); animation: pulse 2s infinite; }
-        .spinner {
-            width: 40px; height: 40px; border: 4px solid #e0e0e0;
-            border-top: 4px solid var(--primary); border-radius: 50%;
-            animation: spin 1s linear infinite; margin-bottom: 10px;
-        }
+        /* שימוש בלוגו מהקישור */
+        .loader-logo { width: 100px; height: 100px; border-radius: 50%; margin-bottom: 20px; animation: pulse 1.5s infinite; box-shadow: 0 5px 15px rgba(0,0,0,0.1); object-fit: contain; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #1e3c72; border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
-        .loader-hidden { opacity: 0; visibility: hidden; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+        .fade-out { opacity: 0; pointer-events: none; }
 
-        /* --- עיצוב האפליקציה --- */
-        .app-header { background: white; padding: 15px 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; z-index: 100; border-bottom-left-radius: 20px; border-bottom-right-radius: 20px; }
-        .header-btn { background: #f5f5f5; border: none; width: 45px; height: 45px; border-radius: 50%; color: var(--primary); font-size: 1.2rem; position: relative; transition: 0.2s; }
-        .header-btn:active { transform: scale(0.95); background: #e0e0e0; }
-        .badge-count { position: absolute; top: -2px; left: -2px; background: #d32f2f; color: white; font-size: 0.75rem; padding: 2px 6px; border-radius: 10px; font-weight: bold; border: 2px solid white; }
-
-        .display-container { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
-        .pushka-card { background: white; width: 100%; max-width: 380px; border-radius: 30px; padding: 20px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.1); position: relative; }
-        .logo-img { width: 80px; height: 80px; object-fit: contain; margin-bottom: 10px; }
-        
-        .digital-screen {
-            background: #263238; color: #69f0ae; 
-            font-family: 'Courier New', monospace;
-            padding: 15px; border-radius: 10px;
-            font-size: 2.5rem; font-weight: bold;
-            margin: 15px 0; border: 4px solid #37474f;
-            box-shadow: inset 0 0 15px rgba(0,0,0,0.5);
-            text-shadow: 0 0 5px rgba(105, 240, 174, 0.5);
+        /* Top Bar */
+        .header-icons {
+            position: absolute; top: 15px; width: 100%; padding: 0 20px;
+            display: flex; justify-content: space-between; z-index: 200;
+        }
+        .icon-btn { 
+            background: rgba(255,255,255,0.9); border: none; width: 45px; height: 45px; border-radius: 50%; 
+            color: #1e3c72; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-size: 1.2rem; position: relative;
+        }
+        .badge-count { 
+            position: absolute; top: -5px; left: -5px; background: #dc3545; color: white; 
+            font-size: 0.75rem; padding: 2px 6px; border-radius: 10px; border: 2px solid white; 
         }
 
-        .coins-area { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 20px; width: 100%; }
-        .coin-btn {
-            background: white; border: 2px solid #e0e0e0; border-radius: 20px; aspect-ratio: 1;
+        /* Coins */
+        .coins-container {
+            display: flex; justify-content: center; gap: 12px; padding-top: 70px;
+            flex-wrap: wrap; z-index: 10; position: relative; max-width: 400px; margin: 0 auto;
+        }
+        .coin {
+            width: 75px; height: 75px;
+            background: radial-gradient(circle at 30% 30%, #fff, #ffd700);
+            border-radius: 50%; border: 4px solid #b8860b;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
             display: flex; flex-direction: column; justify-content: center; align-items: center;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.05); cursor: pointer; transition: 0.2s;
+            cursor: pointer; position: relative; z-index: 100; transition: transform 0.1s;
         }
-        .coin-btn span { font-size: 1.4rem; font-weight: 800; color: #333; }
-        .coin-btn small { font-size: 0.75rem; color: #777; font-weight: 600; }
-        .coin-btn:active { transform: scale(0.9); background: #fffde7; border-color: var(--gold); }
-        .coin-btn.gold { border-color: var(--gold); background: radial-gradient(circle at 30% 30%, #fff, #fff9c4); }
-
-        .actions-bar { display: flex; gap: 10px; width: 100%; margin-top: 20px; }
-        .action-btn { flex: 1; padding: 15px; border: none; border-radius: 15px; font-weight: 700; font-size: 1.1rem; color: white; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
-        .btn-basket { background: #ffb300; color: #3e2723; }
-        .btn-donate { background: #4caf50; }
-        .action-btn:active { transform: translateY(2px); opacity: 0.9; }
-
-        .note-input { width: 100%; border: none; background: #f5f5f5; padding: 12px; border-radius: 12px; text-align: center; margin-bottom: 15px; outline: none; }
+        .coin:active { transform: scale(0.95); }
+        .coin.silver { background: radial-gradient(circle at 30% 30%, #fff, #e0e0e0); border-color: #a9a9a9; }
+        .coin span { font-weight: bold; font-size: 1.4rem; line-height: 1; color: #444; pointer-events: none; }
+        .coin small { font-size: 0.7rem; color: #666; pointer-events: none; }
         
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 2000; display: flex; justify-content: center; align-items: flex-end; visibility: hidden; opacity: 0; transition: 0.3s; }
-        .modal-overlay.open { visibility: visible; opacity: 1; }
-        .modal-sheet { background: white; width: 100%; max-width: 500px; border-radius: 25px 25px 0 0; padding: 25px; transform: translateY(100%); transition: 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); max-height: 85vh; overflow-y: auto; }
-        .modal-overlay.open .modal-sheet { transform: translateY(0); }
+        .flying-coin { 
+            position: fixed; z-index: 9999; pointer-events: none; 
+            transition: all 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94); 
+        }
+
+        /* Pushka Box */
+        .pushka-box-container {
+            position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+            width: 290px; height: 340px;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .slot-area {
+            width: 140px; height: 15px; background: #2a2a2a;
+            border-radius: 10px; margin-bottom: -5px;
+            box-shadow: inset 0 2px 5px rgba(0,0,0,0.5); z-index: 5;
+        }
+        .pushka-body {
+            width: 100%; height: 100%;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            border-radius: 20px 20px 0 0;
+            box-shadow: 0 -5px 25px rgba(0,0,0,0.3);
+            display: flex; flex-direction: column; align-items: center;
+            color: white; padding-top: 15px; position: relative;
+        }
+        .pushka-logo {
+            width: 80px; height: 80px; background: white; border-radius: 50%;
+            padding: 5px; margin-bottom: 5px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); object-fit: contain;
+        }
+
+        /* Digital Screen inside Pushka */
+        .digital-screen {
+            background: #222; color: #00e676;
+            font-family: 'Courier New', monospace;
+            padding: 5px 15px; border-radius: 5px;
+            font-size: 1.8rem; font-weight: bold;
+            border: 3px solid #444; margin-bottom: 10px;
+            min-width: 140px; text-align: center;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+            text-shadow: 0 0 5px rgba(0,230,118,0.5);
+        }
+
+        .actions-block { width: 100%; padding: 0 20px; display: flex; gap: 10px; margin-top: auto; margin-bottom: 15px; }
+        .btn-game { flex: 1; padding: 12px; border: none; border-radius: 25px; font-weight: bold; color: white; box-shadow: 0 4px 10px rgba(0,0,0,0.2); transition: 0.2s; }
+        .btn-basket { background: #fbc02d; color: #333; }
+        .btn-pay { background: #00c853; }
+        .btn-game:active { transform: scale(0.95); opacity: 0.9; }
+
+        .note-input {
+            width: 85%; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 20px; padding: 8px; text-align: center; font-size: 0.9rem; color: white;
+            outline: none; margin-bottom: 10px;
+        }
+        .note-input::placeholder { color: rgba(255,255,255,0.7); }
+
+        /* Modals */
+        .overlay-screen { position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.7); z-index: 5000; display: flex; justify-content: center; align-items: center; visibility: hidden; opacity: 0; transition: 0.3s; }
+        .overlay-screen.open { visibility: visible; opacity: 1; }
+        .modal-card { background: white; width: 90%; max-width: 350px; border-radius: 25px; padding: 25px; text-align: center; max-height: 85vh; overflow-y: auto; }
+        .input-lg { font-size: 2rem; text-align: center; border: none; border-bottom: 2px solid #ddd; width: 150px; margin: 20px auto; outline: none; }
         
-        .list-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f0f0f0; align-items: center; }
-        .list-row:last-child { border: none; }
-        .flying-coin { position: fixed; z-index: 9999; pointer-events: none; transition: all 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+        .list-item { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 10px 0; align-items: center; }
     </style>
 </head>
 <body>
 
 <div id="app-loader">
-    <img src="logo.jpeg" class="loader-logo" alt="טוען...">
+    <img src="https://www.nefesh-ha-chaim.org/icons/logo.png" class="loader-logo" alt="טוען...">
     <div class="spinner"></div>
-    <div style="color: #1a237e; font-weight: bold;">טוען נתונים...</div>
+    <div style="margin-top: 10px; color: #555; font-weight: bold;">טוען את הקופה...</div>
 </div>
 
-<div class="app-header">
-    <button class="header-btn" onclick="openSettings()"><i class="fas fa-cog"></i></button>
-    <div class="text-center">
-        <small class="text-muted d-block fw-bold" style="font-size: 0.7rem;">סה"כ זכויות</small>
-        <span id="user-total" class="fw-bold" style="color: var(--primary); font-size: 1.2rem;">₪0</span>
+<div class="header-icons">
+    <button class="icon-btn" onclick="openSettings()"><i class="fas fa-cog"></i></button>
+    <div class="bg-white px-3 py-2 rounded-pill shadow-sm text-primary fw-bold d-flex align-items-center">
+        <span id="user-total">₪0</span>
     </div>
-    <button class="header-btn" onclick="openBasket()">
+    <button class="icon-btn" onclick="openBasket()">
         <i class="fas fa-shopping-cart"></i>
-        <span id="basket-badge" class="badge-count d-none">0</span>
+        <span class="badge-count d-none" id="basket-badge">0</span>
     </button>
 </div>
 
-<div class="display-container">
-    <div class="pushka-card">
-        <div id="target-slot"></div>
-        <img src="logo.jpeg" class="logo-img">
-        <h5 class="fw-bold text-dark">נפש החיים</h5>
+<div class="coins-container">
+    <div class="coin silver" onclick="clickCoin(1, this)"><span>1</span><small>₪</small></div>
+    <div class="coin silver" onclick="clickCoin(2, this)"><span>2</span><small>₪</small></div>
+    <div class="coin silver" onclick="clickCoin(5, this)"><span>5</span><small>₪</small></div>
+    <div class="coin" onclick="clickCoin(10, this)"><span>10</span><small>₪</small></div>
+    <div class="coin" onclick="clickCoin(18, this)"><span>18</span><small>ח"י</small></div>
+    <div class="coin" id="custom-coin" onclick="handleCustomCoin(this)"><i class="fas fa-pen"></i><small>אחר</small></div>
+</div>
+
+<div class="pushka-box-container">
+    <div class="slot-area" id="target-slot"></div>
+    <div class="pushka-body">
+        <img src="https://www.nefesh-ha-chaim.org/icons/logo.png" alt="Logo" class="pushka-logo"> 
         
         <div id="screen" class="digital-screen">₪0</div>
         
-        <input type="text" id="donation-note" class="note-input" placeholder="הוסף הערה לתרומה">
-
-        <div class="coins-area">
-            <div class="coin-btn" onclick="clickCoin(1, this)"><span>1</span><small>₪</small></div>
-            <div class="coin-btn" onclick="clickCoin(2, this)"><span>2</span><small>₪</small></div>
-            <div class="coin-btn" onclick="clickCoin(5, this)"><span>5</span><small>₪</small></div>
-            <div class="coin-btn gold" onclick="clickCoin(10, this)"><span>10</span><small>₪</small></div>
-            <div class="coin-btn gold" onclick="clickCoin(18, this)"><span>18</span><small>ח"י</small></div>
-            <div class="coin-btn" id="custom-coin" onclick="handleCustomCoin(this)"><i class="fas fa-keyboard fs-4 text-secondary"></i><small>אחר</small></div>
-        </div>
-
-        <div class="actions-bar">
-            <button class="action-btn btn-basket" onclick="submit(false)">
-                <i class="fas fa-cart-plus"></i> הוסף לסל
-            </button>
-            <button class="action-btn btn-donate" onclick="submit(true)">
-                <i class="fas fa-heart"></i> תרום
-            </button>
+        <input type="text" id="donation-note" class="note-input" placeholder="הוסף הערה / הקדשה">
+        
+        <div class="actions-block">
+            <button class="btn-game btn-basket" onclick="submit(false)">הוסף לסל</button>
+            <button class="btn-game btn-pay" onclick="submit(true)">תרום</button>
         </div>
         
-        <div id="status-text" class="mt-2 small text-muted fw-bold">מצב: טוען...</div>
+        <small id="status-text" style="color: rgba(255,255,255,0.7); font-size: 0.75rem;">מצב: טוען...</small>
     </div>
 </div>
 
-<div id="login-modal" class="modal-overlay" style="z-index: 5000;">
-    <div class="modal-sheet text-center">
-        <img src="logo.jpeg" width="80" class="rounded-circle mb-3 shadow-sm">
-        <h3 class="fw-bold mb-4">ברוכים הבאים</h3>
-        <input type="text" id="login-val" class="form-control text-center rounded-4 py-3 mb-3 fs-5" placeholder="נייד או אימייל">
-        <div id="otp-area" class="d-none mb-3">
-            <input type="number" id="otp-val" class="form-control text-center rounded-4 py-3 fs-3" placeholder="קוד אימות">
+<div id="login-modal" class="overlay-screen" style="z-index: 9000;">
+    <div class="modal-card">
+        <img src="https://www.nefesh-ha-chaim.org/icons/logo.png" width="80" class="mb-3 rounded-circle shadow">
+        <h3 class="fw-bold text-primary">ברוכים הבאים</h3>
+        <div class="form-floating mb-3 border rounded-4 mt-4">
+            <input type="text" id="login-val" class="form-control border-0 bg-light text-center" placeholder="פרטים">
+            <label class="w-100 text-center">נייד או אימייל</label>
         </div>
-        <button id="btn-send" class="btn btn-dark w-100 py-3 rounded-4 fw-bold" onclick="sendCode()">שלח קוד</button>
-        <button id="btn-verify" class="btn btn-primary w-100 py-3 rounded-4 fw-bold d-none" onclick="verifyCode()">כניסה</button>
+        <div id="otp-area" class="d-none mb-3 border rounded-4">
+            <input type="number" id="otp-val" class="form-control border-0 bg-light text-center fs-4" placeholder="קוד">
+        </div>
+        <button onclick="sendCode()" id="btn-send" class="btn btn-primary w-100 btn-lg rounded-pill shadow">שלח קוד</button>
+        <button onclick="verifyCode()" id="btn-verify" class="btn btn-success w-100 btn-lg rounded-pill shadow d-none">כניסה</button>
     </div>
 </div>
 
-<div id="settings-modal" class="modal-overlay">
-    <div class="modal-sheet">
-        <div class="d-flex justify-content-between mb-4">
-            <h4 class="fw-bold m-0">הגדרות ופרופיל</h4>
+<div id="basket-modal" class="overlay-screen">
+    <div class="modal-card">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="m-0 fw-bold">🛒 העגלה שלי</h5>
+            <button class="btn-close" onclick="closeModal('basket-modal')"></button>
+        </div>
+        <div class="alert alert-info py-2 small fw-bold" id="basket-summary-text">טוען...</div>
+        <div id="basket-list" class="mb-3 text-start"></div>
+        <div class="text-muted small">חיוב ב-<span id="basket-date">--</span> לחודש</div>
+    </div>
+</div>
+
+<div id="settings-modal" class="overlay-screen">
+    <div class="modal-card text-end">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="m-0 fw-bold">הגדרות</h5>
             <button class="btn-close" onclick="closeModal('settings-modal')"></button>
         </div>
         
-        <h6 class="fw-bold text-primary mb-2">אפשרויות חיוב</h6>
-        <select id="set-pref" class="form-select form-select-lg mb-3 bg-light border-0">
-            <option value="0">חיוב מיידי (ללא סל)</option>
-            <option value="1">1 לחודש (מרוכז)</option>
-            <option value="10">10 לחודש (מרוכז)</option>
-            <option value="20">20 לחודש (מרוכז)</option>
+        <label class="small fw-bold text-primary">מועד חיוב הסל</label>
+        <select id="set-pref" class="form-select mb-2">
+            <option value="0">מיידי (ללא סל)</option>
+            <option value="1">1 לחודש</option>
+            <option value="10">10 לחודש</option>
+            <option value="20">20 לחודש</option>
         </select>
 
-        <h6 class="fw-bold text-primary mb-2">הוראת קבע יומית</h6>
-        <div class="input-group mb-3">
-            <span class="input-group-text bg-light border-0">₪</span>
-            <input type="number" id="set-daily" class="form-control bg-light border-0" placeholder="0 (לא פעיל)">
-        </div>
+        <label class="small fw-bold text-primary">הוראת קבע יומית (₪)</label>
+        <input type="number" id="set-daily" class="form-control mb-2" placeholder="0">
 
-        <h6 class="fw-bold text-primary mb-2">קוד אבטחה (PIN)</h6>
-        <input type="password" id="set-pin" class="form-control bg-light border-0 mb-3" placeholder="הגדר קוד לאישור תרומה" maxlength="4">
+        <label class="small fw-bold text-primary">קוד אבטחה (PIN)</label>
+        <input type="password" id="set-pin" class="form-control mb-2" placeholder="4 ספרות" maxlength="4">
 
-        <h6 class="fw-bold text-primary mb-2">פרטים אישיים</h6>
-        <input id="set-name" class="form-control bg-light border-0 mb-2" placeholder="שם מלא">
-        <input id="set-phone" class="form-control bg-light border-0 mb-2" placeholder="טלפון">
-        <input id="set-email" class="form-control bg-light border-0 mb-2" placeholder="אימייל">
-        <input id="set-tz" class="form-control bg-light border-0 mb-3" placeholder="תעודת זהות (חובה לאשראי)">
-
-        <div class="d-flex justify-content-between p-3 bg-light rounded-4 mb-3 align-items-center">
-            <div><small class="text-muted d-block">אמצעי תשלום</small><strong id="card-digits">****</strong></div>
-            <button class="btn btn-sm btn-outline-danger bg-white" onclick="resetCard()">מחק</button>
-        </div>
-
-        <button class="btn btn-primary w-100 py-3 rounded-4 fw-bold mb-2" onclick="saveSettings()">שמור שינויים</button>
-        <button class="btn btn-link text-danger w-100 text-decoration-none" onclick="logout()">יציאה מהחשבון</button>
-    </div>
-</div>
-
-<div id="basket-modal" class="modal-overlay">
-    <div class="modal-sheet">
-        <div class="d-flex justify-content-between mb-2 align-items-center">
-            <h4 class="fw-bold m-0">🛒 סל התרומות</h4>
-            <button class="btn-close" onclick="closeModal('basket-modal')"></button>
-        </div>
+        <label class="small fw-bold text-primary">פרטים אישיים</label>
+        <input id="set-name" class="form-control mb-1" placeholder="שם מלא">
+        <input id="set-phone" class="form-control mb-1" placeholder="טלפון">
+        <input id="set-email" class="form-control mb-1" placeholder="אימייל">
+        <input id="set-tz" class="form-control mb-3" placeholder="תעודת זהות (חובה)">
         
-        <div class="text-center p-2 mb-3 bg-light rounded-3">
-            <span class="text-primary fw-bold" id="basket-summary-text">טוען...</span>
+        <div class="d-flex justify-content-between border p-2 mb-3 rounded align-items-center bg-light">
+            <small id="card-digits">****</small>
+            <button class="btn btn-sm btn-outline-danger" onclick="resetCard()">מחק</button>
         </div>
 
-        <div id="basket-list"></div>
-        
-        <div class="alert alert-info text-center mt-3 small mb-0 fw-bold">
-            חיוב מרוכז יתבצע ב-<span id="basket-date"></span> לחודש
-        </div>
+        <button class="btn btn-primary w-100 rounded-pill mb-2" onclick="saveSettings()">שמור שינויים</button>
+        <button class="btn btn-outline-danger w-100 rounded-pill" onclick="logout()">יציאה</button>
     </div>
 </div>
 
@@ -208,23 +242,25 @@
     let tempSum = 0;
     let customAmountValue = 0;
 
-    window.onload = () => {
+    window.onload = function() {
         if(userId) loadUser(userId);
         else {
-            document.getElementById('app-loader').classList.add('loader-hidden');
+            // אם אין יוזר, מסתירים את הטעינה ומציגים לוגין
+            document.getElementById('app-loader').classList.add('fade-out');
             document.getElementById('login-modal').classList.add('open');
         }
     };
 
+    // --- מטבעות ---
     async function handleCustomCoin(el) {
         if (customAmountValue > 0 && el.innerText.includes('₪')) {
             clickCoin(customAmountValue, el);
             setTimeout(() => {
                 customAmountValue = 0;
-                el.innerHTML = '<i class="fas fa-keyboard fs-4 text-secondary"></i><small>אחר</small>';
+                el.innerHTML = '<i class="fas fa-pen"></i><small>אחר</small>';
             }, 1000);
         } else {
-            const { value: amount } = await Swal.fire({ title: 'סכום לתרומה', input: 'number', confirmButtonText: 'אישור', confirmButtonColor: '#1a237e' });
+            const { value: amount } = await Swal.fire({ title: 'סכום לתרומה', input: 'number', confirmButtonText: 'אישור' });
             if (amount > 0) {
                 customAmountValue = Number(amount);
                 el.innerHTML = `<span>${amount}</span><small>₪</small>`;
@@ -236,25 +272,28 @@
         tempSum += amount;
         updateScreen();
 
+        // אנימציה משופרת
         const clone = element.cloneNode(true);
         const rect = element.getBoundingClientRect();
         const target = document.getElementById('target-slot').getBoundingClientRect();
         
-        clone.className = 'coin-btn flying-coin';
-        if(element.classList.contains('gold')) clone.classList.add('gold');
+        clone.className = 'coin flying-coin';
+        if(element.classList.contains('silver')) clone.classList.add('silver');
+        
         clone.style.width = rect.width + 'px';
         clone.style.height = rect.height + 'px';
-        clone.style.left = rect.left+'px'; 
-        clone.style.top = rect.top+'px';
+        clone.style.left = rect.left + 'px';
+        clone.style.top = rect.top + 'px';
+        
         document.body.appendChild(clone);
-        
-        setTimeout(() => { 
-            clone.style.left = (target.left + target.width/2 - 30)+'px'; 
-            clone.style.top = (target.top - 20)+'px'; 
-            clone.style.transform = 'scale(0.3)'; 
-            clone.style.opacity = '0'; 
+
+        setTimeout(() => {
+            clone.style.left = (target.left + target.width/2 - 37) + 'px'; // מרכוז
+            clone.style.top = (target.top - 10) + 'px';
+            clone.style.transform = 'scale(0.3)';
+            clone.style.opacity = '0';
         }, 10);
-        
+
         setTimeout(() => clone.remove(), 600);
     }
 
@@ -262,24 +301,25 @@
         const screen = document.getElementById('screen');
         screen.innerText = '₪' + tempSum;
         screen.style.color = '#fff';
-        setTimeout(() => screen.style.color = '#69f0ae', 150);
+        setTimeout(() => screen.style.color = '#00e676', 150);
     }
 
+    // --- שליחה ---
     async function submit(forceImmediate) {
-        if(tempSum === 0) return Swal.fire({icon: 'info', title: 'הקופה ריקה', text: 'לחץ על המטבעות כדי להוסיף סכום', timer: 1500, showConfirmButton: false});
+        if(tempSum === 0) return Swal.fire('הקופה ריקה', 'לחץ על המטבעות', 'info');
         
         let pin = "";
         if(user.securityPin) {
-            const res = await Swal.fire({title: '🔒 קוד אבטחה', input: 'password', inputAttributes: {maxlength: 4, inputmode: 'numeric'}, showCancelButton: true, confirmButtonColor: '#1a237e'});
+            const res = await Swal.fire({title: 'קוד אבטחה', input: 'password', inputAttributes:{maxlength:4, inputmode:'numeric'}, showCancelButton: true});
             if(!res.isConfirmed) return;
             pin = res.value;
         }
 
-        if(forceImmediate && !user.token) return Swal.fire('חסר אשראי', 'אין כרטיס שמור לחיוב מיידי', 'warning');
+        if(forceImmediate && !user.token) return Swal.fire('שגיאה', 'חסר כרטיס אשראי לחיוב מיידי', 'warning');
 
-        Swal.fire({title:'מעבד...', didOpen:()=>Swal.showLoading()});
+        Swal.fire({title: 'מעבד...', didOpen: () => Swal.showLoading()});
         const note = document.getElementById('donation-note').value;
-        
+
         try {
             const res = await fetch(`${API}/donate`, {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -296,20 +336,21 @@
             } else {
                 Swal.fire('שגיאה', d.error, 'error');
             }
-        } catch(e) { Swal.fire('שגיאה', 'תקלת תקשורת', 'error'); }
+        } catch(e) { Swal.fire('תקלה', 'בעיית תקשורת', 'error'); }
     }
 
+    // --- טעינת משתמש ---
     function loadUser(id) {
         fetch(`${API}/login-by-id`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({userId:id})})
         .then(r=>r.json()).then(d => {
+            // הסתרת מסך טעינה ברגע שיש תשובה
+            document.getElementById('app-loader').classList.add('fade-out');
+
             if(d.success) {
                 user = d.user;
                 localStorage.setItem('userId', user._id);
                 document.getElementById('login-modal').classList.remove('open');
                 
-                // הסתרת מסך טעינה
-                document.getElementById('app-loader').classList.add('loader-hidden');
-
                 document.getElementById('user-total').innerText = '₪' + (user.totalDonated||0).toLocaleString();
                 const basketCount = user.pendingDonations?.length || 0;
                 const badge = document.getElementById('basket-badge');
@@ -320,7 +361,7 @@
                 document.getElementById('status-text').innerText = isImmediate ? "מצב: חיוב מיידי" : `מצב: צבירה ל-${user.billingPreference} בחודש`;
                 document.getElementById('basket-date').innerText = isImmediate ? "מיידי" : user.billingPreference;
 
-                // Load Settings
+                // עדכון טופס הגדרות
                 document.getElementById('set-name').value = user.name||'';
                 document.getElementById('set-phone').value = user.phone||'';
                 document.getElementById('set-email').value = user.email||'';
@@ -329,10 +370,13 @@
                 document.getElementById('set-daily').value = user.recurringDailyAmount||'';
                 document.getElementById('set-pin').value = user.securityPin||'';
                 document.getElementById('card-digits').innerText = user.lastCardDigits ? `**** ${user.lastCardDigits}` : 'אין כרטיס';
+            } else {
+                document.getElementById('login-modal').classList.add('open');
             }
         });
     }
 
+    // --- שמירת הגדרות ---
     function saveSettings() {
         const data = {
             userId: user._id,
@@ -344,31 +388,29 @@
             recurringDailyAmount: Number(document.getElementById('set-daily').value),
             securityPin: document.getElementById('set-pin').value
         };
-        
         Swal.fire({title:'שומר...', didOpen:()=>Swal.showLoading()});
-        
         fetch(`${API}/admin/update-profile`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)})
         .then(r=>r.json()).then(d => {
             if(d.success) {
                 closeModal('settings-modal');
                 loadUser(user._id);
-                Swal.fire('נשמר בהצלחה', '', 'success');
+                Swal.fire('נשמר', '', 'success');
             } else Swal.fire('שגיאה', 'לא נשמר', 'error');
         });
     }
 
+    // --- סל ---
     function openBasket() {
         const list = document.getElementById('basket-list');
         list.innerHTML = '';
         const count = user.pendingDonations?.length || 0;
-        document.getElementById('basket-summary-text').innerText = count > 0 ? `יש לך ${count} תרומות הממתינות לחיוב` : 'הסל שלך ריק כרגע';
+        document.getElementById('basket-summary-text').innerText = count > 0 ? `יש לך ${count} תרומות ממתינות לחיוב` : 'הסל שלך ריק';
 
-        if(count === 0) list.innerHTML = '<div class="text-center text-muted py-4">הסל ריק</div>';
-        else {
+        if(count > 0) {
             user.pendingDonations.forEach(item => {
                 list.innerHTML += `
-                <div class="list-row">
-                    <div><span class="fw-bold fs-5">₪${item.amount}</span> <small class="text-muted ms-2">${item.note||''}</small></div>
+                <div class="list-item">
+                    <div><span class="fw-bold">₪${item.amount}</span> <small class="text-muted ms-2">${item.note||''}</small></div>
                     <button class="btn btn-sm btn-outline-danger rounded-pill" onclick="deleteItem('${item._id}')">הסר</button>
                 </div>`;
             });
@@ -381,13 +423,19 @@
         .then(() => { loadUser(user._id); openBasket(); });
     }
 
+    // --- ניהול ---
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+    function openSettings() { document.getElementById('settings-modal').classList.add('open'); }
+    function logout() { localStorage.removeItem('userId'); location.reload(); }
+    function resetCard() { if(confirm('למחוק כרטיס?')) fetch(`${API}/reset-token`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({userId:user._id})}).then(()=>loadUser(user._id)); }
+
+    // --- לוגין ---
     function sendCode() {
         const val = document.getElementById('login-val').value;
         const code = Math.floor(1000+Math.random()*9000);
         
         const payload = { code };
-        if (val.includes('@')) payload.email = val;
-        else payload.phone = val;
+        if(val.includes('@')) payload.email = val; else payload.phone = val;
 
         fetch(`${API}/update-code`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
         document.getElementById('btn-send').classList.add('d-none');
@@ -400,20 +448,13 @@
         const code = document.getElementById('otp-val').value;
         
         const payload = { code };
-        if (val.includes('@')) payload.email = val;
-        else payload.phone = val;
+        if(val.includes('@')) payload.email = val; else payload.phone = val;
 
         fetch(`${API}/verify-auth`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)})
         .then(r=>r.json()).then(d => {
-            if(d.success) loadUser(d.user._id);
-            else Swal.fire('שגיאה', 'קוד שגוי', 'error');
+            if(d.success) loadUser(d.user._id); else Swal.fire('שגיאה', 'קוד שגוי', 'error');
         });
     }
-
-    function openSettings() { document.getElementById('settings-modal').classList.add('open'); }
-    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
-    function logout() { localStorage.removeItem('userId'); location.reload(); }
-    function resetCard() { if(confirm('למחוק כרטיס?')) fetch(`${API}/reset-token`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({userId:user._id})}).then(()=>loadUser(user._id)); }
 </script>
 </body>
 </html>
