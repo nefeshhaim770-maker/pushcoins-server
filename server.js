@@ -50,22 +50,21 @@ function fixToken(token) {
 }
 function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
-// --- מנוע חיוב ואימות ---
-async function chargeKesher(user, amount, note, cc = null, isVerifyOnly = false) {
-    const total = isVerifyOnly ? 0 : Math.round(parseFloat(amount) * 100);
+// --- מנוע חיוב (J4 - חיוב רגיל) ---
+async function chargeKesher(user, amount, note, cc = null) {
+    // ממיר לאגורות
+    const total = Math.round(parseFloat(amount) * 100);
     const phone = (user.phone || "0500000000").replace(/\D/g, '');
     const fullNameParts = (user.name || "Torem").trim().split(" ");
     const firstName = fullNameParts[0];
     const lastName = fullNameParts.length > 1 ? fullNameParts.slice(1).join(" ") : ".";
 
-    // J5 = בדיקת מסגרת (שמירת כרטיס), J4 = חיוב רגיל
-    const paramJ = isVerifyOnly ? "J5" : "J4";
-    const transType = isVerifyOnly ? "check" : "debit";
-
     let tran = {
-        Total: total, Currency: 1, CreditType: 1, 
-        ParamJ: paramJ, 
-        TransactionType: transType, 
+        Total: total, 
+        Currency: 1, 
+        CreditType: 1, 
+        ParamJ: "J4", // חזרנו לחיוב רגיל שעובד תמיד
+        TransactionType: "debit", 
         ProjectNumber: "00001",
         Phone: phone, FirstName: firstName, LastName: lastName, Mail: user.email || "no@mail.com",
         ClientApiIdentity: user.tz || "000000000", Id: user.tz || "000000000", Details: note || ""
@@ -74,7 +73,7 @@ async function chargeKesher(user, amount, note, cc = null, isVerifyOnly = false)
     if (cc) {
         tran.CreditNum = cc.num;
         tran.Expiry = (cc.exp.length === 4) ? cc.exp.substring(2, 4) + cc.exp.substring(0, 2) : cc.exp;
-        if (cc.cvv) tran.Cvv = cc.cvv; // ✅ שליחת CVV קריטית לאימות
+        if (cc.cvv) tran.Cvv = cc.cvv;
     } else if (user.token) {
         tran.Token = fixToken(user.token);
         tran.Expiry = user.lastExpiry;
@@ -118,7 +117,7 @@ cron.schedule('0 8 * * *', async () => {
             }
         }
 
-        // חודשי (כולל לוגיקה לסוף חודש)
+        // חודשי
         let shouldChargeMonthly = (u.billingPreference === today) || (isLastDay && u.billingPreference > lastDayOfMonth);
 
         if (shouldChargeMonthly && u.pendingDonations.length > 0) {
@@ -203,7 +202,7 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// ✅ שמירת כרטיס עם J5 + CVV
+// ✅ עדכון פרופיל + חיוב 0.10 ₪ לשמירה
 app.post('/admin/update-profile', async (req, res) => {
     try {
         const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails } = req.body;
@@ -222,17 +221,20 @@ app.post('/admin/update-profile', async (req, res) => {
         
         if (newCardDetails && newCardDetails.num && newCardDetails.exp) {
             try {
-                // מעדכן פרטים זמנית בזיכרון לצורך השליחה לקשר
                 u.name = name; u.phone = phone; u.email = email; u.tz = tz;
                 
-                const r = await chargeKesher(u, 0, "שמירת כרטיס (J5)", newCardDetails, true);
+                // ✅ חיוב 0.10 ₪ (J4)
+                const r = await chargeKesher(u, 0.10, "בדיקת כרטיס (0.10 ₪)", newCardDetails);
                 
                 if (r.success && r.data.Token) {
                     updateData.token = fixToken(r.data.Token);
                     updateData.lastExpiry = r.data.Expiry || "";
                     updateData.lastCardDigits = newCardDetails.num.slice(-4);
+                    // מוסיף להיסטוריה
+                    u.totalDonated += 0.10;
+                    u.donationsHistory.push({ amount: 0.10, note: "שמירת כרטיס (0.10 ₪)", status: 'success', date: new Date() });
                 } else {
-                    return res.json({ success: false, error: "אימות כרטיס נכשל: " + (r.data.Description || "סירוב") });
+                    return res.json({ success: false, error: "אימות נכשל: " + (r.data.Description || "סירוב") });
                 }
             } catch(e) { return res.json({ success: false, error: "תקלה בתקשורת לשמירת הכרטיס" }); }
         }
@@ -244,7 +246,6 @@ app.post('/admin/update-profile', async (req, res) => {
     } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// שאר ה-Routes נשארו זהים
 app.post('/save-push-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { fcmToken: req.body.token }); res.json({ success: true }); });
 app.post('/delete-pending', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } }); res.json({ success: true }); });
 app.post('/reset-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "" }); res.json({ success: true }); });
