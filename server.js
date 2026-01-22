@@ -63,7 +63,6 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
     const safePhone = (user.phone || "0500000000").replace(/\D/g, '');
     
     // ✅ תיקון זיהוי לקוח: לא עוד "00000"!
-    // סדר עדיפות: ת"ז תקינה > טלפון > מזהה מערכת
     let uniqueId = user.tz && user.tz.length > 5 ? user.tz : null;
     if (!uniqueId) uniqueId = safePhone !== "0500000000" ? safePhone : user._id.toString();
 
@@ -71,7 +70,6 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
     const nameParts = (user.name || "Torem").trim().split(" ");
     const firstName = nameParts[0];
     let lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "";
-    // אם אין שם משפחה, משאירים ריק או שמים רווח (לא נקודה)
     if (!lastName) lastName = " "; 
 
     let tranData = {
@@ -105,7 +103,7 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
         tranData.Expiry = finalExpiry;
         currentCardDigits = creditDetails.num.slice(-4);
         
-        // ללא CVV (כי זה גורם לקריסה טכנית בשרת הזה)
+        // ללא CVV
 
     } else if (user.token) {
         tranData.Token = fixToken(user.token);
@@ -152,15 +150,23 @@ cron.schedule('0 8 * * *', async () => {
                 saveUser = true;
             }
         }
-        // חודשי
-        if (u.billingPreference === today && u.pendingDonations.length > 0) {
+
+        // --- חיוב סל (חודשי או מיידי ממתין) ---
+        // התיקון: מחייב אם היום התאריך, או אם המשתמש הוא "מיידי" (0)
+        const isChargeDay = (u.billingPreference === today);
+        const isImmediateUser = (u.billingPreference === 0);
+
+        if ((isChargeDay || isImmediateUser) && u.pendingDonations.length > 0) {
             let totalToCharge = 0;
             u.pendingDonations.forEach(d => totalToCharge += d.amount);
+            
             if (totalToCharge > 0 && u.token) {
                 try {
-                    await chargeKesher(u, totalToCharge, "חיוב סל חודשי מרוכז");
+                    await chargeKesher(u, totalToCharge, "חיוב סל ממתין");
                     u.totalDonated += totalToCharge;
-                    u.pendingDonations.forEach(d => { u.donationsHistory.push({ amount: d.amount, note: d.note, status: "success", date: new Date() }); });
+                    u.pendingDonations.forEach(d => { 
+                        u.donationsHistory.push({ amount: d.amount, note: d.note, status: "success", date: new Date() }); 
+                    });
                     u.pendingDonations = [];
                 } catch (e) {}
                 saveUser = true;
@@ -296,7 +302,6 @@ app.post('/admin/update-profile', async (req, res) => {
     } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// שאר ה-Routes
 const PASS = "admin1234";
 app.post('/admin/stats', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const users = await User.find(); let total = 0, count = 0; users.forEach(u => u.donationsHistory?.forEach(d => { if(d.status==='success') { total += d.amount||0; count++; } })); res.json({ success: true, stats: { totalDonated: total, totalUsers: users.length, totalDonations: count } }); });
 app.post('/admin/get-users', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const users = await User.find().sort({ _id: -1 }); res.json({ success: true, users }); });
