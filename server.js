@@ -221,7 +221,6 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// ✅ עדכון פרופיל
 app.post('/admin/update-profile', async (req, res) => {
     try {
         const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails } = req.body;
@@ -249,30 +248,54 @@ app.post('/admin/update-profile', async (req, res) => {
 
 const PASS = "admin1234";
 
-// ✅ 1. סטטיסטיקות מסוננות תאריך
+// ✅ 1. סטטיסטיקות משודרגות (תקופה + חודש נוכחי + מספר פעולות)
 app.post('/admin/stats', async (req, res) => {
     if(req.body.password !== PASS) return res.json({ success: false }); 
     const { fromDate, toDate } = req.body;
     
-    // הגדרת טווח תאריכים
-    let start = fromDate ? new Date(fromDate) : new Date(0); // ברירת מחדל: התחלה
-    let end = toDate ? new Date(toDate) : new Date(); // ברירת מחדל: עכשיו
-    end.setHours(23, 59, 59, 999); // סוף היום
+    // טווח מסונן
+    let start = fromDate ? new Date(fromDate) : new Date(0); 
+    let end = toDate ? new Date(toDate) : new Date(); 
+    end.setHours(23, 59, 59, 999);
+
+    // חודש נוכחי (תמיד מחושב אוטומטית)
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
     const users = await User.find();
-    let total = 0, count = 0;
+    
+    let totalRange = 0;
+    let countRange = 0;
+    let totalMonth = 0;
     
     users.forEach(u => u.donationsHistory?.forEach(d => { 
         let dDate = new Date(d.date);
-        if(d.status === 'success' && dDate >= start && dDate <= end) { 
-            total += d.amount||0; 
-            count++; 
-        } 
+        if (d.status === 'success') {
+            const amount = d.amount || 0;
+            // בדיקת טווח מסונן
+            if (dDate >= start && dDate <= end) {
+                totalRange += amount;
+                countRange++;
+            }
+            // בדיקת חודש נוכחי (ללא קשר לסינון)
+            if (dDate >= startOfMonth && dDate <= endOfMonth) {
+                totalMonth += amount;
+            }
+        }
     }));
-    res.json({ success: true, stats: { totalDonated: total, totalUsers: users.length, totalDonations: count } });
+
+    res.json({ 
+        success: true, 
+        stats: { 
+            totalDonated: totalRange, 
+            totalDonations: countRange, 
+            totalUsers: users.length,
+            totalMonth: totalMonth
+        } 
+    });
 });
 
-// ✅ 2. הוספת תרומה ידנית מהאדמין (מיידי או סל)
 app.post('/admin/add-donation-manual', async (req, res) => {
     if(req.body.password !== PASS) return res.json({ success: false });
     const { userId, amount, type, note } = req.body;
@@ -280,7 +303,6 @@ app.post('/admin/add-donation-manual', async (req, res) => {
     if (!u) return res.json({ success: false, error: "משתמש לא נמצא" });
 
     if (type === 'immediate') {
-        // חיוב מיידי
         if (!u.token) return res.json({ success: false, error: "למשתמש אין כרטיס אשראי שמור" });
         try {
             const r = await chargeKesher(u, amount, note || "חיוב ע\"י מנהל");
@@ -294,14 +316,12 @@ app.post('/admin/add-donation-manual', async (req, res) => {
             }
         } catch (e) { res.json({ success: false, error: e.message }); }
     } else {
-        // הוספה לסל
         u.pendingDonations.push({ amount: parseFloat(amount), note: note || "הוסף ע\"י מנהל", date: new Date() });
         await u.save();
         res.json({ success: true });
     }
 });
 
-// ✅ 3. ניהול הסל (מחיקה מהסל)
 app.post('/admin/remove-from-basket', async (req, res) => {
     if(req.body.password !== PASS) return res.json({ success: false });
     await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.itemId } } });
