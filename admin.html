@@ -14,26 +14,17 @@
         .user-card:active { background: #e9ecef; }
         .user-card.has-basket { border-right-color: #ffc107; }
         .modal-header { background: #0d6efd; color: white; }
-        .modal-title { font-weight: bold; }
         .nav-tabs .nav-link { color: #495057; }
         .nav-tabs .nav-link.active { font-weight: bold; color: #0d6efd; }
-
-        #login-screen {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: linear-gradient(135deg, #0d6efd, #0a58ca);
-            z-index: 9999; display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-        }
-        .login-box {
-            background: white; padding: 30px; border-radius: 20px;
-            width: 90%; max-width: 350px; text-align: center;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-        }
+        #login-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, #0d6efd, #0a58ca); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .login-box { background: white; padding: 30px; border-radius: 20px; width: 90%; max-width: 350px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
         .password-wrapper { position: relative; }
-        .password-toggle {
-            position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
-            cursor: pointer; color: #6c757d; z-index: 10;
-        }
+        .password-toggle { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #6c757d; z-index: 10; }
+        .card-row { font-size: 0.85rem; padding: 8px 0; border-bottom: 1px solid #eee; }
+        .card-row.active { background-color: #f0fff4; font-weight: bold; color: #198754; border-radius: 5px; }
+        
+        /* וידוא ש-SweetAlert תמיד מעל הכל */
+        .swal2-container { z-index: 20000 !important; }
     </style>
 </head>
 <body>
@@ -73,30 +64,10 @@
         </div>
         
         <div class="row g-2 text-center">
-            <div class="col-6">
-                <div class="stat-card">
-                    <small class="text-muted d-block mb-1">סה"כ לתקופה</small>
-                    <span class="fw-bold text-success fs-4" id="stat-total">0</span>
-                </div>
-            </div>
-            <div class="col-6">
-                <div class="stat-card">
-                    <small class="text-muted d-block mb-1">סה"כ החודש</small>
-                    <span class="fw-bold text-primary fs-4" id="stat-month">0</span>
-                </div>
-            </div>
-            <div class="col-6">
-                <div class="stat-card">
-                    <small class="text-muted d-block mb-1">מספר תורמים</small>
-                    <span class="fw-bold text-dark fs-5" id="stat-donors">0</span>
-                </div>
-            </div>
-            <div class="col-6">
-                <div class="stat-card">
-                    <small class="text-muted d-block mb-1">מספר פעולות</small>
-                    <span class="fw-bold text-dark fs-5" id="stat-count">0</span>
-                </div>
-            </div>
+            <div class="col-6"><div class="stat-card"><small class="text-muted d-block mb-1">סה"כ לתקופה</small><span class="fw-bold text-success fs-4" id="stat-total">0</span></div></div>
+            <div class="col-6"><div class="stat-card"><small class="text-muted d-block mb-1">סה"כ החודש</small><span class="fw-bold text-primary fs-4" id="stat-month">0</span></div></div>
+            <div class="col-6"><div class="stat-card"><small class="text-muted d-block mb-1">מספר תורמים</small><span class="fw-bold text-dark fs-5" id="stat-donors">0</span></div></div>
+            <div class="col-6"><div class="stat-card"><small class="text-muted d-block mb-1">מספר פעולות</small><span class="fw-bold text-dark fs-5" id="stat-count">0</span></div></div>
         </div>
     </div>
 
@@ -105,15 +76,9 @@
             <input type="text" id="search-box" class="form-control" placeholder="חיפוש: שם, טלפון, תז, מייל..." oninput="filterUsers()">
             <i class="fas fa-search position-absolute top-50 end-0 translate-middle-y me-3 text-muted"></i>
         </div>
-        <button class="btn btn-outline-primary" id="btn-refresh" onclick="refreshData()">
-            <i class="fas fa-sync-alt"></i>
-        </button>
-        <button class="btn btn-secondary text-white" onclick="openGlobalSettings()">
-            <i class="fas fa-cog"></i>
-        </button>
-        <button class="btn btn-warning text-white" onclick="sendPush()">
-            <i class="fas fa-bell"></i>
-        </button>
+        <button class="btn btn-outline-primary" id="btn-refresh" onclick="refreshData()"><i class="fas fa-sync-alt"></i></button>
+        <button class="btn btn-secondary text-white" onclick="openGlobalSettings()"><i class="fas fa-cog"></i></button>
+        <button class="btn btn-warning text-white" onclick="sendPush()"><i class="fas fa-bell"></i></button>
     </div>
 
     <div class="d-flex justify-content-between align-items-center mb-2 px-1">
@@ -125,7 +90,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="userModal" tabindex="-1">
+<div class="modal fade" id="userModal">
     <div class="modal-dialog modal-fullscreen-sm-down">
         <div class="modal-content">
             <div class="modal-header">
@@ -154,7 +119,8 @@
                             </div>
                             <div class="col-6">
                                 <label class="small text-muted">ת"ז</label>
-                                <input id="edit-tz" class="form-control">
+                                <input id="edit-tz" class="form-control" maxlength="9">
+                                <small class="d-block text-muted" style="font-size: 0.7rem;">* חובה 9 ספרות</small>
                             </div>
                         </div>
                         <div class="mb-2">
@@ -187,10 +153,14 @@
                             <label class="form-check-label small fw-bold" for="edit-allow-remove">אפשר ללקוח להסיר פריטים מהסל</label>
                         </div>
 
-                        <div class="mb-2">
-                            <label class="small fw-bold text-danger">טוקן אשראי</label>
-                            <input id="edit-token" class="form-control text-muted" style="font-size: 0.8rem; background: #fff5f5;">
+                        <div class="mb-2 d-flex justify-content-between align-items-center">
+                            <label class="small fw-bold text-danger mb-0">כרטיסים וטוקנים</label>
+                            <div>
+                                <button class="btn btn-sm btn-outline-success p-0 px-2 me-1" onclick="addRealCard()" title="הוסף כרטיס בחיוב 0.10"><i class="fas fa-credit-card"></i> חיוב</button>
+                                <button class="btn btn-sm btn-outline-secondary p-0 px-2" onclick="addManualCard()" title="הוסף טוקן ידנית"><i class="fas fa-keyboard"></i> ידני</button>
+                            </div>
                         </div>
+                        <div id="admin-cards-list" class="border rounded p-2 bg-light mb-3" style="max-height: 150px; overflow-y: auto;"></div>
 
                         <div class="mb-4 position-relative">
                             <label class="small fw-bold text-primary">קוד אבטחה (PIN)</label>
@@ -202,32 +172,18 @@
 
                     <div class="tab-pane fade" id="tab-basket">
                         <div id="basket-content" class="list-group mb-3"></div>
-                        <div class="d-grid">
-                            <button class="btn btn-outline-primary btn-sm dashed-border" onclick="adminAddToBasket()">
-                                <i class="fas fa-plus-circle me-1"></i> הוסף פריט לסל ידנית
-                            </button>
-                        </div>
+                        <div class="d-grid"><button class="btn btn-outline-primary btn-sm dashed-border" onclick="adminAddToBasket()"><i class="fas fa-plus-circle me-1"></i> הוסף פריט לסל ידנית</button></div>
                     </div>
-
                     <div class="tab-pane fade" id="tab-history">
                         <div class="table-responsive border rounded" style="max-height: 350px;">
-                            <table class="table table-sm table-striped mb-0" style="font-size: 0.85rem;">
-                                <thead class="table-light sticky-top"><tr><th>תאריך</th><th>סכום</th><th>הערה</th><th>סטטוס</th></tr></thead>
-                                <tbody id="history-table-body"></tbody>
-                            </table>
+                            <table class="table table-sm table-striped mb-0" style="font-size: 0.85rem;"><thead class="table-light sticky-top"><tr><th>תאריך</th><th>סכום</th><th>הערה</th><th>סטטוס</th></tr></thead><tbody id="history-table-body"></tbody></table>
                         </div>
                     </div>
-
                     <div class="tab-pane fade" id="tab-actions">
                         <div class="d-grid gap-3 pt-2">
-                            <button class="btn btn-primary py-3 shadow-sm" onclick="adminChargeImmediate()">
-                                <i class="fas fa-bolt fa-lg mb-2"></i><br>
-                                חיוב כרטיס מיידי (עכשיו)
-                            </button>
+                            <button class="btn btn-primary py-3 shadow-sm" onclick="adminChargeImmediate()"><i class="fas fa-bolt fa-lg mb-2"></i><br>חיוב כרטיס מיידי (עכשיו)</button>
                             <hr class="w-100 my-2">
-                            <button class="btn btn-outline-danger" onclick="deleteUser()">
-                                <i class="fas fa-trash-alt me-2"></i> מחיקת משתמש לצמיתות
-                            </button>
+                            <button class="btn btn-outline-danger" onclick="deleteUser()"><i class="fas fa-trash-alt me-2"></i> מחיקת משתמש לצמיתות</button>
                         </div>
                     </div>
                 </div>
@@ -242,36 +198,23 @@
     let currentUser = null;
     let ADMIN_PASS = "";
 
-    function validateDay(el) {
-        if(el.value > 31) el.value = 31;
-        if(el.value < 1 && el.value !== "") el.value = 1;
-        el.value = el.value.replace(/[^0-9]/g, '');
+    // ✅ בדיקת תקינות תעודת זהות ישראלית (מחייב 9 ספרות)
+    function isValidIsraeliID(id) {
+        id = String(id).trim();
+        // חייב להיות בדיוק 9 ספרות!
+        if (id.length !== 9 || isNaN(id)) return false;
+        
+        let sum = 0, incNum;
+        for (let i = 0; i < 9; i++) {
+            incNum = Number(id[i]) * ((i % 2) + 1);
+            sum += (incNum > 9) ? incNum - 9 : incNum;
+        }
+        return (sum % 10 === 0);
     }
 
-    function toggleAdminBillingInput() {
-        const type = document.getElementById('edit-billing-type').value;
-        const input = document.getElementById('edit-billing-day');
-        if (type === '1') {
-            input.classList.remove('d-none');
-            if(!input.value || input.value == 0) input.value = 1;
-        } else {
-            input.classList.add('d-none');
-            input.value = 0;
-        }
-    }
-
-    function togglePassword(inputId, icon) {
-        const input = document.getElementById(inputId);
-        if (input.type === "password") {
-            input.type = "text";
-            icon.classList.remove("fa-eye");
-            icon.classList.add("fa-eye-slash");
-        } else {
-            input.type = "password";
-            icon.classList.remove("fa-eye-slash");
-            icon.classList.add("fa-eye");
-        }
-    }
+    function validateDay(el) { if(el.value > 31) el.value = 31; if(el.value < 1 && el.value !== "") el.value = 1; el.value = el.value.replace(/[^0-9]/g, ''); }
+    function toggleAdminBillingInput() { const type = document.getElementById('edit-billing-type').value; const input = document.getElementById('edit-billing-day'); if (type === '1') { input.classList.remove('d-none'); if(!input.value || input.value == 0) input.value = 1; } else { input.classList.add('d-none'); input.value = 0; } }
+    function togglePassword(inputId, icon) { const input = document.getElementById(inputId); if (input.type === "password") { input.type = "text"; icon.classList.remove("fa-eye"); icon.classList.add("fa-eye-slash"); } else { input.type = "password"; icon.classList.remove("fa-eye-slash"); icon.classList.add("fa-eye"); } }
 
     window.onload = function() {
         const today = new Date().toISOString().split('T')[0];
@@ -283,36 +226,18 @@
     function doLogin() {
         const pass = document.getElementById('admin-pass-input').value;
         const err = document.getElementById('login-error');
-        if(pass === 'admin1234') {
-            ADMIN_PASS = pass;
-            err.classList.add('d-none');
-            document.getElementById('login-screen').style.display = 'none';
-            document.getElementById('main-content').style.display = 'block';
-            refreshData();
-        } else {
-            err.classList.remove('d-none');
-        }
+        if(pass === 'admin1234') { ADMIN_PASS = pass; err.classList.add('d-none'); document.getElementById('login-screen').style.display = 'none'; document.getElementById('main-content').style.display = 'block'; refreshData(); } else { err.classList.remove('d-none'); }
     }
 
     function refreshData() {
-        const btn = document.getElementById('btn-refresh');
-        const filterBtn = document.getElementById('btn-filter');
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        filterBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        Promise.all([loadStats(), loadUsers()]).then(() => {
-            btn.innerHTML = '<i class="fas fa-sync-alt"></i>';
-            filterBtn.innerHTML = '<i class="fas fa-filter"></i>';
-        });
+        const btn = document.getElementById('btn-refresh'); const filterBtn = document.getElementById('btn-filter');
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; filterBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        Promise.all([loadStats(), loadUsers()]).then(() => { btn.innerHTML = '<i class="fas fa-sync-alt"></i>'; filterBtn.innerHTML = '<i class="fas fa-filter"></i>'; });
     }
 
     function loadStats() {
-        const fromDate = document.getElementById('filter-from').value;
-        const toDate = document.getElementById('filter-to').value;
-
-        return fetch(`${API}/admin/stats`, {
-            method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ password: ADMIN_PASS, fromDate, toDate })
-        }).then(r=>r.json()).then(d => {
+        const fromDate = document.getElementById('filter-from').value; const toDate = document.getElementById('filter-to').value;
+        return fetch(`${API}/admin/stats`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, fromDate, toDate }) }).then(r=>r.json()).then(d => {
             if(d.success) {
                 document.getElementById('stat-total').innerText = '₪' + d.stats.totalDonated.toLocaleString();
                 document.getElementById('stat-month').innerText = '₪' + d.stats.totalMonth.toLocaleString();
@@ -323,93 +248,45 @@
     }
 
     function loadUsers() {
-        return fetch(`${API}/admin/get-users`, {
-            method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ password: ADMIN_PASS })
-        }).then(r=>r.json()).then(d => {
-            if(d.success) {
-                usersData = d.users;
-                filterUsersByDateAndSearch();
-            }
-        });
+        return fetch(`${API}/admin/get-users`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS }) }).then(r=>r.json()).then(d => { if(d.success) { usersData = d.users; filterUsersByDateAndSearch(); } });
     }
 
     function filterUsersByDateAndSearch() {
         const q = document.getElementById('search-box').value.toLowerCase();
-        const fromDateVal = document.getElementById('filter-from').value;
-        const toDateVal = document.getElementById('filter-to').value;
-        const start = fromDateVal ? new Date(fromDateVal) : new Date(0);
-        start.setHours(0,0,0,0);
-        const end = toDateVal ? new Date(toDateVal) : new Date();
-        end.setHours(23,59,59,999);
+        const fromDateVal = document.getElementById('filter-from').value; const toDateVal = document.getElementById('filter-to').value;
+        const start = fromDateVal ? new Date(fromDateVal) : new Date(0); start.setHours(0,0,0,0);
+        const end = toDateVal ? new Date(toDateVal) : new Date(); end.setHours(23,59,59,999);
 
         const filtered = usersData.filter(u => {
-            const name = (u.name || '').toLowerCase();
-            const phone = (u.phone || '').replace(/\D/g, ''); 
-            const email = (u.email || '').toLowerCase();
-            const tz = (u.tz || '');
-            const token = (u.token || '');
-            const matchesSearch = name.includes(q) || phone.includes(q) || email.includes(q) || tz.includes(q) || token.includes(q);
-
+            const name = (u.name || '').toLowerCase(); const phone = (u.phone || '').replace(/\D/g, ''); const email = (u.email || '').toLowerCase(); const tz = (u.tz || ''); 
+            const matchesSearch = name.includes(q) || phone.includes(q) || email.includes(q) || tz.includes(q);
             let hasDonationInDate = false;
             if (u.donationsHistory && u.donationsHistory.length > 0) {
-                hasDonationInDate = u.donationsHistory.some(d => {
-                    if (d.status !== 'success') return false;
-                    let dDate = new Date(d.date);
-                    return dDate >= start && dDate <= end;
-                });
+                hasDonationInDate = u.donationsHistory.some(d => { if (d.status !== 'success') return false; let dDate = new Date(d.date); return dDate >= start && dDate <= end; });
             }
             return matchesSearch && hasDonationInDate;
         });
         
         if (q.length > 0) {
-             const searchOnly = usersData.filter(u => {
-                const name = (u.name || '').toLowerCase();
-                const phone = (u.phone || '').replace(/\D/g, ''); 
-                const email = (u.email || '').toLowerCase();
-                const tz = (u.tz || '');
-                const token = (u.token || '');
-                return name.includes(q) || phone.includes(q) || email.includes(q) || tz.includes(q) || token.includes(q);
-             });
+             const searchOnly = usersData.filter(u => { const name = (u.name || '').toLowerCase(); const phone = (u.phone || '').replace(/\D/g, ''); const email = (u.email || '').toLowerCase(); const tz = (u.tz || ''); return name.includes(q) || phone.includes(q) || email.includes(q) || tz.includes(q); });
              renderUsers(searchOnly);
-        } else {
-             renderUsers(filtered);
-        }
+        } else { renderUsers(filtered); }
     }
     
     function filterUsers() { filterUsersByDateAndSearch(); }
 
     function renderUsers(list) {
-        const container = document.getElementById('users-list');
-        document.getElementById('user-count-display').innerText = list.length;
-        container.innerHTML = '';
+        const container = document.getElementById('users-list'); document.getElementById('user-count-display').innerText = list.length; container.innerHTML = '';
         if(list.length === 0) { container.innerHTML = '<div class="text-center text-muted mt-4">לא נמצאו משתמשים בטווח/חיפוש זה</div>'; return; }
-
         list.forEach(u => {
-            const basketCount = u.pendingDonations ? u.pendingDonations.length : 0;
-            const basketClass = basketCount > 0 ? 'has-basket' : '';
-            const basketBadge = basketCount > 0 ? `<span class="badge bg-warning text-dark ms-1 rounded-pill small">${basketCount} בסל</span>` : '';
-            
-            let html = `
-            <div class="user-card ${basketClass} d-flex justify-content-between align-items-center" onclick="openUserModal('${u._id}')">
-                <div style="flex:1; min-width:0;">
-                    <div class="fw-bold text-truncate">${u.name || 'ללא שם'} ${basketBadge}</div>
-                    <div class="small text-muted text-truncate">${u.phone || ''} | ${u.email || ''}</div>
-                    <div class="small text-secondary mt-1"><i class="fas fa-coins text-warning me-1"></i> יומי: ₪${u.recurringDailyAmount || 0}</div>
-                </div>
-                <div class="text-end ms-2">
-                    <div class="fw-bold text-success">₪${u.totalDonated?.toLocaleString() || 0}</div>
-                    <div class="small text-muted" style="font-size:0.7rem">${u.tz || ''}</div>
-                </div>
-            </div>`;
+            const basketCount = u.pendingDonations ? u.pendingDonations.length : 0; const basketClass = basketCount > 0 ? 'has-basket' : ''; const basketBadge = basketCount > 0 ? `<span class="badge bg-warning text-dark ms-1 rounded-pill small">${basketCount} בסל</span>` : '';
+            let html = `<div class="user-card ${basketClass} d-flex justify-content-between align-items-center" onclick="openUserModal('${u._id}')"><div style="flex:1; min-width:0;"><div class="fw-bold text-truncate">${u.name || 'ללא שם'} ${basketBadge}</div><div class="small text-muted text-truncate">${u.phone || ''} | ${u.email || ''}</div><div class="small text-secondary mt-1"><i class="fas fa-coins text-warning me-1"></i> יומי: ₪${u.recurringDailyAmount || 0}</div></div><div class="text-end ms-2"><div class="fw-bold text-success">₪${u.totalDonated?.toLocaleString() || 0}</div><div class="small text-muted" style="font-size:0.7rem">${u.tz || ''}</div></div></div>`;
             container.innerHTML += html;
         });
     }
 
     function openUserModal(id) {
-        currentUser = usersData.find(u => u._id === id);
-        if(!currentUser) return;
-
+        currentUser = usersData.find(u => u._id === id); if(!currentUser) return;
         document.getElementById('modal-user-name').innerText = currentUser.name || 'משתמש';
         document.getElementById('edit-user-id').value = currentUser._id;
         document.getElementById('edit-name').value = currentUser.name || '';
@@ -417,144 +294,202 @@
         document.getElementById('edit-email').value = currentUser.email || '';
         document.getElementById('edit-tz').value = currentUser.tz || '';
         
-        if (currentUser.billingPreference > 0) {
-            document.getElementById('edit-billing-type').value = '1';
-            document.getElementById('edit-billing-day').value = currentUser.billingPreference;
-            document.getElementById('edit-billing-day').classList.remove('d-none');
-        } else {
-            document.getElementById('edit-billing-type').value = '0';
-            document.getElementById('edit-billing-day').classList.add('d-none');
-        }
-
+        if (currentUser.billingPreference > 0) { document.getElementById('edit-billing-type').value = '1'; document.getElementById('edit-billing-day').value = currentUser.billingPreference; document.getElementById('edit-billing-day').classList.remove('d-none'); } else { document.getElementById('edit-billing-type').value = '0'; document.getElementById('edit-billing-day').classList.add('d-none'); }
         document.getElementById('edit-daily').value = currentUser.recurringDailyAmount || 0;
         document.getElementById('edit-immediate').checked = currentUser.recurringImmediate === true;
         document.getElementById('edit-allow-remove').checked = currentUser.canRemoveFromBasket !== false;
-        
         document.getElementById('edit-pin').value = currentUser.securityPin || '';
-        document.getElementById('edit-token').value = currentUser.token || '';
+
+        // הצגת כרטיסים באדמין
+        const cardsList = document.getElementById('admin-cards-list');
+        cardsList.innerHTML = '';
+        if(currentUser.cards && currentUser.cards.length > 0) {
+            currentUser.cards.forEach(c => {
+                const activeClass = c.active ? 'active' : '';
+                cardsList.innerHTML += `
+                <div class="card-row d-flex justify-content-between align-items-center ${activeClass}">
+                    <div>
+                        ${c.active ? '<i class="fas fa-check-circle text-success me-1"></i>' : ''}
+                        **** ${c.lastDigits} <span class="text-muted small">(${c.expiry})</span>
+                        <div class="small text-muted text-truncate" style="font-size:0.7rem; max-width: 150px;">${c.token}</div>
+                    </div>
+                    <div class="d-flex gap-1">
+                        <button class="btn btn-sm btn-light border" onclick="editCard('${c._id}')"><i class="fas fa-edit text-primary"></i></button>
+                        ${!c.active ? `<button class="btn btn-sm btn-light border" onclick="setActiveCard('${c._id}')"><i class="fas fa-star text-warning"></i></button>` : ''}
+                        <button class="btn btn-sm btn-light border" onclick="deleteCard('${c._id}')"><i class="fas fa-trash text-danger"></i></button>
+                    </div>
+                </div>`;
+            });
+        } else if (currentUser.token) {
+            cardsList.innerHTML = `<div class="text-muted small">טוקן ישן: ${currentUser.token} (יומר אוטומטית בכניסה הבאה)</div>`;
+        } else {
+            cardsList.innerHTML = '<div class="text-muted small">אין כרטיסים</div>';
+        }
 
         renderBasket();
+        const historyBody = document.getElementById('history-table-body'); historyBody.innerHTML = '';
+        if(currentUser.donationsHistory) { [...currentUser.donationsHistory].reverse().forEach(h => { const date = new Date(h.date).toLocaleDateString('he-IL'); const status = h.status === 'success' ? '<span class="badge bg-success">אושר</span>' : '<span class="badge bg-danger">נכשל</span>'; historyBody.innerHTML += `<tr><td>${date}</td><td class="fw-bold">₪${h.amount}</td><td class="text-truncate" style="max-width:100px;">${h.note||''}</td><td>${status}</td></tr>`; }); }
         
-        const historyBody = document.getElementById('history-table-body');
-        historyBody.innerHTML = '';
-        if(currentUser.donationsHistory) {
-            [...currentUser.donationsHistory].reverse().forEach(h => {
-                const date = new Date(h.date).toLocaleDateString('he-IL');
-                const status = h.status === 'success' ? '<span class="badge bg-success">אושר</span>' : '<span class="badge bg-danger">נכשל</span>';
-                historyBody.innerHTML += `<tr><td>${date}</td><td class="fw-bold">₪${h.amount}</td><td class="text-truncate" style="max-width:100px;">${h.note||''}</td><td>${status}</td></tr>`;
+        // יצירת אובייקט המודל ידנית ופתיחה עם אפשרות לפוקוס חיצוני
+        const modalEl = document.getElementById('userModal');
+        const modal = new bootstrap.Modal(modalEl, {
+            backdrop: 'static', 
+            keyboard: false,
+            focus: false
+        });
+        modal.show();
+    }
+
+    async function addRealCard() {
+        const { value: formValues } = await Swal.fire({
+            title: 'הוספת כרטיס (חיוב 0.10₪)',
+            html: `
+                <input id="swal-cc-num" class="swal2-input" placeholder="מספר כרטיס אשראי" type="tel">
+                <div class="d-flex gap-2">
+                    <input id="swal-cc-exp" class="swal2-input" placeholder="תוקף (MMYY)" type="tel">
+                    <input id="swal-cc-cvv" class="swal2-input" placeholder="CVV" type="tel" maxlength="3">
+                </div>
+            `,
+            focusConfirm: false,
+            showCancelButton: true,
+            confirmButtonText: 'חייב והוסף',
+            preConfirm: () => {
+                return {
+                    num: document.getElementById('swal-cc-num').value,
+                    exp: document.getElementById('swal-cc-exp').value,
+                    cvv: document.getElementById('swal-cc-cvv').value
+                }
+            }
+        });
+
+        if (formValues) {
+            Swal.fire({title:'מבצע חיוב...', didOpen:()=>Swal.showLoading()});
+            const res = await fetch(`${API}/admin/update-profile`, {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, newCardDetails: formValues })
             });
+            const d = await res.json();
+            if(d.success) {
+                refreshCurrentUser();
+                Swal.fire('נוסף בהצלחה', '', 'success');
+            } else {
+                Swal.fire('נכשל', d.error, 'error');
+            }
         }
-        new bootstrap.Modal(document.getElementById('userModal')).show();
+    }
+
+    async function addManualCard() {
+        const { value: formValues } = await Swal.fire({
+            title: 'הוספת טוקן ידנית',
+            html: `
+                <input id="swal-m-token" class="swal2-input" placeholder="טוקן (Token)">
+                <input id="swal-m-last4" class="swal2-input" placeholder="4 ספרות אחרונות" maxlength="4">
+                <input id="swal-m-exp" class="swal2-input" placeholder="תוקף (MMYY)" maxlength="4">
+            `,
+            focusConfirm: false,
+            showCancelButton: true,
+            confirmButtonText: 'הוסף',
+            preConfirm: () => {
+                return {
+                    token: document.getElementById('swal-m-token').value,
+                    lastDigits: document.getElementById('swal-m-last4').value,
+                    expiry: document.getElementById('swal-m-exp').value
+                }
+            }
+        });
+
+        if (formValues) {
+            if(!formValues.token) return;
+            await fetch(`${API}/admin/update-profile`, {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, addManualCardData: formValues })
+            });
+            refreshCurrentUser();
+            Swal.fire('נוסף', '', 'success');
+        }
+    }
+
+    async function editCard(cardId) {
+        const card = currentUser.cards.find(c => c._id === cardId);
+        if(!card) return;
+
+        const { value: formValues } = await Swal.fire({
+            title: 'עריכת כרטיס',
+            html: `
+                <label class="text-start w-100 small">טוקן</label>
+                <input id="swal-e-token" class="swal2-input" value="${card.token}">
+                <label class="text-start w-100 small">4 ספרות</label>
+                <input id="swal-e-last4" class="swal2-input" value="${card.lastDigits}">
+                <label class="text-start w-100 small">תוקף</label>
+                <input id="swal-e-expiry" class="swal2-input" value="${card.expiry}">
+            `,
+            focusConfirm: false,
+            showCancelButton: true,
+            confirmButtonText: 'שמור שינויים',
+            preConfirm: () => {
+                return {
+                    id: cardId,
+                    token: document.getElementById('swal-e-token').value,
+                    lastDigits: document.getElementById('swal-e-last4').value,
+                    expiry: document.getElementById('swal-e-expiry').value
+                }
+            }
+        });
+
+        if (formValues) {
+            await fetch(`${API}/admin/update-profile`, {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, editCardData: formValues })
+            });
+            refreshCurrentUser();
+            Swal.fire('עודכן', '', 'success');
+        }
+    }
+
+    function setActiveCard(cardId) {
+        fetch(`${API}/admin/update-profile`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, activeCardId: cardId }) })
+        .then(()=>refreshCurrentUser());
+    }
+
+    function deleteCard(cardId) {
+        if(!confirm('למחוק כרטיס זה?')) return;
+        fetch(`${API}/admin/update-profile`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, deleteCardId: cardId }) })
+        .then(()=>refreshCurrentUser());
     }
 
     function renderBasket() {
-        const basketDiv = document.getElementById('basket-content');
-        basketDiv.innerHTML = '';
-        if(currentUser.pendingDonations && currentUser.pendingDonations.length > 0) {
-            currentUser.pendingDonations.forEach(item => {
-                basketDiv.innerHTML += `
-                <div class="list-group-item d-flex justify-content-between align-items-center">
-                    <div><span class="fw-bold text-primary">₪${item.amount}</span> <small class="text-muted ms-1">${item.note||''}</small></div>
-                    <button class="btn btn-sm btn-outline-danger border-0" onclick="adminRemoveFromBasket('${item._id}')"><i class="fas fa-trash"></i></button>
-                </div>`;
-            });
-        } else { basketDiv.innerHTML = '<div class="text-center text-muted small p-3 bg-light rounded">הסל ריק</div>'; }
+        const basketDiv = document.getElementById('basket-content'); basketDiv.innerHTML = '';
+        if(currentUser.pendingDonations && currentUser.pendingDonations.length > 0) { currentUser.pendingDonations.forEach(item => { basketDiv.innerHTML += `<div class="list-group-item d-flex justify-content-between align-items-center"><div><span class="fw-bold text-primary">₪${item.amount}</span> <small class="text-muted ms-1">${item.note||''}</small></div><button class="btn btn-sm btn-outline-danger border-0" onclick="adminRemoveFromBasket('${item._id}')"><i class="fas fa-trash"></i></button></div>`; }); } else { basketDiv.innerHTML = '<div class="text-center text-muted small p-3 bg-light rounded">הסל ריק</div>'; }
     }
 
-    async function adminRemoveFromBasket(itemId) {
-        if(!confirm('להסיר פריט זה?')) return;
-        await fetch(`${API}/admin/remove-from-basket`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, itemId }) });
-        refreshCurrentUser();
-    }
-
-    async function adminAddToBasket() {
-        const { value: amount } = await Swal.fire({ title: 'סכום להוספה', input: 'number' });
-        if(!amount) return;
-        const { value: note } = await Swal.fire({ title: 'הערה', input: 'text' });
-        await fetch(`${API}/admin/add-donation-manual`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, amount, type: 'basket', note }) });
-        refreshCurrentUser();
-        Swal.fire('נוסף לסל', '', 'success');
-    }
-
-    async function adminChargeImmediate() {
-        if(!confirm('לחייב מיידית?')) return;
-        const { value: amount } = await Swal.fire({ title: 'סכום לחיוב', input: 'number' });
-        if(!amount) return;
-        const { value: note } = await Swal.fire({ title: 'הערה', input: 'text' });
-        Swal.fire({title:'מחייב...', didOpen:()=>Swal.showLoading()});
-        const res = await fetch(`${API}/admin/add-donation-manual`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, amount, type: 'immediate', note }) });
-        const d = await res.json();
-        if(d.success) { Swal.fire('חוייב בהצלחה', '', 'success'); refreshCurrentUser(); } else { Swal.fire('נכשל', d.error, 'error'); }
-    }
+    async function adminRemoveFromBasket(itemId) { if(!confirm('להסיר פריט זה?')) return; await fetch(`${API}/admin/remove-from-basket`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, itemId }) }); refreshCurrentUser(); }
+    async function adminAddToBasket() { const { value: amount } = await Swal.fire({ title: 'סכום להוספה', input: 'number' }); if(!amount) return; const { value: note } = await Swal.fire({ title: 'הערה', input: 'text' }); await fetch(`${API}/admin/add-donation-manual`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, amount, type: 'basket', note }) }); refreshCurrentUser(); Swal.fire('נוסף לסל', '', 'success'); }
+    async function adminChargeImmediate() { if(!confirm('לחייב מיידית?')) return; const { value: amount } = await Swal.fire({ title: 'סכום לחיוב', input: 'number' }); if(!amount) return; const { value: note } = await Swal.fire({ title: 'הערה', input: 'text' }); Swal.fire({title:'מחייב...', didOpen:()=>Swal.showLoading()}); const res = await fetch(`${API}/admin/add-donation-manual`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, amount, type: 'immediate', note }) }); const d = await res.json(); if(d.success) { Swal.fire('חוייב בהצלחה', '', 'success'); refreshCurrentUser(); } else { Swal.fire('נכשל', d.error, 'error'); } }
 
     async function saveUserChanges() {
-        let billingPref = 0;
-        if (document.getElementById('edit-billing-type').value === '1') {
-            billingPref = parseInt(document.getElementById('edit-billing-day').value) || 1;
+        let billingPref = 0; if (document.getElementById('edit-billing-type').value === '1') { billingPref = parseInt(document.getElementById('edit-billing-day').value) || 1; }
+        
+        const tz = document.getElementById('edit-tz').value;
+        // ✅ בדיקת תקינות תעודת זהות באדמין
+        if (tz && !isValidIsraeliID(tz)) {
+            return Swal.fire('שגיאה', 'תעודת זהות שגויה: חובה להזין 9 ספרות מלאות (כולל ספרת ביקורת/אפס מוביל)', 'error');
         }
 
-        const updateData = {
-            name: document.getElementById('edit-name').value,
-            phone: document.getElementById('edit-phone').value,
-            email: document.getElementById('edit-email').value,
-            tz: document.getElementById('edit-tz').value,
-            billingPreference: billingPref,
-            recurringDailyAmount: parseInt(document.getElementById('edit-daily').value),
-            recurringImmediate: document.getElementById('edit-immediate').checked,
-            securityPin: document.getElementById('edit-pin').value,
-            token: document.getElementById('edit-token').value,
-            canRemoveFromBasket: document.getElementById('edit-allow-remove').checked
-        };
-
+        const updateData = { name: document.getElementById('edit-name').value, phone: document.getElementById('edit-phone').value, email: document.getElementById('edit-email').value, tz: tz, billingPreference: billingPref, recurringDailyAmount: parseInt(document.getElementById('edit-daily').value), recurringImmediate: document.getElementById('edit-immediate').checked, securityPin: document.getElementById('edit-pin').value, canRemoveFromBasket: document.getElementById('edit-allow-remove').checked };
         await fetch(`${API}/admin/update-user-full`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, userData: updateData }) });
-        refreshCurrentUser();
-        Swal.fire('נשמר', '', 'success');
+        refreshCurrentUser(); Swal.fire('נשמר', '', 'success');
     }
 
-    async function refreshCurrentUser() { await loadUsers(); currentUser = usersData.find(u => u._id === currentUser._id); renderBasket(); loadStats(); }
-
-    async function sendPush() {
-        const { value: title } = await Swal.fire({ title: 'כותרת', input: 'text' });
-        if(!title) return;
-        const { value: body } = await Swal.fire({ title: 'תוכן', input: 'text' });
-        if(title && body) fetch(`${API}/admin/send-push`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, title, body }) }).then(r=>r.json()).then(d => Swal.fire(d.success ? 'נשלח' : 'שגיאה'));
+    async function refreshCurrentUser() { await loadUsers(); currentUser = usersData.find(u => u._id === currentUser._id); openUserModal(currentUser._id); loadStats(); }
+    async function sendPush() { const { value: title } = await Swal.fire({ title: 'כותרת', input: 'text' }); if(!title) return; const { value: body } = await Swal.fire({ title: 'תוכן', input: 'text' }); if(title && body) fetch(`${API}/admin/send-push`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, title, body }) }).then(r=>r.json()).then(d => Swal.fire(d.success ? 'נשלח' : 'שגיאה'));
     }
+    async function deleteUser() { if(confirm('למחוק לצמיתות?')) { await fetch(`${API}/admin/delete-user`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id }) }); location.reload(); } }
     
-    async function deleteUser() {
-        if(confirm('למחוק לצמיתות?')) { await fetch(`${API}/admin/delete-user`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id }) }); location.reload(); }
-    }
-
-    // ✅ פונקציה חדשה להגדרות גלובליות
     async function openGlobalSettings() {
-        const { isConfirmed, isDenied } = await Swal.fire({
-            title: 'הגדרות סל גורפות',
-            text: 'בחר האם לאפשר או לחסום הסרה מהסל לכל המשתמשים',
-            icon: 'warning',
-            showCancelButton: true,
-            showDenyButton: true,
-            confirmButtonText: 'אפשר הסרה לכולם',
-            denyButtonText: 'חסום הסרה לכולם',
-            cancelButtonText: 'ביטול',
-            confirmButtonColor: '#198754',
-            denyButtonColor: '#dc3545'
-        });
-
-        if (isConfirmed) {
-            updateGlobalBasket(true);
-        } else if (isDenied) {
-            updateGlobalBasket(false);
-        }
+        const { isConfirmed, isDenied } = await Swal.fire({ title: 'הגדרות סל גורפות', text: 'בחר האם לאפשר או לחסום הסרה מהסל לכל המשתמשים', icon: 'warning', showCancelButton: true, showDenyButton: true, confirmButtonText: 'אפשר הסרה לכולם', denyButtonText: 'חסום הסרה לכולם', cancelButtonText: 'ביטול', confirmButtonColor: '#198754', denyButtonColor: '#dc3545' });
+        if (isConfirmed) { updateGlobalBasket(true); } else if (isDenied) { updateGlobalBasket(false); }
     }
-
-    async function updateGlobalBasket(allow) {
-        Swal.fire({title:'מעדכן...', didOpen:()=>Swal.showLoading()});
-        await fetch(`${API}/admin/global-basket-lock`, {
-            method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ password: ADMIN_PASS, allow })
-        });
-        await loadUsers(); // רענון כדי לראות את השינוי בפרטי המשתמשים
-        Swal.fire('עודכן בהצלחה', allow ? 'כולם יכולים להסיר מהסל' : 'ההסרה נחסמה לכולם', 'success');
-    }
+    async function updateGlobalBasket(allow) { Swal.fire({title:'מעדכן...', didOpen:()=>Swal.showLoading()}); await fetch(`${API}/admin/global-basket-lock`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, allow }) }); await loadUsers(); Swal.fire('עודכן בהצלחה', allow ? 'כולם יכולים להסיר מהסל' : 'ההסרה נחסמה לכולם', 'success'); }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
