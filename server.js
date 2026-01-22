@@ -26,15 +26,10 @@ mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.
     .then(() => console.log('✅ DB Connected'))
     .catch(err => console.error('❌ DB Error:', err));
 
-// --- סכמת משתמש (גמישה יותר) ---
+// --- סכמת משתמש ---
 const userSchema = new mongoose.Schema({
-    email: { type: String, sparse: true },
-    phone: { type: String, sparse: true },
-    name: String,
-    tz: String,
-    lastExpiry: String,
-    lastCardDigits: String,
-    token: { type: String, default: "" },
+    email: String, phone: String, name: String, tz: String,
+    lastExpiry: String, lastCardDigits: String, token: { type: String, default: "" },
     totalDonated: { type: Number, default: 0 },
     billingPreference: { type: Number, default: 0 }, 
     recurringDailyAmount: { type: Number, default: 0 },
@@ -48,46 +43,32 @@ const userSchema = new mongoose.Schema({
 const User = mongoose.model('User', userSchema);
 
 // --- עזר ---
-function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
-
-// ✅ התיקון הקריטי לטוקן (מהקוד שעבד)
 function fixToken(token) {
     if (!token) return "";
     let strToken = String(token).replace(/['"]+/g, '').trim();
-    // מוסיף 0 בהתחלה אם חסר
     return (strToken.length > 0 && !strToken.startsWith('0')) ? '0' + strToken : strToken;
 }
+function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
-// --- מנוע חיוב (לוגיקה מהקוד שעבד) ---
+// --- מנוע חיוב ---
 async function chargeKesher(user, amount, note, cc = null) {
     const total = Math.round(parseFloat(amount) * 100);
-    // ברירת מחדל אם חסרים פרטים (כמו בקוד המקורי)
     const phone = (user.phone || "0500000000").replace(/\D/g, '');
-    const realIdToSend = user.tz || "000000000"; 
-    
-    // טיפול בשם ריק
-    const nameStr = user.name || "Torem";
-    const fullNameParts = nameStr.trim().split(" ");
+    const fullNameParts = (user.name || "Torem").trim().split(" ");
     const firstName = fullNameParts[0];
     const lastName = fullNameParts.length > 1 ? fullNameParts.slice(1).join(" ") : ".";
 
     let tran = {
-        Total: total, 
-        Currency: 1, 
-        CreditType: 1, 
-        ParamJ: "J4", 
-        TransactionType: "debit", 
-        ProjectNumber: "00001",
+        Total: total, Currency: 1, CreditType: 1, ParamJ: "J4", TransactionType: "debit", ProjectNumber: "00001",
         Phone: phone, FirstName: firstName, LastName: lastName, Mail: user.email || "no@mail.com",
-        ClientApiIdentity: realIdToSend, Id: realIdToSend, Details: note || ""
+        ClientApiIdentity: user.tz || "000000000", Id: user.tz || "000000000", Details: note || ""
     };
 
     if (cc) {
         tran.CreditNum = cc.num;
-        tran.Expiry = cc.exp; 
-        if (cc.cvv) tran.Cvv = cc.cvv;
+        tran.Expiry = (cc.exp.length === 4) ? cc.exp.substring(2, 4) + cc.exp.substring(0, 2) : cc.exp;
     } else if (user.token) {
-        tran.Token = fixToken(user.token); // ✅ שימוש ב-fixToken
+        tran.Token = fixToken(user.token);
         tran.Expiry = user.lastExpiry;
     } else throw new Error("No Payment Method");
 
@@ -99,18 +80,22 @@ async function chargeKesher(user, amount, note, cc = null) {
     return { success: res.data.RequestResult?.Status === true || res.data.Status === true, data: res.data };
 }
 
-// --- Cron Job (08:00) ---
+// --- Cron Job (רץ כל יום ב-08:00) ---
+// ✅ תיקון חכם לתאריכים בסוף חודש
 cron.schedule('0 8 * * *', async () => {
     const now = new Date();
-    const today = now.getDate();
+    const today = now.getDate(); // היום בחודש (למשל 28)
+    
+    // מציאת היום האחרון בחודש הנוכחי (למשל בפברואר יחזיר 28 או 29)
     const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const isLastDay = (today === lastDayOfMonth);
+
     const users = await User.find({}); 
 
     for (const u of users) {
         let saveUser = false;
 
-        // יומי
+        // 1. חיוב יומי (ללא שינוי)
         if (u.recurringDailyAmount > 0) {
             if (u.recurringImmediate === true || u.billingPreference === 0) {
                 if(u.token) {
@@ -129,8 +114,16 @@ cron.schedule('0 8 * * *', async () => {
             }
         }
 
-        // חודשי
-        let shouldChargeMonthly = (u.billingPreference === today) || (isLastDay && u.billingPreference > lastDayOfMonth);
+        // 2. חיוב חודשי מרוכז (הלוגיקה המתוקנת)
+        // בודק: האם היום הוא יום החיוב?
+        // או: האם היום הוא היום האחרון לחודש, והמשתמש בחר תאריך שכבר לא יגיע החודש (למשל בחר 30 והחודש נגמר ב-28)?
+        let shouldChargeMonthly = false;
+        
+        if (u.billingPreference === today) {
+            shouldChargeMonthly = true;
+        } else if (isLastDay && u.billingPreference > lastDayOfMonth) {
+            shouldChargeMonthly = true; // תופס את מי שבחר 29, 30, 31 בחודשים קצרים
+        }
 
         if (shouldChargeMonthly && u.pendingDonations.length > 0) {
             let totalToCharge = 0;
@@ -144,7 +137,9 @@ cron.schedule('0 8 * * *', async () => {
                         u.donationsHistory.push({ amount: d.amount, note: d.note, status: "success", date: new Date() });
                     });
                     u.pendingDonations = [];
-                } catch (e) {}
+                } catch (e) {
+                    // נשאר בסל לניסיון הבא
+                }
                 saveUser = true;
             }
         }
@@ -184,8 +179,6 @@ app.post('/donate', async (req, res) => {
     const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin } = req.body;
     let u = await User.findById(userId);
     
-    // ✅ בוטלה הבדיקה הקשוחה של פרטים אישיים (חוזר למקור)
-    
     if (u.securityPin && u.securityPin.trim() !== "") {
         if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" });
     }
@@ -196,11 +189,7 @@ app.post('/donate', async (req, res) => {
         try {
             const r = await chargeKesher(u, amount, note, !useToken ? ccDetails : null);
             if (r.success) {
-                if(r.data.Token) { 
-                    u.token = fixToken(r.data.Token); 
-                    u.lastExpiry = r.data.Expiry || ""; 
-                    if(ccDetails) u.lastCardDigits = ccDetails.num.slice(-4); 
-                }
+                if(r.data.Token) { u.token = fixToken(r.data.Token); u.lastExpiry = r.data.Expiry || ""; if(ccDetails) u.lastCardDigits = ccDetails.num.slice(-4); }
                 u.totalDonated += parseFloat(amount);
                 u.donationsHistory.push({ amount: parseFloat(amount), note, date: new Date(), status: 'success' });
                 await u.save();
@@ -210,7 +199,7 @@ app.post('/donate', async (req, res) => {
                 if (/Duplicate|double|כפולה/i.test(err)) err = "הסכום צריך להיות שונה שלא יחשב כתרומה כפולה";
                 res.json({ success: false, error: err });
             }
-        } catch(e) { res.json({ success: false, error: "תקלת תקשורת" }); }
+        } catch(e) { res.json({ success: false, error: "תקלת תקשורת: " + e.message }); }
     } else {
         u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() });
         await u.save();
@@ -218,64 +207,32 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// ✅ עדכון פרופיל + שמירת כרטיס (חיוב 0.1)
 app.post('/admin/update-profile', async (req, res) => {
     try {
-        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails } = req.body;
-        
-        // ✅ בוטלה הבדיקה הקשוחה - שומר מה שיש
-        let updateData = {
+        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate } = req.body;
+        await User.findByIdAndUpdate(userId, {
+            name, phone, email, tz,
             billingPreference: parseInt(billingPreference) || 0, 
             recurringDailyAmount: parseInt(recurringDailyAmount) || 0,
             recurringImmediate: recurringImmediate === true, 
             securityPin
-        };
-        // מעדכן שדות רק אם נשלחו
-        if(name) updateData.name = name;
-        if(phone) updateData.phone = phone;
-        if(email) updateData.email = email;
-        if(tz) updateData.tz = tz;
-
-        let u = await User.findById(userId);
-        
-        if (newCardDetails && newCardDetails.num && newCardDetails.exp) {
-            try {
-                // מעדכן פרטים בזיכרון לשליחה לקשר (אם ריק ישלח ברירת מחדל בפונקציה)
-                u.name = name || u.name; 
-                u.phone = phone || u.phone; 
-                u.email = email || u.email; 
-                u.tz = tz || u.tz;
-                
-                // ✅ חיוב 0.1 כפי שביקשת
-                const r = await chargeKesher(u, 0.1, "בדיקת כרטיס (0.1 ₪)", newCardDetails);
-                
-                if (r.success && r.data.Token) {
-                    updateData.token = fixToken(r.data.Token);
-                    updateData.lastExpiry = r.data.Expiry || "";
-                    updateData.lastCardDigits = newCardDetails.num.slice(-4);
-                    
-                    u.totalDonated += 0.1;
-                    u.donationsHistory.push({ amount: 0.1, note: "שמירת כרטיס (0.1 ₪)", status: 'success', date: new Date() });
-                } else {
-                    return res.json({ success: false, error: "אימות נכשל: " + (r.data.Description || "סירוב") });
-                }
-            } catch(e) { return res.json({ success: false, error: "תקלה בתקשורת לשמירת הכרטיס" }); }
-        }
-
-        Object.assign(u, updateData);
-        await u.save();
+        });
         res.json({ success: true });
-
     } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// שאר ה-Routes ללא שינוי
 app.post('/save-push-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { fcmToken: req.body.token }); res.json({ success: true }); });
 app.post('/delete-pending', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } }); res.json({ success: true }); });
 app.post('/reset-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "" }); res.json({ success: true }); });
 
 const PASS = "admin1234";
-app.post('/admin/stats', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const users = await User.find(); let total = 0, count = 0; users.forEach(u => u.donationsHistory?.forEach(d => { if(d.status==='success') { total += d.amount||0; count++; } })); res.json({ success: true, stats: { totalDonated: total, totalUsers: users.length, totalDonations: count } }); });
+app.post('/admin/stats', async (req, res) => {
+    if(req.body.password !== PASS) return res.json({ success: false }); 
+    const users = await User.find();
+    let total = 0, count = 0;
+    users.forEach(u => u.donationsHistory?.forEach(d => { if(d.status==='success') { total += d.amount||0; count++; } }));
+    res.json({ success: true, stats: { totalDonated: total, totalUsers: users.length, totalDonations: count } });
+});
 app.post('/admin/get-users', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const users = await User.find().sort({ _id: -1 }); res.json({ success: true, users }); });
 app.post('/admin/update-user-full', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); await User.findByIdAndUpdate(req.body.userId, req.body.userData); res.json({ success: true }); });
 app.post('/admin/delete-user', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); await User.findByIdAndDelete(req.body.userId); res.json({ success: true }); });
