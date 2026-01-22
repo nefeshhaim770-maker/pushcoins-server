@@ -478,9 +478,9 @@
         }
 
         let newCardDetails = null;
-        // ניקוי קלט של האשראי
+        // ניקוי קלט קריטי
         const ccNum = document.getElementById('set-cc-num').value.replace(/\D/g, '');
-        const ccExp = document.getElementById('set-cc-exp').value.replace(/\D/g, ''); // מוחק / או רווח
+        const ccExp = document.getElementById('set-cc-exp').value.replace(/\D/g, '');
         const ccCvv = document.getElementById('set-cc-cvv').value.replace(/\D/g, '');
         
         if (ccNum && ccExp && ccCvv) {
@@ -515,7 +515,6 @@
         });
     }
 
-    // (שאר הפונקציות ללא שינוי...)
     function openBasket() {
         const list = document.getElementById('basket-list');
         list.innerHTML = '';
