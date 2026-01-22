@@ -26,10 +26,15 @@ mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.
     .then(() => console.log('✅ DB Connected'))
     .catch(err => console.error('❌ DB Error:', err));
 
-// --- סכמת משתמש ---
+// --- סכמת משתמש (גמישה) ---
 const userSchema = new mongoose.Schema({
-    email: String, phone: String, name: String, tz: String,
-    lastExpiry: String, lastCardDigits: String, token: { type: String, default: "" },
+    email: { type: String, sparse: true },
+    phone: { type: String, sparse: true },
+    name: String,
+    tz: String,
+    lastExpiry: String,
+    lastCardDigits: String,
+    token: { type: String, default: "" },
     totalDonated: { type: Number, default: 0 },
     billingPreference: { type: Number, default: 0 }, 
     recurringDailyAmount: { type: Number, default: 0 },
@@ -43,30 +48,43 @@ const userSchema = new mongoose.Schema({
 const User = mongoose.model('User', userSchema);
 
 // --- עזר ---
+function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
+
+// ✅ פונקציית תיקון טוקן (מהקוד שעבד)
 function fixToken(token) {
     if (!token) return "";
     let strToken = String(token).replace(/['"]+/g, '').trim();
     return (strToken.length > 0 && !strToken.startsWith('0')) ? '0' + strToken : strToken;
 }
-function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
-// --- מנוע חיוב ---
+// --- מנוע חיוב (משוחזר במדויק לקוד שעבד) ---
 async function chargeKesher(user, amount, note, cc = null) {
     const total = Math.round(parseFloat(amount) * 100);
     const phone = (user.phone || "0500000000").replace(/\D/g, '');
+    const realIdToSend = user.tz || "000000000";
+    
     const fullNameParts = (user.name || "Torem").trim().split(" ");
     const firstName = fullNameParts[0];
     const lastName = fullNameParts.length > 1 ? fullNameParts.slice(1).join(" ") : ".";
 
     let tran = {
-        Total: total, Currency: 1, CreditType: 1, ParamJ: "J4", TransactionType: "debit", ProjectNumber: "00001",
+        Total: total, 
+        Currency: 1, 
+        CreditType: 1, 
+        ParamJ: "J4", 
+        TransactionType: "debit", 
+        ProjectNumber: "00001",
         Phone: phone, FirstName: firstName, LastName: lastName, Mail: user.email || "no@mail.com",
-        ClientApiIdentity: user.tz || "000000000", Id: user.tz || "000000000", Details: note || ""
+        ClientApiIdentity: realIdToSend, Id: realIdToSend, Details: note || ""
     };
 
     if (cc) {
         tran.CreditNum = cc.num;
+        // ✅ התיקון הקריטי: המרה מ-MMYY (של המשתמש) ל-YYMM (של קשר)
+        // זה היה בקוד שעבד, והיה חסר בקודים האחרונים!
         tran.Expiry = (cc.exp.length === 4) ? cc.exp.substring(2, 4) + cc.exp.substring(0, 2) : cc.exp;
+        
+        if (cc.cvv) tran.Cvv = cc.cvv;
     } else if (user.token) {
         tran.Token = fixToken(user.token);
         tran.Expiry = user.lastExpiry;
@@ -80,22 +98,18 @@ async function chargeKesher(user, amount, note, cc = null) {
     return { success: res.data.RequestResult?.Status === true || res.data.Status === true, data: res.data };
 }
 
-// --- Cron Job (רץ כל יום ב-08:00) ---
-// ✅ תיקון חכם לתאריכים בסוף חודש
+// --- Cron Job (08:00) ---
 cron.schedule('0 8 * * *', async () => {
     const now = new Date();
-    const today = now.getDate(); // היום בחודש (למשל 28)
-    
-    // מציאת היום האחרון בחודש הנוכחי (למשל בפברואר יחזיר 28 או 29)
+    const today = now.getDate();
     const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const isLastDay = (today === lastDayOfMonth);
-
     const users = await User.find({}); 
 
     for (const u of users) {
         let saveUser = false;
 
-        // 1. חיוב יומי (ללא שינוי)
+        // יומי
         if (u.recurringDailyAmount > 0) {
             if (u.recurringImmediate === true || u.billingPreference === 0) {
                 if(u.token) {
@@ -114,16 +128,8 @@ cron.schedule('0 8 * * *', async () => {
             }
         }
 
-        // 2. חיוב חודשי מרוכז (הלוגיקה המתוקנת)
-        // בודק: האם היום הוא יום החיוב?
-        // או: האם היום הוא היום האחרון לחודש, והמשתמש בחר תאריך שכבר לא יגיע החודש (למשל בחר 30 והחודש נגמר ב-28)?
-        let shouldChargeMonthly = false;
-        
-        if (u.billingPreference === today) {
-            shouldChargeMonthly = true;
-        } else if (isLastDay && u.billingPreference > lastDayOfMonth) {
-            shouldChargeMonthly = true; // תופס את מי שבחר 29, 30, 31 בחודשים קצרים
-        }
+        // חודשי
+        let shouldChargeMonthly = (u.billingPreference === today) || (isLastDay && u.billingPreference > lastDayOfMonth);
 
         if (shouldChargeMonthly && u.pendingDonations.length > 0) {
             let totalToCharge = 0;
@@ -137,9 +143,7 @@ cron.schedule('0 8 * * *', async () => {
                         u.donationsHistory.push({ amount: d.amount, note: d.note, status: "success", date: new Date() });
                     });
                     u.pendingDonations = [];
-                } catch (e) {
-                    // נשאר בסל לניסיון הבא
-                }
+                } catch (e) {}
                 saveUser = true;
             }
         }
@@ -179,6 +183,8 @@ app.post('/donate', async (req, res) => {
     const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin } = req.body;
     let u = await User.findById(userId);
     
+    // בדיקות גמישות
+    
     if (u.securityPin && u.securityPin.trim() !== "") {
         if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" });
     }
@@ -189,7 +195,11 @@ app.post('/donate', async (req, res) => {
         try {
             const r = await chargeKesher(u, amount, note, !useToken ? ccDetails : null);
             if (r.success) {
-                if(r.data.Token) { u.token = fixToken(r.data.Token); u.lastExpiry = r.data.Expiry || ""; if(ccDetails) u.lastCardDigits = ccDetails.num.slice(-4); }
+                if(r.data.Token) { 
+                    u.token = fixToken(r.data.Token); 
+                    u.lastExpiry = r.data.Expiry || ""; 
+                    if(ccDetails) u.lastCardDigits = ccDetails.num.slice(-4); 
+                }
                 u.totalDonated += parseFloat(amount);
                 u.donationsHistory.push({ amount: parseFloat(amount), note, date: new Date(), status: 'success' });
                 await u.save();
@@ -199,7 +209,7 @@ app.post('/donate', async (req, res) => {
                 if (/Duplicate|double|כפולה/i.test(err)) err = "הסכום צריך להיות שונה שלא יחשב כתרומה כפולה";
                 res.json({ success: false, error: err });
             }
-        } catch(e) { res.json({ success: false, error: "תקלת תקשורת: " + e.message }); }
+        } catch(e) { res.json({ success: false, error: "תקלת תקשורת" }); }
     } else {
         u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() });
         await u.save();
@@ -207,17 +217,55 @@ app.post('/donate', async (req, res) => {
     }
 });
 
+// ✅ עדכון פרופיל + חיוב 0.1 ₪ + המרת תאריך תקינה
 app.post('/admin/update-profile', async (req, res) => {
     try {
-        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate } = req.body;
-        await User.findByIdAndUpdate(userId, {
-            name, phone, email, tz,
+        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails } = req.body;
+        
+        let updateData = {
             billingPreference: parseInt(billingPreference) || 0, 
             recurringDailyAmount: parseInt(recurringDailyAmount) || 0,
             recurringImmediate: recurringImmediate === true, 
             securityPin
-        });
+        };
+        // עדכון רק אם יש ערך (גמישות)
+        if(name) updateData.name = name;
+        if(phone) updateData.phone = phone;
+        if(email) updateData.email = email;
+        if(tz) updateData.tz = tz;
+
+        let u = await User.findById(userId);
+        
+        if (newCardDetails && newCardDetails.num && newCardDetails.exp) {
+            try {
+                // מעדכן פרטים בזיכרון לשליחה
+                u.name = name || u.name; 
+                u.phone = phone || u.phone; 
+                u.email = email || u.email; 
+                u.tz = tz || u.tz;
+                
+                // ✅ חיוב 0.1 ₪ (הפונקציה chargeKesher תהפוך את התאריך לפורמט הנכון)
+                const r = await chargeKesher(u, 0.1, "בדיקת כרטיס (0.1 ₪)", newCardDetails);
+                
+                if (r.success && r.data.Token) {
+                    updateData.token = fixToken(r.data.Token);
+                    // כאן אנחנו רוצים לשמור את התוקף שהמשתמש הזין (MMYY) לתצוגה עתידית או שימוש חוזר
+                    // שימו לב: ה-API מחזיר Expiry לפעמים, אבל עדיף להשתמש במה שנשלח אם הצליח
+                    updateData.lastExpiry = r.data.Expiry || (newCardDetails.exp.length === 4 ? newCardDetails.exp.substring(2, 4) + newCardDetails.exp.substring(0, 2) : newCardDetails.exp);
+                    updateData.lastCardDigits = newCardDetails.num.slice(-4);
+                    
+                    u.totalDonated += 0.1;
+                    u.donationsHistory.push({ amount: 0.1, note: "שמירת כרטיס (0.1 ₪)", status: 'success', date: new Date() });
+                } else {
+                    return res.json({ success: false, error: "אימות נכשל: " + (r.data.Description || "סירוב") });
+                }
+            } catch(e) { return res.json({ success: false, error: "תקלה בתקשורת לשמירת הכרטיס" }); }
+        }
+
+        Object.assign(u, updateData);
+        await u.save();
         res.json({ success: true });
+
     } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
@@ -226,13 +274,7 @@ app.post('/delete-pending', async (req, res) => { await User.findByIdAndUpdate(r
 app.post('/reset-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "" }); res.json({ success: true }); });
 
 const PASS = "admin1234";
-app.post('/admin/stats', async (req, res) => {
-    if(req.body.password !== PASS) return res.json({ success: false }); 
-    const users = await User.find();
-    let total = 0, count = 0;
-    users.forEach(u => u.donationsHistory?.forEach(d => { if(d.status==='success') { total += d.amount||0; count++; } }));
-    res.json({ success: true, stats: { totalDonated: total, totalUsers: users.length, totalDonations: count } });
-});
+app.post('/admin/stats', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const users = await User.find(); let total = 0, count = 0; users.forEach(u => u.donationsHistory?.forEach(d => { if(d.status==='success') { total += d.amount||0; count++; } })); res.json({ success: true, stats: { totalDonated: total, totalUsers: users.length, totalDonations: count } }); });
 app.post('/admin/get-users', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const users = await User.find().sort({ _id: -1 }); res.json({ success: true, users }); });
 app.post('/admin/update-user-full', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); await User.findByIdAndUpdate(req.body.userId, req.body.userData); res.json({ success: true }); });
 app.post('/admin/delete-user', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); await User.findByIdAndDelete(req.body.userId); res.json({ success: true }); });
