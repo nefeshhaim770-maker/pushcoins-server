@@ -40,11 +40,12 @@ const userSchema = new mongoose.Schema({
     phone: { type: String, sparse: true },
     name: String,
     tz: String,
-    lastExpiry: String, // לתמיכה לאחור
-    lastCardDigits: String, // לתמיכה לאחור
-    token: { type: String, default: "" }, // לתמיכה לאחור
+    // שדות ישנים (לא בשימוש פעיל בקוד החדש, אבל נשמרים למיגרציה)
+    lastExpiry: String,
+    lastCardDigits: String,
+    token: { type: String, default: "" },
     
-    cards: [cardSchema], // ✅ המערך החדש
+    cards: [cardSchema], // ✅ המערך הקובע
 
     totalDonated: { type: Number, default: 0 },
     billingPreference: { type: Number, default: 0 }, 
@@ -233,10 +234,10 @@ app.post('/delete-pending', async (req, res) => {
     res.json({ success: true }); 
 });
 
-// ✅ עדכון פרופיל - עריכת כרטיס, מחיקה, הוספה
+// ✅ עדכון פרופיל - עריכה, מחיקה, הוספה ידנית והוספה באשראי
 app.post('/admin/update-profile', async (req, res) => {
     try {
-        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails, canRemoveFromBasket, activeCardId, deleteCardId, editCardData } = req.body;
+        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails, canRemoveFromBasket, activeCardId, deleteCardId, editCardData, addManualCardData } = req.body;
         
         let u = await User.findById(userId);
         
@@ -249,28 +250,40 @@ app.post('/admin/update-profile', async (req, res) => {
         // 2. הגדרת כרטיס פעיל
         if (activeCardId) { u.cards.forEach(c => c.active = (c._id.toString() === activeCardId)); }
 
-        // 3. הוספת כרטיס חדש
+        // 3. הוספת כרטיס חדש (חיוב 0.10 באדמין)
         if (newCardDetails && newCardDetails.num && newCardDetails.exp) {
             try {
                 u.name = name || u.name; u.phone = phone || u.phone; u.email = email || u.email; u.tz = tz || u.tz;
                 const r = await chargeKesher(u, 0.1, "בדיקת כרטיס (0.10 ₪)", newCardDetails);
                 const isSuccess = r.success; const isDouble = r.data.Description === "עיסקה כפולה";
+                
                 if (isSuccess || (isDouble && (r.data.Token || r.token))) {
                     const newToken = fixToken(r.token || r.data.Token);
                     u.cards.forEach(c => c.active = false);
                     u.cards.push({ token: newToken, lastDigits: r.currentCardDigits, expiry: r.finalExpiry, active: true });
-                    if (isSuccess) { u.totalDonated += 0.1; u.donationsHistory.push({ amount: 0.1, note: "שמירת כרטיס", status: 'success', date: new Date() }); }
+                    if (isSuccess) { u.totalDonated += 0.1; u.donationsHistory.push({ amount: 0.1, note: "שמירת כרטיס (מנהל)", status: 'success', date: new Date() }); }
                 } else { return res.json({ success: false, error: "אימות נכשל: " + (r.data.Description || "סירוב") }); }
             } catch(e) { return res.json({ success: false, error: "תקלה: " + e.message }); }
         }
 
-        // 4. ✅ עריכת כרטיס קיים (מתקדם)
+        // 4. הוספת כרטיס ידנית (טוקן בלבד)
+        if (addManualCardData) {
+            u.cards.forEach(c => c.active = false);
+            u.cards.push({
+                token: fixToken(addManualCardData.token),
+                lastDigits: addManualCardData.lastDigits,
+                expiry: addManualCardData.expiry,
+                active: true
+            });
+        }
+
+        // 5. ✅ עריכת כרטיס קיים - תיקון
         if (editCardData && editCardData.id) {
             const cardIndex = u.cards.findIndex(c => c._id.toString() === editCardData.id);
             if (cardIndex > -1) {
-                if (editCardData.token !== undefined) u.cards[cardIndex].token = fixToken(editCardData.token);
-                if (editCardData.lastDigits !== undefined) u.cards[cardIndex].lastDigits = editCardData.lastDigits;
-                if (editCardData.expiry !== undefined) u.cards[cardIndex].expiry = editCardData.expiry;
+                if (editCardData.token) u.cards[cardIndex].token = fixToken(editCardData.token);
+                if (editCardData.lastDigits) u.cards[cardIndex].lastDigits = editCardData.lastDigits;
+                if (editCardData.expiry) u.cards[cardIndex].expiry = editCardData.expiry;
             }
         }
 
