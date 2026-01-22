@@ -39,6 +39,8 @@ const userSchema = new mongoose.Schema({
     billingPreference: { type: Number, default: 0 }, 
     recurringDailyAmount: { type: Number, default: 0 },
     recurringImmediate: { type: Boolean, default: false },
+    // ✅ שדה חדש: האם מותר להסיר מהסל (ברירת מחדל: כן)
+    canRemoveFromBasket: { type: Boolean, default: true },
     securityPin: { type: String, default: "" },
     fcmToken: { type: String, default: "" },
     donationsHistory: [{ amount: Number, date: { type: Date, default: Date.now }, note: String, status: String, failReason: String }],
@@ -221,10 +223,30 @@ app.post('/donate', async (req, res) => {
     }
 });
 
+// ✅ מחיקת פריט מהסל ע"י משתמש (כולל בדיקת הרשאה)
+app.post('/delete-pending', async (req, res) => { 
+    const u = await User.findById(req.body.userId);
+    // אם האדמין חסם את האפשרות להסיר
+    if (u.canRemoveFromBasket === false) {
+        return res.json({ success: false, error: "אין אפשרות להסיר פריטים מהסל (ננעל ע\"י המנהל)" });
+    }
+    await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } }); 
+    res.json({ success: true }); 
+});
+
 app.post('/admin/update-profile', async (req, res) => {
     try {
-        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails } = req.body;
-        let updateData = { billingPreference: parseInt(billingPreference)||0, recurringDailyAmount: parseInt(recurringDailyAmount)||0, recurringImmediate: recurringImmediate===true, securityPin };
+        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails, canRemoveFromBasket } = req.body;
+        
+        let updateData = { 
+            billingPreference: parseInt(billingPreference)||0, 
+            recurringDailyAmount: parseInt(recurringDailyAmount)||0, 
+            recurringImmediate: recurringImmediate===true, 
+            securityPin,
+            // ✅ שמירת הגדרת ההסרה מהסל
+            canRemoveFromBasket: canRemoveFromBasket 
+        };
+        
         if(name) updateData.name = name; if(phone) updateData.phone = phone; if(email) updateData.email = email; if(tz) updateData.tz = tz;
         let u = await User.findById(userId);
         if (newCardDetails && newCardDetails.num && newCardDetails.exp) {
@@ -248,52 +270,25 @@ app.post('/admin/update-profile', async (req, res) => {
 
 const PASS = "admin1234";
 
-// ✅ סטטיסטיקות
 app.post('/admin/stats', async (req, res) => {
     if(req.body.password !== PASS) return res.json({ success: false }); 
     const { fromDate, toDate } = req.body;
-    
-    let start = fromDate ? new Date(fromDate) : new Date(0); 
-    start.setHours(0,0,0,0);
-    let end = toDate ? new Date(toDate) : new Date(); 
-    end.setHours(23, 59, 59, 999);
-
+    let start = fromDate ? new Date(fromDate) : new Date(0); start.setHours(0,0,0,0);
+    let end = toDate ? new Date(toDate) : new Date(); end.setHours(23, 59, 59, 999);
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-
     const users = await User.find();
-    
-    let totalRange = 0;
-    let countRange = 0;
-    let totalMonth = 0;
-    let uniqueDonors = new Set();
-    
+    let totalRange = 0; let countRange = 0; let totalMonth = 0; let uniqueDonors = new Set();
     users.forEach(u => u.donationsHistory?.forEach(d => { 
         let dDate = new Date(d.date);
         if (d.status === 'success') {
             const amount = d.amount || 0;
-            if (dDate >= start && dDate <= end) {
-                totalRange += amount;
-                countRange++;
-                uniqueDonors.add(u._id.toString());
-            }
-            if (dDate >= startOfMonth && dDate <= endOfMonth) {
-                totalMonth += amount;
-            }
+            if (dDate >= start && dDate <= end) { totalRange += amount; countRange++; uniqueDonors.add(u._id.toString()); }
+            if (dDate >= startOfMonth && dDate <= endOfMonth) { totalMonth += amount; }
         }
     }));
-
-    res.json({ 
-        success: true, 
-        stats: { 
-            totalDonated: totalRange, 
-            totalDonations: countRange, 
-            totalUsers: users.length, 
-            uniqueDonorsRange: uniqueDonors.size, // ✅ הוספנו את זה
-            totalMonth: totalMonth
-        } 
-    });
+    res.json({ success: true, stats: { totalDonated: totalRange, totalDonations: countRange, totalUsers: users.length, uniqueDonorsRange: uniqueDonors.size, totalMonth: totalMonth } });
 });
 
 app.post('/admin/add-donation-manual', async (req, res) => {
@@ -301,7 +296,6 @@ app.post('/admin/add-donation-manual', async (req, res) => {
     const { userId, amount, type, note } = req.body;
     let u = await User.findById(userId);
     if (!u) return res.json({ success: false, error: "משתמש לא נמצא" });
-
     if (type === 'immediate') {
         if (!u.token) return res.json({ success: false, error: "למשתמש אין כרטיס אשראי שמור" });
         try {
@@ -311,9 +305,7 @@ app.post('/admin/add-donation-manual', async (req, res) => {
                 u.donationsHistory.push({ amount: parseFloat(amount), note: note || "חיוב יזום ע\"י מנהל", date: new Date(), status: 'success' });
                 await u.save();
                 res.json({ success: true });
-            } else {
-                res.json({ success: false, error: "סירוב: " + (r.data.Description || "שגיאה") });
-            }
+            } else { res.json({ success: false, error: "סירוב: " + (r.data.Description || "שגיאה") }); }
         } catch (e) { res.json({ success: false, error: e.message }); }
     } else {
         u.pendingDonations.push({ amount: parseFloat(amount), note: note || "הוסף ע\"י מנהל", date: new Date() });
@@ -322,6 +314,7 @@ app.post('/admin/add-donation-manual', async (req, res) => {
     }
 });
 
+// ✅ מחיקת פריט מהסל ע"י אדמין (תמיד מותר)
 app.post('/admin/remove-from-basket', async (req, res) => {
     if(req.body.password !== PASS) return res.json({ success: false });
     await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.itemId } } });
@@ -334,7 +327,6 @@ app.post('/admin/delete-user', async (req, res) => { if(req.body.password !== PA
 app.post('/admin/recalc-totals', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const users = await User.find(); let c=0; for (const u of users) { let t=0; if(u.donationsHistory) u.donationsHistory.forEach(d => { if(d.status==='success') t += d.amount||0; }); if(u.totalDonated!==t) { u.totalDonated=t; await u.save(); c++; } } res.json({ success: true, count: c }); });
 app.post('/admin/send-push', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const users = await User.find({ fcmToken: { $exists: true, $ne: "" } }); const tokens = users.map(u => u.fcmToken); if(tokens.length) { const response = await admin.messaging().sendMulticast({ notification: { title: req.body.title, body: req.body.body }, tokens }); res.json({ success: true, sentCount: response.successCount }); } else res.json({ success: false, error: "אין מכשירים" }); });
 app.post('/save-push-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { fcmToken: req.body.token }); res.json({ success: true }); });
-app.post('/delete-pending', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } }); res.json({ success: true }); });
 app.post('/reset-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "" }); res.json({ success: true }); });
 
 const PORT = process.env.PORT || 10000;
