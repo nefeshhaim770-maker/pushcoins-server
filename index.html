@@ -8,6 +8,8 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
+        .swal2-container { z-index: 20000 !important; }
+
         body { 
             background: linear-gradient(180deg, #a1c4fd 0%, #c2e9fb 100%);
             font-family: 'Segoe UI', sans-serif; 
@@ -107,30 +109,23 @@
         }
         .note-input::placeholder { color: rgba(255,255,255,0.7); }
 
-        /* --- מודלים (תיקון גלילה קריטי) --- */
         .overlay-screen { 
             position: fixed; top:0; left:0; right:0; bottom:0; 
             background: rgba(0,0,0,0.7); z-index: 5000; 
-            display: flex; 
-            align-items: flex-start; /* מתחיל מלמעלה - מונע חיתוך במקלדת */
-            justify-content: center; 
-            padding-top: 40px;
-            overflow-y: auto; /* מאפשר גלילה של כל המסך */
-            visibility: hidden; opacity: 0; transition: 0.3s; 
+            display: flex; align-items: flex-start; justify-content: center; 
+            overflow-y: auto; visibility: hidden; opacity: 0; transition: 0.3s; 
+            padding: 20px 0;
         }
         .overlay-screen.open { visibility: visible; opacity: 1; }
         
         .modal-card { 
             background: white; width: 90%; max-width: 400px; 
-            border-radius: 25px; padding: 25px; 
-            text-align: center; 
-            margin-bottom: 50px; /* רווח למטה לגלילה נוחה */
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            border-radius: 25px; padding: 25px; text-align: center; 
+            margin: 20px auto; box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            position: relative;
         }
         .list-item { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 10px 0; align-items: center; }
-        
-        /* סימון שדות חובה */
-        .required-mark::after { content: " *"; color: red; }
+        .required-label::after { content: "*"; color: red; margin-right: 4px; }
     </style>
 </head>
 <body>
@@ -182,7 +177,7 @@
         <img src="https://www.nefesh-ha-chaim.org/icons/logo.png" width="80" class="mb-3 rounded-circle shadow">
         <h3 class="fw-bold text-primary">ברוכים הבאים</h3>
         <div class="form-floating mb-3 border rounded-4 mt-4">
-            <input type="text" id="login-val" class="form-control border-0 bg-light text-center" placeholder="פרטים">
+            <input type="tel" id="login-val" class="form-control border-0 bg-light text-center" placeholder="פרטים">
             <label class="w-100 text-center">נייד או אימייל</label>
         </div>
         <div id="otp-area" class="d-none mb-3 border rounded-4">
@@ -233,11 +228,11 @@
             <button class="btn-close" onclick="closeModal('settings-modal')"></button>
         </div>
         
-        <label class="small fw-bold text-primary required-mark">פרטים אישיים</label>
+        <label class="small fw-bold text-primary required-label">פרטים אישיים</label>
         <input id="set-name" class="form-control mb-1" placeholder="שם מלא">
-        <input id="set-phone" class="form-control mb-1" placeholder="טלפון">
-        <input id="set-email" class="form-control mb-1" placeholder="אימייל">
-        <input id="set-tz" class="form-control mb-3" placeholder="תעודת זהות">
+        <input id="set-phone" class="form-control mb-1" placeholder="טלפון" type="tel">
+        <input id="set-email" class="form-control mb-1" placeholder="אימייל" type="email">
+        <input id="set-tz" class="form-control mb-3" placeholder="תעודת זהות" type="tel">
 
         <hr>
 
@@ -247,21 +242,28 @@
             <button class="btn btn-sm btn-outline-danger" onclick="resetCard()">מחק</button>
         </div>
         <div id="cc-input-area">
-            <input id="set-cc-num" class="form-control mb-1" placeholder="מספר כרטיס אשראי" maxlength="16">
-            <input id="set-cc-exp" class="form-control mb-3" placeholder="תוקף (MMYY)" maxlength="4">
+            <div class="alert alert-danger p-1 small mb-2" style="font-size: 0.75rem;">
+                <i class="fas fa-info-circle"></i> לצורך שמירת הכרטיס יתבצע חיוב חד-פעמי של 0.10 ₪
+            </div>
+            <input id="set-cc-num" class="form-control mb-1" placeholder="מספר כרטיס אשראי" maxlength="16" type="tel">
+            <div class="d-flex gap-2 mb-3">
+                <input id="set-cc-exp" class="form-control" placeholder="תוקף (MMYY)" maxlength="4" type="tel">
+                <input id="set-cc-cvv" class="form-control" placeholder="CVV (3 ספ')" maxlength="3" type="tel">
+            </div>
         </div>
 
         <label class="small fw-bold text-primary">יום חיוב הסל</label>
-        <div class="input-group mb-2">
+        <div class="input-group mb-1">
             <select id="billing-type" class="form-select text-center" onchange="toggleBillingInput()">
                 <option value="immediate">מיידי (ללא סל)</option>
                 <option value="monthly">יום בחודש</option>
             </select>
-            <input type="number" id="set-billing-day" class="form-control text-center d-none" placeholder="יום (1-31)" min="1" max="31" oninput="validateDay(this)">
+            <input type="tel" id="set-billing-day" class="form-control text-center d-none" placeholder="יום (1-31)" min="1" max="31" oninput="validateDay(this)">
         </div>
+        <div class="text-muted small mb-3 fst-italic" style="font-size: 0.75rem;">* החיוב מתבצע בשעה 08:00 בבוקר</div>
 
         <label class="small fw-bold text-primary">הוראת קבע יומית (₪)</label>
-        <input type="number" id="set-daily" class="form-control mb-1" placeholder="0">
+        <input type="tel" id="set-daily" class="form-control mb-1" placeholder="0">
         <div class="form-check mb-2">
             <input class="form-check-input" type="checkbox" id="set-daily-immediate">
             <label class="form-check-label small" for="set-daily-immediate">חייב אשראי מידית (ולא לסל)</label>
@@ -357,13 +359,6 @@
     async function submit(forceImmediate) {
         if(tempSum === 0) return Swal.fire('הקופה ריקה', 'לחץ על המטבעות', 'info');
         
-        // בדיקת שדות חובה לפני שליחה
-        if(!user.name || !user.phone || !user.email || !user.tz) {
-            Swal.fire({icon: 'error', title: 'חסרים פרטים', text: 'נא למלא פרטים אישיים בהגדרות'});
-            openSettings();
-            return;
-        }
-
         let pin = "";
         if(user.securityPin) {
             const res = await Swal.fire({title: 'קוד אבטחה', input: 'password', inputAttributes:{maxlength:4, inputmode:'numeric'}, showCancelButton: true});
@@ -413,7 +408,6 @@
                 document.getElementById('status-text').innerText = isImmediate ? "מצב: חיוב מיידי" : `מצב: צבירה ל-${user.billingPreference} בחודש`;
                 document.getElementById('basket-date').innerText = isImmediate ? "מיידי" : user.billingPreference;
 
-                // עדכון טופס הגדרות
                 document.getElementById('set-name').value = user.name||'';
                 document.getElementById('set-phone').value = user.phone||'';
                 document.getElementById('set-email').value = user.email||'';
@@ -433,7 +427,6 @@
                 
                 document.getElementById('set-pin').value = user.securityPin||'';
                 
-                // ניהול תצוגת אשראי
                 if (user.token) {
                     document.getElementById('cc-saved-area').classList.remove('d-none');
                     document.getElementById('cc-saved-area').classList.add('d-flex');
@@ -468,14 +461,14 @@
     }
 
     function saveSettings() {
-        // וולידציה קשוחה בלקוח
+        // וולידציה פשוטה (שדות חובה)
         const name = document.getElementById('set-name').value;
         const phone = document.getElementById('set-phone').value;
         const email = document.getElementById('set-email').value;
         const tz = document.getElementById('set-tz').value;
 
         if (!name || !phone || !email || !tz) {
-            Swal.fire('חסרים פרטים', 'חובה למלא: שם, טלפון, מייל ותעודת זהות', 'error');
+            Swal.fire({icon: 'error', title: 'חסרים פרטים', text: 'נא למלא את כל הפרטים האישיים'});
             return;
         }
 
@@ -484,12 +477,18 @@
             billingPref = document.getElementById('set-billing-day').value || 1;
         }
 
-        // איסוף פרטי אשראי אם הוזנו
         let newCardDetails = null;
-        const ccNum = document.getElementById('set-cc-num').value;
-        const ccExp = document.getElementById('set-cc-exp').value;
-        if (ccNum && ccExp) {
-            newCardDetails = { num: ccNum, exp: ccExp };
+        // ניקוי קלט של האשראי
+        const ccNum = document.getElementById('set-cc-num').value.replace(/\D/g, '');
+        const ccExp = document.getElementById('set-cc-exp').value.replace(/\D/g, ''); // מוחק / או רווח
+        const ccCvv = document.getElementById('set-cc-cvv').value.replace(/\D/g, '');
+        
+        if (ccNum && ccExp && ccCvv) {
+            if(ccExp.length !== 4) {
+                Swal.fire('שגיאה', 'תוקף לא תקין (צריך להיות 4 ספרות)', 'error');
+                return;
+            }
+            newCardDetails = { num: ccNum, exp: ccExp, cvv: ccCvv };
         }
 
         const data = {
@@ -498,7 +497,7 @@
             recurringDailyAmount: Number(document.getElementById('set-daily').value),
             recurringImmediate: document.getElementById('set-daily-immediate').checked,
             securityPin: document.getElementById('set-pin').value,
-            newCardDetails // שולח רק אם יש כרטיס חדש
+            newCardDetails
         };
 
         Swal.fire({title:'שומר...', didOpen:()=>Swal.showLoading()});
@@ -507,22 +506,22 @@
         .then(r=>r.json()).then(d => {
             if(d.success) {
                 closeModal('settings-modal');
-                // ניקוי שדות אשראי
                 document.getElementById('set-cc-num').value = '';
                 document.getElementById('set-cc-exp').value = '';
+                document.getElementById('set-cc-cvv').value = '';
                 loadUser(user._id);
-                Swal.fire('נשמר', '', 'success');
+                Swal.fire('נשמר', 'הפרטים נשמרו בהצלחה', 'success');
             } else Swal.fire('שגיאה', d.error || 'לא נשמר', 'error');
         });
     }
 
+    // (שאר הפונקציות ללא שינוי...)
     function openBasket() {
         const list = document.getElementById('basket-list');
         list.innerHTML = '';
         const count = user.pendingDonations?.length || 0;
         document.getElementById('basket-summary-text').innerText = count > 0 ? `יש לך ${count} תרומות הממתינות לחיוב` : 'הסל שלך ריק';
         if(count > 0) {
-            // הפיכת הסדר: החדשים למעלה
             [...user.pendingDonations].reverse().forEach(item => {
                 list.innerHTML += `
                 <div class="list-item">
