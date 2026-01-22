@@ -50,76 +50,86 @@ const User = mongoose.model('User', userSchema);
 // --- עזר ---
 function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
-// ✅ פונקציית הטוקן המקורית שעבדה (מוסיפה 0)
+// ✅ פונקציה קריטית: מוסיפה 0 לטוקן אם חסר (חובה בקשר)
 function fixToken(token) {
     if (!token) return "";
     let strToken = String(token).replace(/['"]+/g, '').trim();
     return (strToken.length > 0 && !strToken.startsWith('0')) ? '0' + strToken : strToken;
 }
 
-// --- מנוע חיוב (הלוגיקה המדויקת מהקוד שעבד) ---
-async function chargeKesher(user, amount, note, creditDetails = null) {
-    const amountInAgorot = Math.round(parseFloat(amount) * 100);
-    // ברירת מחדל כמו בקוד שעבד
-    const realIdToSend = user.tz || "000000000";
+// --- מנוע חיוב (J4 + 1.00 ILS + YYMM) ---
+async function chargeKesher(user, amount, note, cc = null) {
+    // המרה לאגורות
+    const total = Math.round(parseFloat(amount) * 100);
+    
+    // פרטים ברירת מחדל כדי למנוע שגיאות
     const safePhone = (user.phone || "0500000000").replace(/\D/g, '');
+    const realIdToSend = user.tz || "000000000"; 
+    
+    // פירוק שם (מונע קריסה אם אין שם)
+    const nameStr = user.name || "Torem";
+    const nameParts = nameStr.trim().split(" ");
+    const firstName = nameParts[0];
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : ".";
 
-    // לוגיקת שמות מקורית
-    const firstName = (user.name || "Torem").split(" ")[0];
-    const lastName = (user.name || "").split(" ").slice(1).join(" ") || "Family";
-
-    let tranData = {
-        Total: amountInAgorot,
+    let tran = {
+        Total: total, 
         Currency: 1, 
         CreditType: 1, 
-        ParamJ: "J4", 
+        ParamJ: "J4", // J4 תמיד הכי בטוח
         TransactionType: "debit", 
         ProjectNumber: "00001",
-        Phone: safePhone,
-        FirstName: firstName,
-        LastName: lastName,
-        Mail: user.email || "no-email@test.com",
-        ClientApiIdentity: realIdToSend, Id: realIdToSend, Details: note || ""
+        Phone: safePhone, 
+        FirstName: firstName, 
+        LastName: lastName, 
+        Mail: user.email || "no@mail.com",
+        ClientApiIdentity: realIdToSend, 
+        Id: realIdToSend, 
+        Details: note || ""
     };
 
-    let finalExpiry = user.lastExpiry;
-    let currentCardDigits = user.lastCardDigits;
-
-    if (creditDetails) {
-        tranData.CreditNum = creditDetails.num;
-        // ✅ היפוך תאריך: מהקוד שעבד (MMYY -> YYMM)
-        finalExpiry = (creditDetails.exp.length === 4) ? creditDetails.exp.substring(2, 4) + creditDetails.exp.substring(0, 2) : creditDetails.exp;
-        tranData.Expiry = finalExpiry;
-        currentCardDigits = creditDetails.num.slice(-4);
+    if (cc) {
+        tran.CreditNum = cc.num;
         
-        // ✅ הוספת ה-CVV (התוספת היחידה)
-        if(creditDetails.cvv) tranData.Cvv = creditDetails.cvv;
+        // ✅ טיפול בתאריך: המשתמש שולח MMYY (למשל 1226)
+        // קשר דורש לפעמים YYMM (למשל 2612). זה הקוד שעבד לך:
+        if (cc.exp.length === 4) {
+            tran.Expiry = cc.exp.substring(2, 4) + cc.exp.substring(0, 2);
+        } else {
+            tran.Expiry = cc.exp;
+        }
+
+        // ✅ חובה CVV למניעת סירוב!
+        if (cc.cvv) tran.Cvv = cc.cvv;
 
     } else if (user.token) {
-        tranData.Token = fixToken(user.token); // שימוש בטוקן עם ה-0
-        tranData.Expiry = user.lastExpiry;
-    } else { throw new Error("חסר אמצעי תשלום"); }
+        tran.Token = fixToken(user.token); // ✅ שימוש בטוקן המתוקן
+        tran.Expiry = user.lastExpiry;
+    } else throw new Error("No Payment Method");
 
+    // שליחה לקשר
     const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
-        Json: { userName: '2181420WS2087', password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', func: "SendTransaction", format: "json", tran: sortObjectKeys(tranData) },
+        Json: { userName: '2181420WS2087', password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', func: "SendTransaction", format: "json", tran: sortObjectKeys(tran) },
         format: "json"
     }, { validateStatus: () => true });
 
-    // החזרת המידע כולל כרטיס ותוקף לעדכון ב-DB
-    return { success: res.data.RequestResult?.Status === true || res.data.Status === true, data: res.data, currentCardDigits, finalExpiry, token: res.data.Token };
+    return { 
+        success: res.data.RequestResult?.Status === true || res.data.Status === true, 
+        data: res.data,
+        token: res.data.Token, // החזרת הטוקן החדש אם נוצר
+        expiry: tran.Expiry // החזרת התוקף ששלחנו (YYMM)
+    };
 }
 
 // --- Cron Job (08:00) ---
 cron.schedule('0 8 * * *', async () => {
-    const now = new Date();
-    const today = now.getDate();
-    const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const isLastDay = (today === lastDayOfMonth);
+    const today = new Date().getDate();
     const users = await User.find({}); 
 
     for (const u of users) {
         let saveUser = false;
 
+        // יומי
         if (u.recurringDailyAmount > 0) {
             if (u.recurringImmediate === true || u.billingPreference === 0) {
                 if(u.token) {
@@ -138,9 +148,8 @@ cron.schedule('0 8 * * *', async () => {
             }
         }
 
-        let shouldChargeMonthly = (u.billingPreference === today) || (isLastDay && u.billingPreference > lastDayOfMonth);
-
-        if (shouldChargeMonthly && u.pendingDonations.length > 0) {
+        // חודשי
+        if (u.billingPreference === today && u.pendingDonations.length > 0) {
             let totalToCharge = 0;
             u.pendingDonations.forEach(d => totalToCharge += d.amount);
             
@@ -192,7 +201,6 @@ app.post('/donate', async (req, res) => {
     const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin } = req.body;
     let u = await User.findById(userId);
     
-    // בדיקות גמישות כדי לא לחסום
     if (u.securityPin && u.securityPin.trim() !== "") {
         if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" });
     }
@@ -205,8 +213,8 @@ app.post('/donate', async (req, res) => {
             if (r.success) {
                 if(r.token) { 
                     u.token = fixToken(r.token); 
-                    u.lastExpiry = r.finalExpiry || u.lastExpiry; 
-                    if(r.currentCardDigits) u.lastCardDigits = r.currentCardDigits; 
+                    u.lastExpiry = r.expiry || u.lastExpiry; 
+                    if(ccDetails) u.lastCardDigits = ccDetails.num.slice(-4); 
                 }
                 u.totalDonated += parseFloat(amount);
                 u.donationsHistory.push({ amount: parseFloat(amount), note, date: new Date(), status: 'success' });
@@ -217,7 +225,7 @@ app.post('/donate', async (req, res) => {
                 if (/Duplicate|double|כפולה/i.test(err)) err = "הסכום צריך להיות שונה שלא יחשב כתרומה כפולה";
                 res.json({ success: false, error: err });
             }
-        } catch(e) { res.json({ success: false, error: "תקלת תקשורת" }); }
+        } catch(e) { res.json({ success: false, error: "תקלת תקשורת: " + e.message }); }
     } else {
         u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() });
         await u.save();
@@ -225,7 +233,7 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// ✅ עדכון פרופיל + חיוב 0.1 ₪ (שיחזור לוגיקה שעבדה)
+// ✅ עדכון פרופיל + חיוב 1 ₪ (הכי בטוח לשמירה)
 app.post('/admin/update-profile', async (req, res) => {
     try {
         const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails } = req.body;
@@ -236,7 +244,6 @@ app.post('/admin/update-profile', async (req, res) => {
             recurringImmediate: recurringImmediate === true, 
             securityPin
         };
-        // מעדכן שדות רק אם נשלחו
         if(name) updateData.name = name;
         if(phone) updateData.phone = phone;
         if(email) updateData.email = email;
@@ -246,27 +253,27 @@ app.post('/admin/update-profile', async (req, res) => {
         
         if (newCardDetails && newCardDetails.num && newCardDetails.exp) {
             try {
-                // עדכון זיכרון זמני לטובת הסליקה
+                // עדכון זמני
                 u.name = name || u.name; 
                 u.phone = phone || u.phone; 
                 u.email = email || u.email; 
                 u.tz = tz || u.tz;
                 
-                // ✅ חיוב 0.1 ₪
-                const r = await chargeKesher(u, 0.1, "בדיקת כרטיס (0.1 ₪)", newCardDetails);
+                // ✅ חיוב 1 ₪ (J4)
+                const r = await chargeKesher(u, 1, "בדיקת כרטיס (1 ₪)", newCardDetails);
                 
                 if (r.success && r.token) {
-                    // ✅ שמירה מהתוצאה של chargeKesher
                     updateData.token = fixToken(r.token);
-                    updateData.lastExpiry = r.finalExpiry;
-                    updateData.lastCardDigits = r.currentCardDigits;
+                    // כאן שומרים את התוקף שהתהפך (YYMM) כי זה מה שהשרת מחזיר ב-Logic שלנו
+                    updateData.lastExpiry = r.expiry; 
+                    updateData.lastCardDigits = newCardDetails.num.slice(-4);
                     
-                    u.totalDonated += 0.1;
-                    u.donationsHistory.push({ amount: 0.1, note: "שמירת כרטיס (0.1 ₪)", status: 'success', date: new Date() });
+                    u.totalDonated += 1;
+                    u.donationsHistory.push({ amount: 1, note: "שמירת כרטיס (1 ₪)", status: 'success', date: new Date() });
                 } else {
                     return res.json({ success: false, error: "אימות נכשל: " + (r.data.Description || "סירוב") });
                 }
-            } catch(e) { return res.json({ success: false, error: "תקלה בתקשורת לשמירת הכרטיס" }); }
+            } catch(e) { return res.json({ success: false, error: "תקלה: " + e.message }); }
         }
 
         Object.assign(u, updateData);
@@ -276,7 +283,7 @@ app.post('/admin/update-profile', async (req, res) => {
     } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// שאר ה-Routes ללא שינוי
+// שאר ה-Routes
 app.post('/save-push-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { fcmToken: req.body.token }); res.json({ success: true }); });
 app.post('/delete-pending', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } }); res.json({ success: true }); });
 app.post('/reset-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "" }); res.json({ success: true }); });
