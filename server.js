@@ -144,7 +144,7 @@ cron.schedule('0 8 * * *', async () => {
             }
         }
 
-        // חודשי
+        // חודשי או מיידי-ממתין
         const isChargeDay = (u.billingPreference === today);
         const isImmediateUser = (u.billingPreference === 0);
 
@@ -248,17 +248,18 @@ app.post('/admin/update-profile', async (req, res) => {
 
 const PASS = "admin1234";
 
-// ✅ 1. סטטיסטיקות משודרגות (תקופה + חודש נוכחי + מספר פעולות)
+// ✅ סטטיסטיקות משודרגות: כולל מספר תורמים ייחודיים
 app.post('/admin/stats', async (req, res) => {
     if(req.body.password !== PASS) return res.json({ success: false }); 
     const { fromDate, toDate } = req.body;
     
-    // טווח מסונן
+    // חישוב טווח נבחר
     let start = fromDate ? new Date(fromDate) : new Date(0); 
+    start.setHours(0,0,0,0);
     let end = toDate ? new Date(toDate) : new Date(); 
     end.setHours(23, 59, 59, 999);
 
-    // חודש נוכחי (תמיד מחושב אוטומטית)
+    // חישוב חודש נוכחי
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
@@ -268,17 +269,20 @@ app.post('/admin/stats', async (req, res) => {
     let totalRange = 0;
     let countRange = 0;
     let totalMonth = 0;
+    let uniqueDonors = new Set(); // סט לתורמים ייחודיים בטווח
     
     users.forEach(u => u.donationsHistory?.forEach(d => { 
         let dDate = new Date(d.date);
         if (d.status === 'success') {
             const amount = d.amount || 0;
-            // בדיקת טווח מסונן
+            
+            // בתוך הטווח שנבחר במסנן
             if (dDate >= start && dDate <= end) {
                 totalRange += amount;
                 countRange++;
+                uniqueDonors.add(u._id.toString());
             }
-            // בדיקת חודש נוכחי (ללא קשר לסינון)
+            // בתוך החודש הנוכחי (ללא קשר למסנן)
             if (dDate >= startOfMonth && dDate <= endOfMonth) {
                 totalMonth += amount;
             }
@@ -290,7 +294,8 @@ app.post('/admin/stats', async (req, res) => {
         stats: { 
             totalDonated: totalRange, 
             totalDonations: countRange, 
-            totalUsers: users.length,
+            totalUsers: users.length, // סה"כ משתמשים במערכת
+            uniqueDonorsRange: uniqueDonors.size, // סה"כ תורמים בטווח שנבחר
             totalMonth: totalMonth
         } 
     });
