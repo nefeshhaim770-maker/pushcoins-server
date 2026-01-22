@@ -3,72 +3,521 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ניהול קופה</title>
+    <title>ניהול נפש החיים</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        body { background: #f4f6f9; font-family: 'Segoe UI', sans-serif; margin: 0; }
-        .sidebar { width: 250px; height: 100vh; background: #343a40; color: white; position: fixed; right: 0; top: 0; padding: 20px; transition: transform 0.3s; z-index: 1000; }
-        .main { margin-right: 250px; padding: 20px; transition: margin 0.3s; }
-        @media (max-width: 768px) { .sidebar { transform: translateX(100%); width: 260px; } .sidebar.active { transform: translateX(0); } .main { margin-right: 0; padding-top: 60px; } .menu-toggle { display: block !important; } }
-        .menu-toggle { display: none; position: fixed; top: 15px; right: 15px; z-index: 1100; background: #343a40; color: white; border: none; padding: 10px; border-radius: 5px; }
-        #login-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: #e9ecef; z-index:9999; display: flex; justify-content: center; align-items: center; }
-        .login-box { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 90%; max-width: 400px; text-align: center; }
-        .nav-btn { cursor: pointer; padding: 12px; margin-bottom: 5px; border-radius: 8px; transition: 0.2s; color: rgba(255,255,255,0.8); text-decoration: none; display: block; } .nav-btn:hover { background: rgba(255,255,255,0.1); color: white; }
+        body { background: #f0f2f5; font-family: 'Segoe UI', sans-serif; padding-bottom: 50px; }
+        .stat-card { background: white; border-radius: 12px; padding: 10px; text-align: center; box-shadow: 0 3px 10px rgba(0,0,0,0.08); height: 100%; display: flex; flex-direction: column; justify-content: center; }
+        .user-card { background: white; border-radius: 10px; padding: 15px; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); cursor: pointer; transition: 0.2s; border-right: 4px solid transparent; }
+        .user-card:active { background: #e9ecef; }
+        .user-card.has-basket { border-right-color: #ffc107; }
+        .modal-header { background: #0d6efd; color: white; }
+        .modal-title { font-weight: bold; }
+        .nav-tabs .nav-link { color: #495057; }
+        .nav-tabs .nav-link.active { font-weight: bold; color: #0d6efd; }
+
+        #login-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(135deg, #0d6efd, #0a58ca);
+            z-index: 9999; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+        }
+        .login-box {
+            background: white; padding: 30px; border-radius: 20px;
+            width: 90%; max-width: 350px; text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .password-wrapper { position: relative; }
+        .password-toggle {
+            position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+            cursor: pointer; color: #6c757d; z-index: 10;
+        }
     </style>
 </head>
 <body>
-<button class="menu-toggle shadow" onclick="document.getElementById('sidebar').classList.toggle('active')"><i class="fas fa-bars"></i></button>
-<div id="login-overlay">
+
+<div id="login-screen">
     <div class="login-box">
-        <h3 class="fw-bold mb-4">כניסת מנהל</h3>
-        <div class="input-group mb-3">
-            <input type="password" id="admin-pass" class="form-control" placeholder="סיסמה" onkeydown="if(event.key==='Enter') login()">
-            <button class="btn btn-outline-secondary" type="button" onclick="togglePass()"><i class="fas fa-eye" id="eye-icon"></i></button>
+        <img src="https://www.nefesh-ha-chaim.org/icons/logo.png" width="60" class="mb-3 rounded-circle">
+        <h4 class="mb-4 fw-bold text-primary">כניסת מנהל</h4>
+        <div class="password-wrapper mb-3">
+            <input type="password" id="admin-pass-input" class="form-control text-center" placeholder="סיסמה">
+            <i class="fas fa-eye password-toggle" onclick="togglePassword('admin-pass-input', this)"></i>
         </div>
-        <button class="btn btn-primary w-100 btn-lg" onclick="login()">כניסה</button>
+        <button class="btn btn-primary w-100 rounded-pill shadow" onclick="doLogin()">כניסה למערכת</button>
+        <div id="login-error" class="text-danger small mt-3 d-none fw-bold"><i class="fas fa-exclamation-circle"></i> סיסמה שגויה</div>
     </div>
 </div>
-<div class="sidebar shadow" id="sidebar">
-    <h4 class="mb-4 fw-bold">ניהול קופה</h4>
-    <div onclick="location.reload()" class="nav-btn"><i class="fas fa-home me-2"></i> ראשי</div>
-    <div onclick="openPush()" class="nav-btn"><i class="fas fa-paper-plane me-2"></i> הודעה</div>
-    <div onclick="recalc()" class="nav-btn"><i class="fas fa-sync me-2"></i> חישוב מחדש</div>
-    <div onclick="location.reload()" class="nav-btn text-danger mt-5"><i class="fas fa-sign-out-alt me-2"></i> יציאה</div>
+
+<div class="container py-3" id="main-content" style="display: none;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold text-primary m-0"><i class="fas fa-chart-line me-2"></i>דשבורד</h5>
+        <button class="btn btn-sm btn-danger rounded-pill px-3" onclick="location.reload()">יציאה</button>
+    </div>
+
+    <div class="card mb-3 p-3 shadow-sm border-0">
+        <div class="row g-2 align-items-end mb-3">
+            <div class="col-5">
+                <label class="small text-muted fw-bold">מתאריך</label>
+                <input type="date" id="filter-from" class="form-control form-control-sm">
+            </div>
+            <div class="col-5">
+                <label class="small text-muted fw-bold">עד תאריך</label>
+                <input type="date" id="filter-to" class="form-control form-control-sm">
+            </div>
+            <div class="col-2">
+                <button class="btn btn-primary btn-sm w-100" id="btn-filter" onclick="refreshData()"><i class="fas fa-filter"></i></button>
+            </div>
+        </div>
+        
+        <div class="row g-2 text-center">
+            <div class="col-6">
+                <div class="stat-card">
+                    <small class="text-muted d-block mb-1">סה"כ לתקופה</small>
+                    <span class="fw-bold text-success fs-4" id="stat-total">0</span>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="stat-card">
+                    <small class="text-muted d-block mb-1">סה"כ החודש</small>
+                    <span class="fw-bold text-primary fs-4" id="stat-month">0</span>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="stat-card">
+                    <small class="text-muted d-block mb-1">מספר תורמים</small>
+                    <span class="fw-bold text-dark fs-5" id="stat-donors">0</span>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="stat-card">
+                    <small class="text-muted d-block mb-1">מספר פעולות</small>
+                    <span class="fw-bold text-dark fs-5" id="stat-count">0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex gap-2 mb-3">
+        <div class="flex-grow-1 position-relative">
+            <input type="text" id="search-box" class="form-control" placeholder="חיפוש: שם, טלפון, תז, מייל..." oninput="filterUsers()">
+            <i class="fas fa-search position-absolute top-50 end-0 translate-middle-y me-3 text-muted"></i>
+        </div>
+        <button class="btn btn-outline-primary" id="btn-refresh" onclick="refreshData()">
+            <i class="fas fa-sync-alt"></i>
+        </button>
+        <button class="btn btn-warning text-white" onclick="sendPush()">
+            <i class="fas fa-bell"></i>
+        </button>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+        <small class="text-muted fw-bold">רשימת משתמשים (<span id="user-count-display">0</span>)</small>
+    </div>
+
+    <div id="users-list">
+        <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
+    </div>
 </div>
-<div class="main" id="main"><h2 class="mb-4">לוח בקרה</h2><div class="row mb-4"><div class="col-4"><div class="p-3 bg-white rounded shadow-sm text-center border-bottom border-primary border-4"><small class="text-muted">סה"כ</small><h4 id="s-total" class="fw-bold m-0">0</h4></div></div><div class="col-4"><div class="p-3 bg-white rounded shadow-sm text-center border-bottom border-success border-4"><small class="text-muted">תורמים</small><h4 id="s-users" class="fw-bold m-0">0</h4></div></div><div class="col-4"><div class="p-3 bg-white rounded shadow-sm text-center border-bottom border-warning border-4"><small class="text-muted">פעולות</small><h4 id="s-count" class="fw-bold m-0">0</h4></div></div></div><div class="bg-white p-3 rounded shadow-sm mb-3 d-flex gap-2"><input type="text" id="search" class="form-control" placeholder="חיפוש..." onkeyup="filter()"><input type="date" id="date-filter" class="form-control" style="max-width: 150px;" onchange="filter()"></div><div class="bg-white rounded shadow-sm overflow-hidden"><div class="table-responsive"><table class="table table-hover mb-0 align-middle"><thead class="table-light"><tr><th>שם</th><th>פרטים</th><th>מזהים</th><th>תרומות</th><th>ניהול</th></tr></thead><tbody id="tbody"></tbody></table></div></div></div>
-<div class="modal fade" id="pushModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header bg-primary text-white"><h5 class="m-0">שליחת הודעה</h5></div><div class="modal-body"><input type="text" id="p-title" class="form-control mb-2" placeholder="כותרת"><textarea id="p-body" class="form-control mb-3" placeholder="תוכן"></textarea><button class="btn btn-primary w-100" onclick="sendPush()">שלח</button></div></div></div></div>
-<div class="modal fade" id="historyModal" tabindex="-1"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="m-0">היסטוריה</h5></div><div class="modal-body p-0"><table class="table table-striped mb-0 text-center small"><thead class="table-dark"><tr><th>תאריך</th><th>סכום</th><th>הערה</th></tr></thead><tbody id="history-tbody"></tbody></table></div></div></div></div>
-<div class="modal fade" id="editModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>עריכה</h5></div><div class="modal-body"><input type="hidden" id="e-id"><label>שם</label><input type="text" id="e-name" class="form-control mb-2"><label>טלפון</label><input type="text" id="e-phone" class="form-control mb-2"><label>מייל</label><input type="text" id="e-email" class="form-control mb-2"><label>ת"ז</label><input type="text" id="e-tz" class="form-control mb-2"><label class="text-danger">Token</label><input type="text" id="e-token" class="form-control mb-3 text-danger"><button class="btn btn-success w-100" onclick="save()">שמור</button></div></div></div></div>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<div class="modal fade" id="userModal" tabindex="-1">
+    <div class="modal-dialog modal-fullscreen-sm-down">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modal-user-name">שם המשתמש</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <ul class="nav nav-tabs nav-fill" role="tablist">
+                    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-settings">הגדרות</a></li>
+                    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-basket">הסל</a></li>
+                    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-history">היסטוריה</a></li>
+                    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-actions">פעולות</a></li>
+                </ul>
+
+                <div class="tab-content p-3">
+                    <div class="tab-pane fade show active" id="tab-settings">
+                        <input type="hidden" id="edit-user-id">
+                        <div class="mb-2">
+                            <label class="small text-muted">שם מלא</label>
+                            <input id="edit-name" class="form-control">
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-6">
+                                <label class="small text-muted">טלפון</label>
+                                <input id="edit-phone" class="form-control">
+                            </div>
+                            <div class="col-6">
+                                <label class="small text-muted">ת"ז</label>
+                                <input id="edit-tz" class="form-control">
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="small text-muted">אימייל</label>
+                            <input id="edit-email" class="form-control">
+                        </div>
+                        <hr>
+                        <div class="mb-2">
+                            <label class="small fw-bold text-primary">יום חיוב הסל</label>
+                            <div class="input-group">
+                                <select id="edit-billing-type" class="form-select text-center" onchange="toggleAdminBillingInput()">
+                                    <option value="0">מיידי (ללא סל)</option>
+                                    <option value="1">יום בחודש</option>
+                                </select>
+                                <input type="number" id="edit-billing-day" class="form-control text-center d-none" placeholder="יום (1-31)" min="1" max="31" oninput="validateDay(this)">
+                            </div>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="small fw-bold text-primary">הוראת קבע יומית (₪)</label>
+                            <input id="edit-daily" type="number" class="form-control text-center">
+                        </div>
+                        <div class="form-check mb-3 bg-light p-2 rounded border">
+                            <input class="form-check-input ms-2" type="checkbox" id="edit-immediate">
+                            <label class="form-check-label small fw-bold" for="edit-immediate">הוראת קבע: חיוב מיידי (לא לסל)</label>
+                        </div>
+                        
+                        <div class="mb-2">
+                            <label class="small fw-bold text-danger">טוקן אשראי (מתקדם)</label>
+                            <input id="edit-token" class="form-control text-muted" style="font-size: 0.8rem; background: #fff5f5;">
+                        </div>
+
+                        <div class="mb-4 position-relative">
+                            <label class="small fw-bold text-primary">קוד אבטחה (PIN)</label>
+                            <input id="edit-pin" class="form-control text-center letter-spacing-2" maxlength="4" type="password">
+                            <i class="fas fa-eye password-toggle end-0 me-3" style="left:auto;" onclick="togglePassword('edit-pin', this)"></i>
+                        </div>
+                        <button class="btn btn-success w-100 rounded-pill py-2 fw-bold shadow-sm" onclick="saveUserChanges()">שמור שינויים</button>
+                    </div>
+
+                    <div class="tab-pane fade" id="tab-basket">
+                        <div id="basket-content" class="list-group mb-3"></div>
+                        <div class="d-grid">
+                            <button class="btn btn-outline-primary btn-sm dashed-border" onclick="adminAddToBasket()">
+                                <i class="fas fa-plus-circle me-1"></i> הוסף פריט לסל ידנית
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade" id="tab-history">
+                        <div class="table-responsive border rounded" style="max-height: 350px;">
+                            <table class="table table-sm table-striped mb-0" style="font-size: 0.85rem;">
+                                <thead class="table-light sticky-top"><tr><th>תאריך</th><th>סכום</th><th>הערה</th><th>סטטוס</th></tr></thead>
+                                <tbody id="history-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade" id="tab-actions">
+                        <div class="d-grid gap-3 pt-2">
+                            <button class="btn btn-primary py-3 shadow-sm" onclick="adminChargeImmediate()">
+                                <i class="fas fa-bolt fa-lg mb-2"></i><br>
+                                חיוב כרטיס מיידי (עכשיו)
+                            </button>
+                            <hr class="w-100 my-2">
+                            <button class="btn btn-outline-danger" onclick="deleteUser()">
+                                <i class="fas fa-trash-alt me-2"></i> מחיקת משתמש לצמיתות
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
-    const API = "https://pushcoins-server.onrender.com"; let PASS = ""; let users = [];
-    const modals = { push: new bootstrap.Modal('#pushModal'), history: new bootstrap.Modal('#historyModal'), edit: new bootstrap.Modal('#editModal') };
-    function togglePass() { const input = document.getElementById('admin-pass'); const icon = document.getElementById('eye-icon'); if (input.type === "password") { input.type = "text"; icon.classList.remove('fa-eye'); icon.classList.add('fa-eye-slash'); } else { input.type = "password"; icon.classList.remove('fa-eye-slash'); icon.classList.add('fa-eye'); } }
-    async function login() {
-        const input = document.getElementById('admin-pass').value; if(!input) return;
-        Swal.fire({title: 'מתחבר...', didOpen: () => Swal.showLoading()});
-        try {
-            const res = await fetch(`${API}/admin/stats`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ password: input }) });
-            const data = await res.json();
-            if (data.success) { PASS = input; Swal.close(); document.getElementById('login-overlay').style.display = 'none'; document.getElementById('s-total').innerText = '₪'+data.stats.totalDonated.toLocaleString(); document.getElementById('s-users').innerText = data.stats.totalUsers; document.getElementById('s-count').innerText = data.stats.totalDonations; loadUsers(); } 
-            else Swal.fire('שגיאה', 'סיסמה שגויה', 'error');
-        } catch (e) { Swal.fire('תקלה', 'שגיאת שרת', 'error'); }
+    const API = "https://pushcoins-server.onrender.com";
+    let usersData = [];
+    let currentUser = null;
+    let ADMIN_PASS = "";
+
+    // ✅ ולידציה ליום בחודש (1-31)
+    function validateDay(el) {
+        if(el.value > 31) el.value = 31;
+        if(el.value < 1 && el.value !== "") el.value = 1;
+        el.value = el.value.replace(/[^0-9]/g, '');
     }
-    async function loadUsers() { const res = await fetch(`${API}/admin/get-users`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ password: PASS }) }); const data = await res.json(); if(data.success) { users = data.users; filter(); } }
-    function filter() {
-        const q = document.getElementById('search').value.toLowerCase(); const date = document.getElementById('date-filter').value; const tbody = document.getElementById('tbody'); tbody.innerHTML = '';
-        const filtered = users.filter(u => { const txt = (u.name+u.phone+u.email+u.tz).toLowerCase(); if(!txt.includes(q)) return false; if(date) { const last = u.donationsHistory?.length ? new Date(u.donationsHistory[u.donationsHistory.length-1].date).toISOString().split('T')[0] : ''; if(last !== date) return false; } return true; });
-        filtered.forEach(u => { tbody.innerHTML += `<tr><td><b>${u.name||'-'}</b></td><td><small>${u.phone||''}<br>${u.email||''}</small></td><td><small>${u.tz||'-'}</small><br>${u.token?'✅':'❌'}</td><td class="text-success fw-bold">₪${u.totalDonated}</td><td><button class="btn btn-sm btn-outline-info" onclick="openHistory('${u._id}')"><i class="fas fa-clock"></i></button> <button class="btn btn-sm btn-outline-primary" onclick="openEdit('${u._id}')"><i class="fas fa-pen"></i></button> <button class="btn btn-sm btn-outline-danger" onclick="del('${u._id}')"><i class="fas fa-trash"></i></button></td></tr>`; });
+
+    function toggleAdminBillingInput() {
+        const type = document.getElementById('edit-billing-type').value;
+        const input = document.getElementById('edit-billing-day');
+        if (type === '1') {
+            input.classList.remove('d-none');
+            if(!input.value || input.value == 0) input.value = 1;
+        } else {
+            input.classList.add('d-none');
+            input.value = 0;
+        }
     }
-    function openHistory(id) { const u = users.find(x => x._id === id); const tbody = document.getElementById('history-tbody'); tbody.innerHTML = ''; if(u.donationsHistory?.length) { [...u.donationsHistory].reverse().forEach(d => { if(d.status === 'success') { const date = new Date(d.date).toLocaleDateString('he-IL'); tbody.innerHTML += `<tr><td>${date}</td><td class="fw-bold text-success">₪${d.amount}</td><td><small>${d.note||'-'}</small></td></tr>`; } }); } else tbody.innerHTML = '<tr><td colspan="3">אין תרומות</td></tr>'; modals.history.show(); }
-    function openEdit(id) { const u = users.find(x => x._id === id); document.getElementById('e-id').value = u._id; document.getElementById('e-name').value = u.name||''; document.getElementById('e-phone').value = u.phone||''; document.getElementById('e-email').value = u.email||''; document.getElementById('e-tz').value = u.tz||''; document.getElementById('e-token').value = u.token||''; modals.edit.show(); }
-    async function save() { const id = document.getElementById('e-id').value; const data = { name: document.getElementById('e-name').value, phone: document.getElementById('e-phone').value, email: document.getElementById('e-email').value, tz: document.getElementById('e-tz').value, token: document.getElementById('e-token').value }; await fetch(`${API}/admin/update-user-full`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:PASS, userId:id, userData:data})}); modals.edit.hide(); loadUsers(); Swal.fire('נשמר', '', 'success'); }
-    async function del(id) { if(confirm('למחוק?')) { await fetch(`${API}/admin/delete-user`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:PASS, userId:id})}); loadUsers(); } }
-    async function recalc() { Swal.fire({title:'מחשב...', didOpen:()=>Swal.showLoading()}); const res = await fetch(`${API}/admin/recalc-totals`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:PASS})}); const d = await res.json(); Swal.fire('בוצע', `עודכנו ${d.count}`, 'success'); loadUsers(); }
-    function openPush() { modals.push.show(); }
-    async function sendPush() { const title = document.getElementById('p-title').value; const body = document.getElementById('p-body').value; modals.push.hide(); Swal.fire({title:'שולח...', didOpen:()=>Swal.showLoading()}); const res = await fetch(`${API}/admin/send-push`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:PASS, title, body})}); const d = await res.json(); Swal.fire(d.success?'נשלח':'שגיאה', '', d.success?'success':'error'); }
+
+    function togglePassword(inputId, icon) {
+        const input = document.getElementById(inputId);
+        if (input.type === "password") {
+            input.type = "text";
+            icon.classList.remove("fa-eye");
+            icon.classList.add("fa-eye-slash");
+        } else {
+            input.type = "password";
+            icon.classList.remove("fa-eye-slash");
+            icon.classList.add("fa-eye");
+        }
+    }
+
+    window.onload = function() {
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('filter-to').value = today;
+        let d = new Date(); d.setMonth(d.getMonth() - 1);
+        document.getElementById('filter-from').value = d.toISOString().split('T')[0];
+    };
+
+    function doLogin() {
+        const pass = document.getElementById('admin-pass-input').value;
+        const err = document.getElementById('login-error');
+        if(pass === 'admin1234') {
+            ADMIN_PASS = pass;
+            err.classList.add('d-none');
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('main-content').style.display = 'block';
+            refreshData();
+        } else {
+            err.classList.remove('d-none');
+        }
+    }
+
+    function refreshData() {
+        const btn = document.getElementById('btn-refresh');
+        const filterBtn = document.getElementById('btn-filter');
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        filterBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        Promise.all([loadStats(), loadUsers()]).then(() => {
+            btn.innerHTML = '<i class="fas fa-sync-alt"></i>';
+            filterBtn.innerHTML = '<i class="fas fa-filter"></i>';
+        });
+    }
+
+    function loadStats() {
+        const fromDate = document.getElementById('filter-from').value;
+        const toDate = document.getElementById('filter-to').value;
+
+        return fetch(`${API}/admin/stats`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ password: ADMIN_PASS, fromDate, toDate })
+        }).then(r=>r.json()).then(d => {
+            if(d.success) {
+                document.getElementById('stat-total').innerText = '₪' + d.stats.totalDonated.toLocaleString();
+                document.getElementById('stat-month').innerText = '₪' + d.stats.totalMonth.toLocaleString();
+                document.getElementById('stat-count').innerText = d.stats.totalDonations;
+                document.getElementById('stat-donors').innerText = d.stats.uniqueDonorsRange || 0;
+            }
+        });
+    }
+
+    function loadUsers() {
+        return fetch(`${API}/admin/get-users`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ password: ADMIN_PASS })
+        }).then(r=>r.json()).then(d => {
+            if(d.success) {
+                usersData = d.users;
+                filterUsersByDateAndSearch();
+            }
+        });
+    }
+
+    function filterUsersByDateAndSearch() {
+        const q = document.getElementById('search-box').value.toLowerCase();
+        const fromDateVal = document.getElementById('filter-from').value;
+        const toDateVal = document.getElementById('filter-to').value;
+        const start = fromDateVal ? new Date(fromDateVal) : new Date(0);
+        start.setHours(0,0,0,0);
+        const end = toDateVal ? new Date(toDateVal) : new Date();
+        end.setHours(23,59,59,999);
+
+        const filtered = usersData.filter(u => {
+            const name = (u.name || '').toLowerCase();
+            const phone = (u.phone || '').replace(/\D/g, ''); 
+            const email = (u.email || '').toLowerCase();
+            const tz = (u.tz || '');
+            const token = (u.token || '');
+            const matchesSearch = name.includes(q) || phone.includes(q) || email.includes(q) || tz.includes(q) || token.includes(q);
+
+            let hasDonationInDate = false;
+            if (u.donationsHistory && u.donationsHistory.length > 0) {
+                hasDonationInDate = u.donationsHistory.some(d => {
+                    if (d.status !== 'success') return false;
+                    let dDate = new Date(d.date);
+                    return dDate >= start && dDate <= end;
+                });
+            }
+            return matchesSearch && hasDonationInDate;
+        });
+        
+        if (q.length > 0) {
+             const searchOnly = usersData.filter(u => {
+                const name = (u.name || '').toLowerCase();
+                const phone = (u.phone || '').replace(/\D/g, ''); 
+                const email = (u.email || '').toLowerCase();
+                const tz = (u.tz || '');
+                const token = (u.token || '');
+                return name.includes(q) || phone.includes(q) || email.includes(q) || tz.includes(q) || token.includes(q);
+             });
+             renderUsers(searchOnly);
+        } else {
+             renderUsers(filtered);
+        }
+    }
+    
+    function filterUsers() { filterUsersByDateAndSearch(); }
+
+    function renderUsers(list) {
+        const container = document.getElementById('users-list');
+        document.getElementById('user-count-display').innerText = list.length;
+        container.innerHTML = '';
+        if(list.length === 0) { container.innerHTML = '<div class="text-center text-muted mt-4">לא נמצאו משתמשים בטווח/חיפוש זה</div>'; return; }
+
+        list.forEach(u => {
+            const basketCount = u.pendingDonations ? u.pendingDonations.length : 0;
+            const basketClass = basketCount > 0 ? 'has-basket' : '';
+            const basketBadge = basketCount > 0 ? `<span class="badge bg-warning text-dark ms-1 rounded-pill small">${basketCount} בסל</span>` : '';
+            
+            let html = `
+            <div class="user-card ${basketClass} d-flex justify-content-between align-items-center" onclick="openUserModal('${u._id}')">
+                <div style="flex:1; min-width:0;">
+                    <div class="fw-bold text-truncate">${u.name || 'ללא שם'} ${basketBadge}</div>
+                    <div class="small text-muted text-truncate">${u.phone || ''} | ${u.email || ''}</div>
+                    <div class="small text-secondary mt-1"><i class="fas fa-coins text-warning me-1"></i> יומי: ₪${u.recurringDailyAmount || 0}</div>
+                </div>
+                <div class="text-end ms-2">
+                    <div class="fw-bold text-success">₪${u.totalDonated?.toLocaleString() || 0}</div>
+                    <div class="small text-muted" style="font-size:0.7rem">${u.tz || ''}</div>
+                </div>
+            </div>`;
+            container.innerHTML += html;
+        });
+    }
+
+    function openUserModal(id) {
+        currentUser = usersData.find(u => u._id === id);
+        if(!currentUser) return;
+
+        document.getElementById('modal-user-name').innerText = currentUser.name || 'משתמש';
+        document.getElementById('edit-user-id').value = currentUser._id;
+        document.getElementById('edit-name').value = currentUser.name || '';
+        document.getElementById('edit-phone').value = currentUser.phone || '';
+        document.getElementById('edit-email').value = currentUser.email || '';
+        document.getElementById('edit-tz').value = currentUser.tz || '';
+        
+        // הגדרת יום החיוב
+        if (currentUser.billingPreference > 0) {
+            document.getElementById('edit-billing-type').value = '1';
+            document.getElementById('edit-billing-day').value = currentUser.billingPreference;
+            document.getElementById('edit-billing-day').classList.remove('d-none');
+        } else {
+            document.getElementById('edit-billing-type').value = '0';
+            document.getElementById('edit-billing-day').classList.add('d-none');
+        }
+
+        document.getElementById('edit-daily').value = currentUser.recurringDailyAmount || 0;
+        document.getElementById('edit-immediate').checked = currentUser.recurringImmediate === true;
+        document.getElementById('edit-pin').value = currentUser.securityPin || '';
+        
+        // ✅ מילוי שדה הטוקן
+        document.getElementById('edit-token').value = currentUser.token || '';
+
+        renderBasket();
+        
+        const historyBody = document.getElementById('history-table-body');
+        historyBody.innerHTML = '';
+        if(currentUser.donationsHistory) {
+            [...currentUser.donationsHistory].reverse().forEach(h => {
+                const date = new Date(h.date).toLocaleDateString('he-IL');
+                const status = h.status === 'success' ? '<span class="badge bg-success">אושר</span>' : '<span class="badge bg-danger">נכשל</span>';
+                historyBody.innerHTML += `<tr><td>${date}</td><td class="fw-bold">₪${h.amount}</td><td class="text-truncate" style="max-width:100px;">${h.note||''}</td><td>${status}</td></tr>`;
+            });
+        }
+        new bootstrap.Modal(document.getElementById('userModal')).show();
+    }
+
+    function renderBasket() {
+        const basketDiv = document.getElementById('basket-content');
+        basketDiv.innerHTML = '';
+        if(currentUser.pendingDonations && currentUser.pendingDonations.length > 0) {
+            currentUser.pendingDonations.forEach(item => {
+                basketDiv.innerHTML += `
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div><span class="fw-bold text-primary">₪${item.amount}</span> <small class="text-muted ms-1">${item.note||''}</small></div>
+                    <button class="btn btn-sm btn-outline-danger border-0" onclick="adminRemoveFromBasket('${item._id}')"><i class="fas fa-trash"></i></button>
+                </div>`;
+            });
+        } else { basketDiv.innerHTML = '<div class="text-center text-muted small p-3 bg-light rounded">הסל ריק</div>'; }
+    }
+
+    async function adminRemoveFromBasket(itemId) {
+        if(!confirm('להסיר פריט זה?')) return;
+        await fetch(`${API}/admin/remove-from-basket`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, itemId }) });
+        refreshCurrentUser();
+    }
+
+    async function adminAddToBasket() {
+        const { value: amount } = await Swal.fire({ title: 'סכום להוספה', input: 'number' });
+        if(!amount) return;
+        const { value: note } = await Swal.fire({ title: 'הערה', input: 'text' });
+        await fetch(`${API}/admin/add-donation-manual`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, amount, type: 'basket', note }) });
+        refreshCurrentUser();
+        Swal.fire('נוסף לסל', '', 'success');
+    }
+
+    async function adminChargeImmediate() {
+        if(!confirm('לחייב מיידית?')) return;
+        const { value: amount } = await Swal.fire({ title: 'סכום לחיוב', input: 'number' });
+        if(!amount) return;
+        const { value: note } = await Swal.fire({ title: 'הערה', input: 'text' });
+        Swal.fire({title:'מחייב...', didOpen:()=>Swal.showLoading()});
+        const res = await fetch(`${API}/admin/add-donation-manual`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, amount, type: 'immediate', note }) });
+        const d = await res.json();
+        if(d.success) { Swal.fire('חוייב בהצלחה', '', 'success'); refreshCurrentUser(); } else { Swal.fire('נכשל', d.error, 'error'); }
+    }
+
+    async function saveUserChanges() {
+        let billingPref = 0;
+        if (document.getElementById('edit-billing-type').value === '1') {
+            billingPref = parseInt(document.getElementById('edit-billing-day').value) || 1;
+        }
+
+        const updateData = {
+            name: document.getElementById('edit-name').value,
+            phone: document.getElementById('edit-phone').value,
+            email: document.getElementById('edit-email').value,
+            tz: document.getElementById('edit-tz').value,
+            billingPreference: billingPref,
+            recurringDailyAmount: parseInt(document.getElementById('edit-daily').value),
+            recurringImmediate: document.getElementById('edit-immediate').checked,
+            securityPin: document.getElementById('edit-pin').value,
+            // ✅ עדכון טוקן
+            token: document.getElementById('edit-token').value
+        };
+
+        await fetch(`${API}/admin/update-user-full`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, userData: updateData }) });
+        refreshCurrentUser();
+        Swal.fire('נשמר', '', 'success');
+    }
+
+    async function refreshCurrentUser() { await loadUsers(); currentUser = usersData.find(u => u._id === currentUser._id); renderBasket(); loadStats(); }
+
+    async function sendPush() {
+        const { value: title } = await Swal.fire({ title: 'כותרת', input: 'text' });
+        if(!title) return;
+        const { value: body } = await Swal.fire({ title: 'תוכן', input: 'text' });
+        if(title && body) fetch(`${API}/admin/send-push`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, title, body }) }).then(r=>r.json()).then(d => Swal.fire(d.success ? 'נשלח' : 'שגיאה'));
+    }
+    
+    async function deleteUser() {
+        if(confirm('למחוק לצמיתות?')) { await fetch(`${API}/admin/delete-user`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id }) }); location.reload(); }
+    }
 </script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
