@@ -39,8 +39,7 @@ const userSchema = new mongoose.Schema({
     billingPreference: { type: Number, default: 0 }, 
     recurringDailyAmount: { type: Number, default: 0 },
     recurringImmediate: { type: Boolean, default: false },
-    // ✅ שדה חדש: האם מותר להסיר מהסל (ברירת מחדל: כן)
-    canRemoveFromBasket: { type: Boolean, default: true },
+    canRemoveFromBasket: { type: Boolean, default: true }, // השדה לשליטה על הסל
     securityPin: { type: String, default: "" },
     fcmToken: { type: String, default: "" },
     donationsHistory: [{ amount: Number, date: { type: Date, default: Date.now }, note: String, status: String, failReason: String }],
@@ -223,10 +222,9 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// ✅ מחיקת פריט מהסל ע"י משתמש (כולל בדיקת הרשאה)
+// מחיקת פריט מהסל ע"י משתמש (כולל בדיקת הרשאה)
 app.post('/delete-pending', async (req, res) => { 
     const u = await User.findById(req.body.userId);
-    // אם האדמין חסם את האפשרות להסיר
     if (u.canRemoveFromBasket === false) {
         return res.json({ success: false, error: "אין אפשרות להסיר פריטים מהסל (ננעל ע\"י המנהל)" });
     }
@@ -243,7 +241,6 @@ app.post('/admin/update-profile', async (req, res) => {
             recurringDailyAmount: parseInt(recurringDailyAmount)||0, 
             recurringImmediate: recurringImmediate===true, 
             securityPin,
-            // ✅ שמירת הגדרת ההסרה מהסל
             canRemoveFromBasket: canRemoveFromBasket 
         };
         
@@ -273,6 +270,7 @@ const PASS = "admin1234";
 app.post('/admin/stats', async (req, res) => {
     if(req.body.password !== PASS) return res.json({ success: false }); 
     const { fromDate, toDate } = req.body;
+    
     let start = fromDate ? new Date(fromDate) : new Date(0); start.setHours(0,0,0,0);
     let end = toDate ? new Date(toDate) : new Date(); end.setHours(23, 59, 59, 999);
     const now = new Date();
@@ -314,10 +312,17 @@ app.post('/admin/add-donation-manual', async (req, res) => {
     }
 });
 
-// ✅ מחיקת פריט מהסל ע"י אדמין (תמיד מותר)
 app.post('/admin/remove-from-basket', async (req, res) => {
     if(req.body.password !== PASS) return res.json({ success: false });
     await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.itemId } } });
+    res.json({ success: true });
+});
+
+// ✅ נתיב חדש: נעילה/פתיחה גורפת של הסל
+app.post('/admin/global-basket-lock', async (req, res) => {
+    if(req.body.password !== PASS) return res.json({ success: false });
+    const { allow } = req.body;
+    await User.updateMany({}, { canRemoveFromBasket: allow });
     res.json({ success: true });
 });
 
@@ -327,6 +332,7 @@ app.post('/admin/delete-user', async (req, res) => { if(req.body.password !== PA
 app.post('/admin/recalc-totals', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const users = await User.find(); let c=0; for (const u of users) { let t=0; if(u.donationsHistory) u.donationsHistory.forEach(d => { if(d.status==='success') t += d.amount||0; }); if(u.totalDonated!==t) { u.totalDonated=t; await u.save(); c++; } } res.json({ success: true, count: c }); });
 app.post('/admin/send-push', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const users = await User.find({ fcmToken: { $exists: true, $ne: "" } }); const tokens = users.map(u => u.fcmToken); if(tokens.length) { const response = await admin.messaging().sendMulticast({ notification: { title: req.body.title, body: req.body.body }, tokens }); res.json({ success: true, sentCount: response.successCount }); } else res.json({ success: false, error: "אין מכשירים" }); });
 app.post('/save-push-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { fcmToken: req.body.token }); res.json({ success: true }); });
+app.post('/delete-pending', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } }); res.json({ success: true }); });
 app.post('/reset-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "" }); res.json({ success: true }); });
 
 const PORT = process.env.PORT || 10000;
