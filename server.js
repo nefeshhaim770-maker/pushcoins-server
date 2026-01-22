@@ -10,7 +10,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// --- הגדרות Firebase ---
+// --- Firebase ---
 try {
     const serviceAccount = require('/etc/secrets/serviceAccountKey.json'); 
     admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
@@ -21,12 +21,12 @@ try {
     } catch (err) { console.log("⚠️ No Firebase Key"); }
 }
 
-// --- חיבור ל-DB ---
+// --- MongoDB ---
 mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
     .then(() => console.log('✅ DB Connected'))
     .catch(err => console.error('❌ DB Error:', err));
 
-// --- סכמת משתמש (גמישה) ---
+// --- Schema ---
 const userSchema = new mongoose.Schema({
     email: { type: String, sparse: true },
     phone: { type: String, sparse: true },
@@ -50,43 +50,50 @@ const User = mongoose.model('User', userSchema);
 // --- עזר ---
 function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
-// ✅ פונקציית תיקון טוקן (מהקוד שעבד)
+// ✅ פונקציית הטוקן שעבדה (עם ה-0)
 function fixToken(token) {
     if (!token) return "";
     let strToken = String(token).replace(/['"]+/g, '').trim();
     return (strToken.length > 0 && !strToken.startsWith('0')) ? '0' + strToken : strToken;
 }
 
-// --- מנוע חיוב (משוחזר במדויק לקוד שעבד) ---
+// --- מנוע חיוב (משוחזר במדויק לקוד שעבד לך!) ---
 async function chargeKesher(user, amount, note, cc = null) {
     const total = Math.round(parseFloat(amount) * 100);
-    const phone = (user.phone || "0500000000").replace(/\D/g, '');
-    const realIdToSend = user.tz || "000000000";
-    
-    const fullNameParts = (user.name || "Torem").trim().split(" ");
-    const firstName = fullNameParts[0];
-    const lastName = fullNameParts.length > 1 ? fullNameParts.slice(1).join(" ") : ".";
+    // ✅ לוגיקה מקורית לטלפון ות"ז
+    const safePhone = (user.phone || "0500000000").replace(/\D/g, '');
+    const realIdToSend = user.tz || "000000000"; 
+
+    // ✅ לוגיקה מקורית לשמות
+    const firstName = (user.name || "Torem").split(" ")[0];
+    const lastName = (user.name || "").split(" ").slice(1).join(" ") || ".";
 
     let tran = {
         Total: total, 
         Currency: 1, 
         CreditType: 1, 
-        ParamJ: "J4", 
+        ParamJ: "J4", // J4 תמיד עובד
         TransactionType: "debit", 
         ProjectNumber: "00001",
-        Phone: phone, FirstName: firstName, LastName: lastName, Mail: user.email || "no@mail.com",
-        ClientApiIdentity: realIdToSend, Id: realIdToSend, Details: note || ""
+        Phone: safePhone, 
+        FirstName: firstName, 
+        LastName: lastName, 
+        Mail: user.email || "no@mail.com",
+        ClientApiIdentity: realIdToSend, // ✅ בדיוק כמו שביקשת
+        Id: realIdToSend,                // ✅ בדיוק כמו שביקשת
+        Details: note || ""
     };
 
     if (cc) {
         tran.CreditNum = cc.num;
-        // ✅ התיקון הקריטי: המרה מ-MMYY (של המשתמש) ל-YYMM (של קשר)
-        // זה היה בקוד שעבד, והיה חסר בקודים האחרונים!
-        tran.Expiry = (cc.exp.length === 4) ? cc.exp.substring(2, 4) + cc.exp.substring(0, 2) : cc.exp;
+        // ✅ היפוך תאריך (חובה בקשר): MMYY -> YYMM
+        // מוודאים שאין / או רווחים לפני כן
+        let cleanExp = cc.exp.replace(/\D/g, ''); 
+        tran.Expiry = (cleanExp.length === 4) ? cleanExp.substring(2, 4) + cleanExp.substring(0, 2) : cleanExp;
         
         if (cc.cvv) tran.Cvv = cc.cvv;
     } else if (user.token) {
-        tran.Token = fixToken(user.token);
+        tran.Token = fixToken(user.token); // ✅ שימוש בטוקן המתוקן
         tran.Expiry = user.lastExpiry;
     } else throw new Error("No Payment Method");
 
@@ -109,7 +116,6 @@ cron.schedule('0 8 * * *', async () => {
     for (const u of users) {
         let saveUser = false;
 
-        // יומי
         if (u.recurringDailyAmount > 0) {
             if (u.recurringImmediate === true || u.billingPreference === 0) {
                 if(u.token) {
@@ -128,7 +134,6 @@ cron.schedule('0 8 * * *', async () => {
             }
         }
 
-        // חודשי
         let shouldChargeMonthly = (u.billingPreference === today) || (isLastDay && u.billingPreference > lastDayOfMonth);
 
         if (shouldChargeMonthly && u.pendingDonations.length > 0) {
@@ -183,8 +188,9 @@ app.post('/donate', async (req, res) => {
     const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin } = req.body;
     let u = await User.findById(userId);
     
-    // בדיקות גמישות
-    
+    // בדיקה בסיסית (לא קשוחה מדי כדי לא לשבור)
+    if (!u.name || !u.phone) return res.json({ success: false, error: "חסרים פרטי שם/טלפון" });
+
     if (u.securityPin && u.securityPin.trim() !== "") {
         if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" });
     }
@@ -196,7 +202,7 @@ app.post('/donate', async (req, res) => {
             const r = await chargeKesher(u, amount, note, !useToken ? ccDetails : null);
             if (r.success) {
                 if(r.data.Token) { 
-                    u.token = fixToken(r.data.Token); 
+                    u.token = fixToken(r.data.Token); // ✅ שמירה מתוקנת
                     u.lastExpiry = r.data.Expiry || ""; 
                     if(ccDetails) u.lastCardDigits = ccDetails.num.slice(-4); 
                 }
@@ -209,7 +215,7 @@ app.post('/donate', async (req, res) => {
                 if (/Duplicate|double|כפולה/i.test(err)) err = "הסכום צריך להיות שונה שלא יחשב כתרומה כפולה";
                 res.json({ success: false, error: err });
             }
-        } catch(e) { res.json({ success: false, error: "תקלת תקשורת" }); }
+        } catch(e) { res.json({ success: false, error: "תקלת תקשורת: " + e.message }); }
     } else {
         u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() });
         await u.save();
@@ -228,7 +234,6 @@ app.post('/admin/update-profile', async (req, res) => {
             recurringImmediate: recurringImmediate === true, 
             securityPin
         };
-        // עדכון רק אם יש ערך (גמישות)
         if(name) updateData.name = name;
         if(phone) updateData.phone = phone;
         if(email) updateData.email = email;
@@ -238,28 +243,34 @@ app.post('/admin/update-profile', async (req, res) => {
         
         if (newCardDetails && newCardDetails.num && newCardDetails.exp) {
             try {
-                // מעדכן פרטים בזיכרון לשליחה
+                // עדכון זיכרון זמני לטובת הסליקה
                 u.name = name || u.name; 
                 u.phone = phone || u.phone; 
                 u.email = email || u.email; 
                 u.tz = tz || u.tz;
                 
-                // ✅ חיוב 0.1 ₪ (הפונקציה chargeKesher תהפוך את התאריך לפורמט הנכון)
-                const r = await chargeKesher(u, 0.1, "בדיקת כרטיס (0.1 ₪)", newCardDetails);
+                // ✅ חיוב 0.1 (הפונקציה chargeKesher תהפוך את התאריך ותוסיף CVV)
+                const r = await chargeKesher(u, 0.1, "אימות כרטיס", newCardDetails);
                 
                 if (r.success && r.data.Token) {
-                    updateData.token = fixToken(r.data.Token);
-                    // כאן אנחנו רוצים לשמור את התוקף שהמשתמש הזין (MMYY) לתצוגה עתידית או שימוש חוזר
-                    // שימו לב: ה-API מחזיר Expiry לפעמים, אבל עדיף להשתמש במה שנשלח אם הצליח
-                    updateData.lastExpiry = r.data.Expiry || (newCardDetails.exp.length === 4 ? newCardDetails.exp.substring(2, 4) + newCardDetails.exp.substring(0, 2) : newCardDetails.exp);
+                    updateData.token = fixToken(r.data.Token); // ✅ שמירת טוקן עם 0
+                    
+                    // שמירת התוקף בפורמט שהגיע מהשרת (YYMM) או מה שהמשתמש הזין הפוך אם אין ברירה
+                    // בוא נשמור את מה שעבד הכי טוב: לשמור את מה שהמשתמש הקליד הפוך (YYMM) כדי ש-chargeKesher לא יהפוך אותו שוב?
+                    // לא! chargeKesher מצפה ל-MMYY מהמשתמש (או מה-DB) והופך ל-YYMM לפני השליחה.
+                    // לכן ב-DB נשמור MMYY נקי (כמו שבא מהלקוח, רק בלי סלשים)
+                    
+                    let cleanExp = newCardDetails.exp.replace(/\D/g, ''); 
+                    updateData.lastExpiry = cleanExp; // שומר MMYY נקי
+                    
                     updateData.lastCardDigits = newCardDetails.num.slice(-4);
                     
                     u.totalDonated += 0.1;
-                    u.donationsHistory.push({ amount: 0.1, note: "שמירת כרטיס (0.1 ₪)", status: 'success', date: new Date() });
+                    u.donationsHistory.push({ amount: 0.1, note: "אימות כרטיס", status: 'success', date: new Date() });
                 } else {
                     return res.json({ success: false, error: "אימות נכשל: " + (r.data.Description || "סירוב") });
                 }
-            } catch(e) { return res.json({ success: false, error: "תקלה בתקשורת לשמירת הכרטיס" }); }
+            } catch(e) { return res.json({ success: false, error: "תקלה: " + e.message }); }
         }
 
         Object.assign(u, updateData);
@@ -269,6 +280,7 @@ app.post('/admin/update-profile', async (req, res) => {
     } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+// שאר ה-Routes
 app.post('/save-push-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { fcmToken: req.body.token }); res.json({ success: true }); });
 app.post('/delete-pending', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } }); res.json({ success: true }); });
 app.post('/reset-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "" }); res.json({ success: true }); });
