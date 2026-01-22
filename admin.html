@@ -174,13 +174,18 @@
                             <label class="small fw-bold text-primary">הוראת קבע יומית (₪)</label>
                             <input id="edit-daily" type="number" class="form-control text-center">
                         </div>
-                        <div class="form-check mb-3 bg-light p-2 rounded border">
+                        <div class="form-check mb-2 bg-light p-2 rounded border">
                             <input class="form-check-input ms-2" type="checkbox" id="edit-immediate">
                             <label class="form-check-label small fw-bold" for="edit-immediate">הוראת קבע: חיוב מיידי (לא לסל)</label>
                         </div>
                         
+                        <div class="form-check mb-3 bg-light p-2 rounded border">
+                            <input class="form-check-input ms-2" type="checkbox" id="edit-allow-remove">
+                            <label class="form-check-label small fw-bold" for="edit-allow-remove">אפשר ללקוח להסיר פריטים מהסל</label>
+                        </div>
+
                         <div class="mb-2">
-                            <label class="small fw-bold text-danger">טוקן אשראי (מתקדם)</label>
+                            <label class="small fw-bold text-danger">טוקן אשראי</label>
                             <input id="edit-token" class="form-control text-muted" style="font-size: 0.8rem; background: #fff5f5;">
                         </div>
 
@@ -234,7 +239,6 @@
     let currentUser = null;
     let ADMIN_PASS = "";
 
-    // ✅ ולידציה ליום בחודש (1-31)
     function validateDay(el) {
         if(el.value > 31) el.value = 31;
         if(el.value < 1 && el.value !== "") el.value = 1;
@@ -341,8 +345,7 @@
             const phone = (u.phone || '').replace(/\D/g, ''); 
             const email = (u.email || '').toLowerCase();
             const tz = (u.tz || '');
-            const token = (u.token || '');
-            const matchesSearch = name.includes(q) || phone.includes(q) || email.includes(q) || tz.includes(q) || token.includes(q);
+            const matchesSearch = name.includes(q) || phone.includes(q) || email.includes(q) || tz.includes(q);
 
             let hasDonationInDate = false;
             if (u.donationsHistory && u.donationsHistory.length > 0) {
@@ -361,8 +364,7 @@
                 const phone = (u.phone || '').replace(/\D/g, ''); 
                 const email = (u.email || '').toLowerCase();
                 const tz = (u.tz || '');
-                const token = (u.token || '');
-                return name.includes(q) || phone.includes(q) || email.includes(q) || tz.includes(q) || token.includes(q);
+                return name.includes(q) || phone.includes(q) || email.includes(q) || tz.includes(q);
              });
              renderUsers(searchOnly);
         } else {
@@ -410,7 +412,6 @@
         document.getElementById('edit-email').value = currentUser.email || '';
         document.getElementById('edit-tz').value = currentUser.tz || '';
         
-        // הגדרת יום החיוב
         if (currentUser.billingPreference > 0) {
             document.getElementById('edit-billing-type').value = '1';
             document.getElementById('edit-billing-day').value = currentUser.billingPreference;
@@ -422,9 +423,10 @@
 
         document.getElementById('edit-daily').value = currentUser.recurringDailyAmount || 0;
         document.getElementById('edit-immediate').checked = currentUser.recurringImmediate === true;
-        document.getElementById('edit-pin').value = currentUser.securityPin || '';
+        // ✅ סימון הצ'קבוקס לפי מצב המשתמש
+        document.getElementById('edit-allow-remove').checked = currentUser.canRemoveFromBasket !== false;
         
-        // ✅ מילוי שדה הטוקן
+        document.getElementById('edit-pin').value = currentUser.securityPin || '';
         document.getElementById('edit-token').value = currentUser.token || '';
 
         renderBasket();
@@ -496,8 +498,9 @@
             recurringDailyAmount: parseInt(document.getElementById('edit-daily').value),
             recurringImmediate: document.getElementById('edit-immediate').checked,
             securityPin: document.getElementById('edit-pin').value,
-            // ✅ עדכון טוקן
-            token: document.getElementById('edit-token').value
+            token: document.getElementById('edit-token').value,
+            // ✅ שליחת ערך הצ'קבוקס לשרת
+            canRemoveFromBasket: document.getElementById('edit-allow-remove').checked
         };
 
         await fetch(`${API}/admin/update-user-full`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id, userData: updateData }) });
