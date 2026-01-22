@@ -53,20 +53,17 @@ function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => {
 function fixToken(token) {
     if (!token) return "";
     let strToken = String(token).replace(/['"]+/g, '').trim();
-    // ה-0 בהתחלה חשוב לקשר
     return (strToken.length > 0 && !strToken.startsWith('0')) ? '0' + strToken : strToken;
 }
 
-// --- מנוע חיוב (J4, 0.1₪, הפרדת לקוחות, ללא נקודה בשם) ---
+// --- Charge Engine ---
 async function chargeKesher(user, amount, note, creditDetails = null) {
     const amountInAgorot = Math.round(parseFloat(amount) * 100);
     const safePhone = (user.phone || "0500000000").replace(/\D/g, '');
     
-    // ✅ תיקון זיהוי לקוח: לא עוד "00000"!
     let uniqueId = user.tz && user.tz.length > 5 ? user.tz : null;
     if (!uniqueId) uniqueId = safePhone !== "0500000000" ? safePhone : user._id.toString();
 
-    // ✅ תיקון שם: העלמת הנקודה "."
     const nameParts = (user.name || "Torem").trim().split(" ");
     const firstName = nameParts[0];
     let lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "";
@@ -83,8 +80,8 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
         FirstName: firstName, 
         LastName: lastName, 
         Mail: user.email || "no@mail.com",
-        ClientApiIdentity: uniqueId, // ✅ מזהה ייחודי לכל לקוח
-        Id: uniqueId,                // ✅ מזהה ייחודי לכל לקוח
+        ClientApiIdentity: uniqueId, 
+        Id: uniqueId,                
         Details: note || ""
     };
 
@@ -93,8 +90,6 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
 
     if (creditDetails) {
         tranData.CreditNum = creditDetails.num;
-        
-        // ✅ היפוך תאריך (MMYY -> YYMM)
         if (creditDetails.exp.length === 4) {
             finalExpiry = creditDetails.exp.substring(2, 4) + creditDetails.exp.substring(0, 2);
         } else {
@@ -102,9 +97,6 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
         }
         tranData.Expiry = finalExpiry;
         currentCardDigits = creditDetails.num.slice(-4);
-        
-        // ללא CVV
-
     } else if (user.token) {
         tranData.Token = fixToken(user.token);
         tranData.Expiry = user.lastExpiry; 
@@ -132,6 +124,7 @@ cron.schedule('0 8 * * *', async () => {
     const users = await User.find({}); 
     for (const u of users) {
         let saveUser = false;
+        
         // יומי
         if (u.recurringDailyAmount > 0) {
             if (u.recurringImmediate === true || u.billingPreference === 0) {
@@ -151,8 +144,7 @@ cron.schedule('0 8 * * *', async () => {
             }
         }
 
-        // --- חיוב סל (חודשי או מיידי ממתין) ---
-        // התיקון: מחייב אם היום התאריך, או אם המשתמש הוא "מיידי" (0)
+        // חודשי
         const isChargeDay = (u.billingPreference === today);
         const isImmediateUser = (u.billingPreference === 0);
 
@@ -181,40 +173,21 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/manager', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
 app.get('/firebase-messaging-sw.js', (req, res) => res.sendFile(path.join(__dirname, 'firebase-messaging-sw.js')));
 
-// ✅ שליחת מייל עובדת
 app.post('/update-code', async (req, res) => {
     let { email, phone, code } = req.body;
     let cleanEmail = email ? email.toLowerCase().trim() : undefined;
     let cleanPhone = phone ? phone.replace(/\D/g, '').trim() : undefined;
-    
     if (cleanEmail) {
-        try { 
-            await axios.post('https://api.emailjs.com/api/v1.0/email/send', { 
-                service_id: 'service_8f6h188', 
-                template_id: 'template_tzbq0k4', 
-                user_id: 'yLYooSdg891aL7etD', 
-                template_params: { email: cleanEmail, code: code }, 
-                accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3" 
-            }); 
-        } catch (e) { console.log("Email Error", e.message); }
+        try { await axios.post('https://api.emailjs.com/api/v1.0/email/send', { service_id: 'service_8f6h188', template_id: 'template_tzbq0k4', user_id: 'yLYooSdg891aL7etD', template_params: { email: cleanEmail, code: code }, accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3" }); } catch (e) { console.log("Email Error", e.message); }
     }
-
-    await User.findOneAndUpdate(
-        cleanEmail ? { email: cleanEmail } : { phone: cleanPhone }, 
-        { tempCode: code, email: cleanEmail, phone: cleanPhone }, 
-        { upsert: true }
-    );
+    await User.findOneAndUpdate(cleanEmail ? { email: cleanEmail } : { phone: cleanPhone }, { tempCode: code, email: cleanEmail, phone: cleanPhone }, { upsert: true });
     res.json({ success: true });
 });
 
 app.post('/verify-auth', async (req, res) => {
     let { email, phone, code } = req.body;
     if(code === 'check') return res.json({ success: true });
-    
-    let cleanEmail = email ? email.toLowerCase().trim() : undefined;
-    let cleanPhone = phone ? phone.replace(/\D/g, '').trim() : undefined;
-
-    let u = await User.findOne(cleanEmail ? { email: cleanEmail } : { phone: cleanPhone });
+    let u = await User.findOne(email ? { email: email.toLowerCase().trim() } : { phone: phone.replace(/\D/g, '').trim() });
     if (u && String(u.tempCode).trim() === String(code).trim()) res.json({ success: true, user: u });
     else res.json({ success: false });
 });
@@ -226,30 +199,20 @@ app.post('/login-by-id', async (req, res) => {
 app.post('/donate', async (req, res) => {
     const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin } = req.body;
     let u = await User.findById(userId);
-    
     if (u.securityPin && u.securityPin.trim() !== "") {
         if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" });
     }
-
     let shouldChargeNow = (forceImmediate === true) ? true : (u.billingPreference === 0 && forceImmediate !== false);
-
     if (shouldChargeNow) {
         try {
             const r = await chargeKesher(u, amount, note, !useToken ? ccDetails : null);
             if (r.success) {
-                if(r.token) { 
-                    u.token = fixToken(r.token); 
-                    u.lastExpiry = r.finalExpiry; 
-                    if(r.currentCardDigits) u.lastCardDigits = r.currentCardDigits; 
-                }
+                if(r.token) { u.token = fixToken(r.token); u.lastExpiry = r.finalExpiry; if(r.currentCardDigits) u.lastCardDigits = r.currentCardDigits; }
                 u.totalDonated += parseFloat(amount);
                 u.donationsHistory.push({ amount: parseFloat(amount), note, date: new Date(), status: 'success' });
                 await u.save();
                 res.json({ success: true, message: "תרומה התקבלה!" });
-            } else {
-                let err = r.data.Description || r.data.RequestResult?.Description || "סירוב";
-                res.json({ success: false, error: err });
-            }
+            } else { res.json({ success: false, error: r.data.Description || "סירוב" }); }
         } catch(e) { res.json({ success: false, error: e.message }); }
     } else {
         u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() });
@@ -258,52 +221,93 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// ✅ עדכון פרופיל + חיוב 0.1 ₪ + מזהה ייחודי
+// ✅ עדכון פרופיל
 app.post('/admin/update-profile', async (req, res) => {
     try {
         const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails } = req.body;
-        
         let updateData = { billingPreference: parseInt(billingPreference)||0, recurringDailyAmount: parseInt(recurringDailyAmount)||0, recurringImmediate: recurringImmediate===true, securityPin };
         if(name) updateData.name = name; if(phone) updateData.phone = phone; if(email) updateData.email = email; if(tz) updateData.tz = tz;
-
         let u = await User.findById(userId);
-        
         if (newCardDetails && newCardDetails.num && newCardDetails.exp) {
             try {
                 u.name = name || u.name; u.phone = phone || u.phone; u.email = email || u.email; u.tz = tz || u.tz;
-                
-                // ✅ חיוב 0.1 ₪
                 const r = await chargeKesher(u, 0.1, "בדיקת כרטיס (0.10 ₪)", newCardDetails);
-                
-                const isSuccess = r.success; 
-                const isDouble = r.data.Description === "עיסקה כפולה";
-
-                // ב-0.1, עסקה כפולה נחשבת הצלחה אם יש טוקן
+                const isSuccess = r.success; const isDouble = r.data.Description === "עיסקה כפולה";
                 if (isSuccess || (isDouble && (r.data.Token || r.token))) {
                     updateData.token = fixToken(r.token || r.data.Token);
                     updateData.lastExpiry = r.finalExpiry;
                     updateData.lastCardDigits = r.currentCardDigits;
-                    
-                    if (isSuccess) {
-                        u.totalDonated += 0.1;
-                        u.donationsHistory.push({ amount: 0.1, note: "שמירת כרטיס", status: 'success', date: new Date() });
-                    }
-                } else {
-                    let err = r.data.Description || r.data.RequestResult?.Description || "סירוב";
-                    return res.json({ success: false, error: "אימות נכשל: " + err });
-                }
+                    if (isSuccess) { u.totalDonated += 0.1; u.donationsHistory.push({ amount: 0.1, note: "שמירת כרטיס", status: 'success', date: new Date() }); }
+                } else { return res.json({ success: false, error: "אימות נכשל: " + (r.data.Description || "סירוב") }); }
             } catch(e) { return res.json({ success: false, error: "תקלה: " + e.message }); }
         }
-
         Object.assign(u, updateData);
         await u.save();
         res.json({ success: true });
-
     } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
 const PASS = "admin1234";
-app.post('/admin/stats', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const users = await User.find(); let total = 0, count = 0; users.forEach(u => u.donationsHistory?.forEach(d => { if(d.status==='success') { total += d.amount||0; count++; } })); res.json({ success: true, stats: { totalDonated: total, totalUsers: users.length, totalDonations: count } }); });
+
+// ✅ 1. סטטיסטיקות מסוננות תאריך
+app.post('/admin/stats', async (req, res) => {
+    if(req.body.password !== PASS) return res.json({ success: false }); 
+    const { fromDate, toDate } = req.body;
+    
+    // הגדרת טווח תאריכים
+    let start = fromDate ? new Date(fromDate) : new Date(0); // ברירת מחדל: התחלה
+    let end = toDate ? new Date(toDate) : new Date(); // ברירת מחדל: עכשיו
+    end.setHours(23, 59, 59, 999); // סוף היום
+
+    const users = await User.find();
+    let total = 0, count = 0;
+    
+    users.forEach(u => u.donationsHistory?.forEach(d => { 
+        let dDate = new Date(d.date);
+        if(d.status === 'success' && dDate >= start && dDate <= end) { 
+            total += d.amount||0; 
+            count++; 
+        } 
+    }));
+    res.json({ success: true, stats: { totalDonated: total, totalUsers: users.length, totalDonations: count } });
+});
+
+// ✅ 2. הוספת תרומה ידנית מהאדמין (מיידי או סל)
+app.post('/admin/add-donation-manual', async (req, res) => {
+    if(req.body.password !== PASS) return res.json({ success: false });
+    const { userId, amount, type, note } = req.body;
+    let u = await User.findById(userId);
+    if (!u) return res.json({ success: false, error: "משתמש לא נמצא" });
+
+    if (type === 'immediate') {
+        // חיוב מיידי
+        if (!u.token) return res.json({ success: false, error: "למשתמש אין כרטיס אשראי שמור" });
+        try {
+            const r = await chargeKesher(u, amount, note || "חיוב ע\"י מנהל");
+            if (r.success) {
+                u.totalDonated += parseFloat(amount);
+                u.donationsHistory.push({ amount: parseFloat(amount), note: note || "חיוב יזום ע\"י מנהל", date: new Date(), status: 'success' });
+                await u.save();
+                res.json({ success: true });
+            } else {
+                res.json({ success: false, error: "סירוב: " + (r.data.Description || "שגיאה") });
+            }
+        } catch (e) { res.json({ success: false, error: e.message }); }
+    } else {
+        // הוספה לסל
+        u.pendingDonations.push({ amount: parseFloat(amount), note: note || "הוסף ע\"י מנהל", date: new Date() });
+        await u.save();
+        res.json({ success: true });
+    }
+});
+
+// ✅ 3. ניהול הסל (מחיקה מהסל)
+app.post('/admin/remove-from-basket', async (req, res) => {
+    if(req.body.password !== PASS) return res.json({ success: false });
+    await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.itemId } } });
+    res.json({ success: true });
+});
+
 app.post('/admin/get-users', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const users = await User.find().sort({ _id: -1 }); res.json({ success: true, users }); });
 app.post('/admin/update-user-full', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); await User.findByIdAndUpdate(req.body.userId, req.body.userData); res.json({ success: true }); });
 app.post('/admin/delete-user', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); await User.findByIdAndDelete(req.body.userId); res.json({ success: true }); });
