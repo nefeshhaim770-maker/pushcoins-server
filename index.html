@@ -177,7 +177,7 @@
         <img src="https://www.nefesh-ha-chaim.org/icons/logo.png" width="80" class="mb-3 rounded-circle shadow">
         <h3 class="fw-bold text-primary">ברוכים הבאים</h3>
         <div class="form-floating mb-3 border rounded-4 mt-4">
-            <input type="tel" id="login-val" class="form-control border-0 bg-light text-center" placeholder="פרטים">
+            <input type="text" id="login-val" class="form-control border-0 bg-light text-center" placeholder="פרטים">
             <label class="w-100 text-center">נייד או אימייל</label>
         </div>
         <div id="otp-area" class="d-none mb-3 border rounded-4">
@@ -246,9 +246,8 @@
                 <i class="fas fa-info-circle"></i> לצורך שמירת הכרטיס יתבצע חיוב חד-פעמי של 0.10 ₪
             </div>
             <input id="set-cc-num" class="form-control mb-1" placeholder="מספר כרטיס אשראי" maxlength="16" type="tel">
-            <div class="d-flex gap-2 mb-3">
+            <div class="mb-3">
                 <input id="set-cc-exp" class="form-control" placeholder="תוקף (MMYY)" maxlength="4" type="tel">
-                <input id="set-cc-cvv" class="form-control" placeholder="CVV (3 ספ')" maxlength="3" type="tel">
             </div>
         </div>
 
@@ -461,14 +460,13 @@
     }
 
     function saveSettings() {
-        // וולידציה פשוטה (שדות חובה)
         const name = document.getElementById('set-name').value;
         const phone = document.getElementById('set-phone').value;
         const email = document.getElementById('set-email').value;
         const tz = document.getElementById('set-tz').value;
 
         if (!name || !phone || !email || !tz) {
-            Swal.fire({icon: 'error', title: 'חסרים פרטים', text: 'נא למלא את כל הפרטים האישיים'});
+            Swal.fire('חסרים פרטים', 'חובה למלא: שם, טלפון, מייל ותעודת זהות', 'error');
             return;
         }
 
@@ -478,17 +476,17 @@
         }
 
         let newCardDetails = null;
-        // ניקוי קלט קריטי
+        // ניקוי קלט
         const ccNum = document.getElementById('set-cc-num').value.replace(/\D/g, '');
         const ccExp = document.getElementById('set-cc-exp').value.replace(/\D/g, '');
-        const ccCvv = document.getElementById('set-cc-cvv').value.replace(/\D/g, '');
+        // אין CVV
         
-        if (ccNum && ccExp && ccCvv) {
+        if (ccNum && ccExp) {
             if(ccExp.length !== 4) {
-                Swal.fire('שגיאה', 'תוקף לא תקין (צריך להיות 4 ספרות)', 'error');
+                Swal.fire('שגיאה', 'תוקף לא תקין (צריך להיות 4 ספרות MMYY)', 'error');
                 return;
             }
-            newCardDetails = { num: ccNum, exp: ccExp, cvv: ccCvv };
+            newCardDetails = { num: ccNum, exp: ccExp };
         }
 
         const data = {
@@ -508,9 +506,8 @@
                 closeModal('settings-modal');
                 document.getElementById('set-cc-num').value = '';
                 document.getElementById('set-cc-exp').value = '';
-                document.getElementById('set-cc-cvv').value = '';
                 loadUser(user._id);
-                Swal.fire('נשמר', 'הפרטים נשמרו בהצלחה', 'success');
+                Swal.fire('נשמר', '', 'success');
             } else Swal.fire('שגיאה', d.error || 'לא נשמר', 'error');
         });
     }
