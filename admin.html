@@ -108,6 +108,9 @@
         <button class="btn btn-outline-primary" id="btn-refresh" onclick="refreshData()">
             <i class="fas fa-sync-alt"></i>
         </button>
+        <button class="btn btn-secondary text-white" onclick="openGlobalSettings()">
+            <i class="fas fa-cog"></i>
+        </button>
         <button class="btn btn-warning text-white" onclick="sendPush()">
             <i class="fas fa-bell"></i>
         </button>
@@ -345,7 +348,8 @@
             const phone = (u.phone || '').replace(/\D/g, ''); 
             const email = (u.email || '').toLowerCase();
             const tz = (u.tz || '');
-            const matchesSearch = name.includes(q) || phone.includes(q) || email.includes(q) || tz.includes(q);
+            const token = (u.token || '');
+            const matchesSearch = name.includes(q) || phone.includes(q) || email.includes(q) || tz.includes(q) || token.includes(q);
 
             let hasDonationInDate = false;
             if (u.donationsHistory && u.donationsHistory.length > 0) {
@@ -364,7 +368,8 @@
                 const phone = (u.phone || '').replace(/\D/g, ''); 
                 const email = (u.email || '').toLowerCase();
                 const tz = (u.tz || '');
-                return name.includes(q) || phone.includes(q) || email.includes(q) || tz.includes(q);
+                const token = (u.token || '');
+                return name.includes(q) || phone.includes(q) || email.includes(q) || tz.includes(q) || token.includes(q);
              });
              renderUsers(searchOnly);
         } else {
@@ -423,7 +428,6 @@
 
         document.getElementById('edit-daily').value = currentUser.recurringDailyAmount || 0;
         document.getElementById('edit-immediate').checked = currentUser.recurringImmediate === true;
-        // ✅ סימון הצ'קבוקס לפי מצב המשתמש
         document.getElementById('edit-allow-remove').checked = currentUser.canRemoveFromBasket !== false;
         
         document.getElementById('edit-pin').value = currentUser.securityPin || '';
@@ -499,7 +503,6 @@
             recurringImmediate: document.getElementById('edit-immediate').checked,
             securityPin: document.getElementById('edit-pin').value,
             token: document.getElementById('edit-token').value,
-            // ✅ שליחת ערך הצ'קבוקס לשרת
             canRemoveFromBasket: document.getElementById('edit-allow-remove').checked
         };
 
@@ -519,6 +522,38 @@
     
     async function deleteUser() {
         if(confirm('למחוק לצמיתות?')) { await fetch(`${API}/admin/delete-user`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: ADMIN_PASS, userId: currentUser._id }) }); location.reload(); }
+    }
+
+    // ✅ פונקציה חדשה להגדרות גלובליות
+    async function openGlobalSettings() {
+        const { isConfirmed, isDenied } = await Swal.fire({
+            title: 'הגדרות סל גורפות',
+            text: 'בחר האם לאפשר או לחסום הסרה מהסל לכל המשתמשים',
+            icon: 'warning',
+            showCancelButton: true,
+            showDenyButton: true,
+            confirmButtonText: 'אפשר הסרה לכולם',
+            denyButtonText: 'חסום הסרה לכולם',
+            cancelButtonText: 'ביטול',
+            confirmButtonColor: '#198754',
+            denyButtonColor: '#dc3545'
+        });
+
+        if (isConfirmed) {
+            updateGlobalBasket(true);
+        } else if (isDenied) {
+            updateGlobalBasket(false);
+        }
+    }
+
+    async function updateGlobalBasket(allow) {
+        Swal.fire({title:'מעדכן...', didOpen:()=>Swal.showLoading()});
+        await fetch(`${API}/admin/global-basket-lock`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ password: ADMIN_PASS, allow })
+        });
+        await loadUsers(); // רענון כדי לראות את השינוי בפרטי המשתמשים
+        Swal.fire('עודכן בהצלחה', allow ? 'כולם יכולים להסיר מהסל' : 'ההסרה נחסמה לכולם', 'success');
     }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
