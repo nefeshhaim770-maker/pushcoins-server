@@ -40,13 +40,10 @@ const userSchema = new mongoose.Schema({
     phone: { type: String, sparse: true },
     name: String,
     tz: String,
-    // שדות ישנים (לא בשימוש פעיל בקוד החדש, אבל נשמרים למיגרציה)
     lastExpiry: String,
     lastCardDigits: String,
     token: { type: String, default: "" },
-    
-    cards: [cardSchema], // ✅ המערך הקובע
-
+    cards: [cardSchema],
     totalDonated: { type: Number, default: 0 },
     billingPreference: { type: Number, default: 0 }, 
     recurringDailyAmount: { type: Number, default: 0 },
@@ -188,6 +185,23 @@ app.post('/update-code', async (req, res) => {
     res.json({ success: true });
 });
 
+// ✅ נתיב חדש: שליחת קוד לאימות מייל (ללא עדכון משתמש)
+app.post('/send-verification', async (req, res) => {
+    const { email, code } = req.body;
+    try {
+        await axios.post('https://api.emailjs.com/api/v1.0/email/send', { 
+            service_id: 'service_8f6h188', 
+            template_id: 'template_tzbq0k4', 
+            user_id: 'yLYooSdg891aL7etD', 
+            template_params: { email, code }, 
+            accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3" 
+        });
+        res.json({ success: true });
+    } catch(e) {
+        res.json({ success: false });
+    }
+});
+
 app.post('/verify-auth', async (req, res) => {
     let { email, phone, code } = req.body;
     if(code === 'check') return res.json({ success: true });
@@ -234,23 +248,19 @@ app.post('/delete-pending', async (req, res) => {
     res.json({ success: true }); 
 });
 
-// ✅ עדכון פרופיל - עריכה, מחיקה, הוספה ידנית והוספה באשראי
 app.post('/admin/update-profile', async (req, res) => {
     try {
         const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails, canRemoveFromBasket, activeCardId, deleteCardId, editCardData, addManualCardData } = req.body;
         
         let u = await User.findById(userId);
         
-        // 1. מחיקת כרטיס
         if (deleteCardId) {
             u.cards = u.cards.filter(c => c._id.toString() !== deleteCardId);
             if (!u.cards.some(c => c.active) && u.cards.length > 0) { u.cards[0].active = true; }
         }
 
-        // 2. הגדרת כרטיס פעיל
         if (activeCardId) { u.cards.forEach(c => c.active = (c._id.toString() === activeCardId)); }
 
-        // 3. הוספת כרטיס חדש (חיוב 0.10 באדמין)
         if (newCardDetails && newCardDetails.num && newCardDetails.exp) {
             try {
                 u.name = name || u.name; u.phone = phone || u.phone; u.email = email || u.email; u.tz = tz || u.tz;
@@ -266,7 +276,6 @@ app.post('/admin/update-profile', async (req, res) => {
             } catch(e) { return res.json({ success: false, error: "תקלה: " + e.message }); }
         }
 
-        // 4. הוספת כרטיס ידנית (טוקן בלבד)
         if (addManualCardData) {
             u.cards.forEach(c => c.active = false);
             u.cards.push({
@@ -277,7 +286,6 @@ app.post('/admin/update-profile', async (req, res) => {
             });
         }
 
-        // 5. ✅ עריכת כרטיס קיים - תיקון
         if (editCardData && editCardData.id) {
             const cardIndex = u.cards.findIndex(c => c._id.toString() === editCardData.id);
             if (cardIndex > -1) {
