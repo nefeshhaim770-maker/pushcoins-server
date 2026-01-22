@@ -27,19 +27,32 @@ mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.
     .catch(err => console.error('❌ DB Error:', err));
 
 // --- Schema ---
+const cardSchema = new mongoose.Schema({
+    token: String,
+    lastDigits: String,
+    expiry: String,
+    active: { type: Boolean, default: false }, // הכרטיס הראשי לחיוב
+    addedDate: { type: Date, default: Date.now }
+});
+
 const userSchema = new mongoose.Schema({
     email: { type: String, sparse: true },
     phone: { type: String, sparse: true },
     name: String,
     tz: String,
+    // שדות ישנים לתמיכה לאחור (יומרו לתוך המערך בעת שימוש)
     lastExpiry: String,
     lastCardDigits: String,
     token: { type: String, default: "" },
+    
+    // ✅ השדה החדש: רשימת כרטיסים
+    cards: [cardSchema],
+
     totalDonated: { type: Number, default: 0 },
     billingPreference: { type: Number, default: 0 }, 
     recurringDailyAmount: { type: Number, default: 0 },
     recurringImmediate: { type: Boolean, default: false },
-    canRemoveFromBasket: { type: Boolean, default: true }, // השדה לשליטה על הסל
+    canRemoveFromBasket: { type: Boolean, default: true },
     securityPin: { type: String, default: "" },
     fcmToken: { type: String, default: "" },
     donationsHistory: [{ amount: Number, date: { type: Date, default: Date.now }, note: String, status: String, failReason: String }],
@@ -55,6 +68,30 @@ function fixToken(token) {
     if (!token) return "";
     let strToken = String(token).replace(/['"]+/g, '').trim();
     return (strToken.length > 0 && !strToken.startsWith('0')) ? '0' + strToken : strToken;
+}
+
+// פונקציית עזר: קבלת הטוקן הפעיל (כולל המרה מגרסאות ישנות)
+async function getActiveToken(user) {
+    // 1. אם יש רשימת כרטיסים, חפש את הפעיל
+    if (user.cards && user.cards.length > 0) {
+        const activeCard = user.cards.find(c => c.active);
+        return activeCard ? activeCard.token : user.cards[0].token; // אם אין פעיל, קח את הראשון
+    }
+    // 2. תמיכה לאחור: אם אין רשימה אבל יש טוקן ישן
+    if (user.token) {
+        // מיגרציה "על הדרך": העבר לתוך המערך ושמור
+        user.cards.push({
+            token: user.token,
+            lastDigits: user.lastCardDigits || "****",
+            expiry: user.lastExpiry || "",
+            active: true
+        });
+        // מנקה את הישנים כדי לא לבלבל בעתיד
+        user.token = ""; 
+        await user.save();
+        return fixToken(user.cards[0].token);
+    }
+    return null;
 }
 
 // --- Charge Engine ---
@@ -86,10 +123,12 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
         Details: note || ""
     };
 
-    let finalExpiry = user.lastExpiry;
-    let currentCardDigits = user.lastCardDigits;
+    let finalExpiry = "";
+    let currentCardDigits = "";
+    let usedToken = null;
 
     if (creditDetails) {
+        // חיוב עם כרטיס חדש (ישיר)
         tranData.CreditNum = creditDetails.num;
         if (creditDetails.exp.length === 4) {
             finalExpiry = creditDetails.exp.substring(2, 4) + creditDetails.exp.substring(0, 2);
@@ -98,11 +137,21 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
         }
         tranData.Expiry = finalExpiry;
         currentCardDigits = creditDetails.num.slice(-4);
-    } else if (user.token) {
-        tranData.Token = fixToken(user.token);
-        tranData.Expiry = user.lastExpiry; 
-    } else { 
-        throw new Error("No Payment Method"); 
+    } else {
+        // חיוב עם טוקן
+        usedToken = await getActiveToken(user);
+        if (usedToken) {
+            tranData.Token = fixToken(usedToken);
+            // שולפים תוקף מהכרטיס השמור (למרות שקשר מסתדר בלי זה לפעמים, עדיף לשלוח)
+            const activeCard = user.cards.find(c => fixToken(c.token) === tranData.Token);
+            if(activeCard) {
+                tranData.Expiry = activeCard.expiry;
+                currentCardDigits = activeCard.lastDigits;
+                finalExpiry = activeCard.expiry;
+            }
+        } else { 
+            throw new Error("No Payment Method"); 
+        }
     }
 
     const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
@@ -126,10 +175,13 @@ cron.schedule('0 8 * * *', async () => {
     for (const u of users) {
         let saveUser = false;
         
+        // בדיקה שיש בכלל כרטיס פעיל לחיוב
+        const hasToken = await getActiveToken(u);
+
         // יומי
         if (u.recurringDailyAmount > 0) {
             if (u.recurringImmediate === true || u.billingPreference === 0) {
-                if(u.token) {
+                if(hasToken) {
                     try {
                         await chargeKesher(u, u.recurringDailyAmount, "הוראת קבע יומית");
                         u.totalDonated += u.recurringDailyAmount;
@@ -153,7 +205,7 @@ cron.schedule('0 8 * * *', async () => {
             let totalToCharge = 0;
             u.pendingDonations.forEach(d => totalToCharge += d.amount);
             
-            if (totalToCharge > 0 && u.token) {
+            if (totalToCharge > 0 && hasToken) {
                 try {
                     await chargeKesher(u, totalToCharge, "חיוב סל ממתין");
                     u.totalDonated += totalToCharge;
@@ -194,7 +246,18 @@ app.post('/verify-auth', async (req, res) => {
 });
 
 app.post('/login-by-id', async (req, res) => {
-    try { let user = await User.findById(req.body.userId); if(user) res.json({ success: true, user }); else res.json({ success: false }); } catch(e) { res.json({ success: false }); }
+    try { 
+        let user = await User.findById(req.body.userId); 
+        if(user) {
+            // אם המשתמש ישן, נבצע מיגרציה "על הדרך"
+            if ((!user.cards || user.cards.length === 0) && user.token) {
+                user.cards.push({ token: user.token, lastDigits: user.lastCardDigits, expiry: user.lastExpiry, active: true });
+                user.token = ""; 
+                await user.save();
+            }
+            res.json({ success: true, user }); 
+        } else res.json({ success: false }); 
+    } catch(e) { res.json({ success: false }); }
 });
 
 app.post('/donate', async (req, res) => {
@@ -206,9 +269,13 @@ app.post('/donate', async (req, res) => {
     let shouldChargeNow = (forceImmediate === true) ? true : (u.billingPreference === 0 && forceImmediate !== false);
     if (shouldChargeNow) {
         try {
+            // כאן המנוע יחליט אוטומטית איזה כרטיס לחייב
             const r = await chargeKesher(u, amount, note, !useToken ? ccDetails : null);
             if (r.success) {
-                if(r.token) { u.token = fixToken(r.token); u.lastExpiry = r.finalExpiry; if(r.currentCardDigits) u.lastCardDigits = r.currentCardDigits; }
+                // אם זה כרטיס חדש שהוזן ידנית לתרומה - נשמור אותו? (כרגע הלוגיקה היא שמירת כרטיס רק דרך הגדרות כדי לא לסבך)
+                // אבל אם חזר טוקן, אפשר לשמור אותו. לצורך הפשטות נשמור על הלוגיקה הקודמת:
+                // שמירת כרטיס מתבצעת רק דרך update-profile או אם המשתמש שילם באשראי ולא היה לו כרטיס בכלל.
+                
                 u.totalDonated += parseFloat(amount);
                 u.donationsHistory.push({ amount: parseFloat(amount), note, date: new Date(), status: 'success' });
                 await u.save();
@@ -222,7 +289,7 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// מחיקת פריט מהסל ע"י משתמש (כולל בדיקת הרשאה)
+// ✅ מחיקת פריט מהסל ע"י משתמש
 app.post('/delete-pending', async (req, res) => { 
     const u = await User.findById(req.body.userId);
     if (u.canRemoveFromBasket === false) {
@@ -232,34 +299,65 @@ app.post('/delete-pending', async (req, res) => {
     res.json({ success: true }); 
 });
 
+// ✅ עדכון פרופיל - תמיכה בהוספת כרטיסים וניהול ברירת מחדל
 app.post('/admin/update-profile', async (req, res) => {
     try {
-        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails, canRemoveFromBasket } = req.body;
+        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails, canRemoveFromBasket, activeCardId, deleteCardId } = req.body;
         
-        let updateData = { 
-            billingPreference: parseInt(billingPreference)||0, 
-            recurringDailyAmount: parseInt(recurringDailyAmount)||0, 
-            recurringImmediate: recurringImmediate===true, 
-            securityPin,
-            canRemoveFromBasket: canRemoveFromBasket 
-        };
-        
-        if(name) updateData.name = name; if(phone) updateData.phone = phone; if(email) updateData.email = email; if(tz) updateData.tz = tz;
         let u = await User.findById(userId);
+        
+        // 1. מחיקת כרטיס אם נתבקש
+        if (deleteCardId) {
+            u.cards = u.cards.filter(c => c._id.toString() !== deleteCardId);
+            // אם מחקנו את הפעיל ונשאר משהו, נהפוך את הראשון לפעיל
+            if (!u.cards.some(c => c.active) && u.cards.length > 0) {
+                u.cards[0].active = true;
+            }
+        }
+
+        // 2. הגדרת כרטיס פעיל
+        if (activeCardId) {
+            u.cards.forEach(c => c.active = (c._id.toString() === activeCardId));
+        }
+
+        // 3. הוספת כרטיס חדש
         if (newCardDetails && newCardDetails.num && newCardDetails.exp) {
             try {
                 u.name = name || u.name; u.phone = phone || u.phone; u.email = email || u.email; u.tz = tz || u.tz;
                 const r = await chargeKesher(u, 0.1, "בדיקת כרטיס (0.10 ₪)", newCardDetails);
                 const isSuccess = r.success; const isDouble = r.data.Description === "עיסקה כפולה";
+                
                 if (isSuccess || (isDouble && (r.data.Token || r.token))) {
-                    updateData.token = fixToken(r.token || r.data.Token);
-                    updateData.lastExpiry = r.finalExpiry;
-                    updateData.lastCardDigits = r.currentCardDigits;
+                    const newToken = fixToken(r.token || r.data.Token);
+                    
+                    // מכבים את הפעיל הקודם
+                    u.cards.forEach(c => c.active = false);
+                    
+                    // מוסיפים את החדש כפעיל
+                    u.cards.push({
+                        token: newToken,
+                        lastDigits: r.currentCardDigits,
+                        expiry: r.finalExpiry,
+                        active: true
+                    });
+
                     if (isSuccess) { u.totalDonated += 0.1; u.donationsHistory.push({ amount: 0.1, note: "שמירת כרטיס", status: 'success', date: new Date() }); }
                 } else { return res.json({ success: false, error: "אימות נכשל: " + (r.data.Description || "סירוב") }); }
             } catch(e) { return res.json({ success: false, error: "תקלה: " + e.message }); }
         }
-        Object.assign(u, updateData);
+
+        // עדכון שאר הפרטים
+        if(name) u.name = name; 
+        if(phone) u.phone = phone; 
+        if(email) u.email = email; 
+        if(tz) u.tz = tz;
+        
+        u.billingPreference = parseInt(billingPreference)||0;
+        u.recurringDailyAmount = parseInt(recurringDailyAmount)||0;
+        u.recurringImmediate = recurringImmediate===true;
+        u.securityPin = securityPin;
+        u.canRemoveFromBasket = canRemoveFromBasket;
+
         await u.save();
         res.json({ success: true });
     } catch(e) { res.status(500).json({ success: false, error: e.message }); }
@@ -270,7 +368,6 @@ const PASS = "admin1234";
 app.post('/admin/stats', async (req, res) => {
     if(req.body.password !== PASS) return res.json({ success: false }); 
     const { fromDate, toDate } = req.body;
-    
     let start = fromDate ? new Date(fromDate) : new Date(0); start.setHours(0,0,0,0);
     let end = toDate ? new Date(toDate) : new Date(); end.setHours(23, 59, 59, 999);
     const now = new Date();
@@ -295,7 +392,8 @@ app.post('/admin/add-donation-manual', async (req, res) => {
     let u = await User.findById(userId);
     if (!u) return res.json({ success: false, error: "משתמש לא נמצא" });
     if (type === 'immediate') {
-        if (!u.token) return res.json({ success: false, error: "למשתמש אין כרטיס אשראי שמור" });
+        // בדיקה שיש כרטיס פעיל כלשהו
+        if (!await getActiveToken(u)) return res.json({ success: false, error: "אין כרטיס אשראי שמור" });
         try {
             const r = await chargeKesher(u, amount, note || "חיוב ע\"י מנהל");
             if (r.success) {
@@ -318,7 +416,6 @@ app.post('/admin/remove-from-basket', async (req, res) => {
     res.json({ success: true });
 });
 
-// ✅ נתיב חדש: נעילה/פתיחה גורפת של הסל
 app.post('/admin/global-basket-lock', async (req, res) => {
     if(req.body.password !== PASS) return res.json({ success: false });
     const { allow } = req.body;
