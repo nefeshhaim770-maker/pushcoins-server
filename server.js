@@ -53,18 +53,26 @@ function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => {
 function fixToken(token) {
     if (!token) return "";
     let strToken = String(token).replace(/['"]+/g, '').trim();
-    // מוודא שיש 0 בהתחלה (קריטי לקשר)
+    // ה-0 בהתחלה חשוב לקשר
     return (strToken.length > 0 && !strToken.startsWith('0')) ? '0' + strToken : strToken;
 }
 
-// --- מנוע חיוב (לוגיקה: J4, 1₪, הפיכת תאריך, ללא CVV) ---
+// --- מנוע חיוב (J4, 0.1₪, הפרדת לקוחות, ללא נקודה בשם) ---
 async function chargeKesher(user, amount, note, creditDetails = null) {
     const amountInAgorot = Math.round(parseFloat(amount) * 100);
     const safePhone = (user.phone || "0500000000").replace(/\D/g, '');
-    const realIdToSend = user.tz || "000000000"; 
+    
+    // ✅ תיקון זיהוי לקוח: לא עוד "00000"!
+    // סדר עדיפות: ת"ז תקינה > טלפון > מזהה מערכת
+    let uniqueId = user.tz && user.tz.length > 5 ? user.tz : null;
+    if (!uniqueId) uniqueId = safePhone !== "0500000000" ? safePhone : user._id.toString();
 
-    const firstName = (user.name || "Torem").split(" ")[0];
-    const lastName = (user.name || "").split(" ").slice(1).join(" ") || ".";
+    // ✅ תיקון שם: העלמת הנקודה "."
+    const nameParts = (user.name || "Torem").trim().split(" ");
+    const firstName = nameParts[0];
+    let lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "";
+    // אם אין שם משפחה, משאירים ריק או שמים רווח (לא נקודה)
+    if (!lastName) lastName = " "; 
 
     let tranData = {
         Total: amountInAgorot,
@@ -77,8 +85,8 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
         FirstName: firstName, 
         LastName: lastName, 
         Mail: user.email || "no@mail.com",
-        ClientApiIdentity: realIdToSend, 
-        Id: realIdToSend,                
+        ClientApiIdentity: uniqueId, // ✅ מזהה ייחודי לכל לקוח
+        Id: uniqueId,                // ✅ מזהה ייחודי לכל לקוח
         Details: note || ""
     };
 
@@ -88,7 +96,7 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
     if (creditDetails) {
         tranData.CreditNum = creditDetails.num;
         
-        // ✅ הפיכת תאריך מ-MMYY (לקוח) ל-YYMM (קשר)
+        // ✅ היפוך תאריך (MMYY -> YYMM)
         if (creditDetails.exp.length === 4) {
             finalExpiry = creditDetails.exp.substring(2, 4) + creditDetails.exp.substring(0, 2);
         } else {
@@ -97,7 +105,7 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
         tranData.Expiry = finalExpiry;
         currentCardDigits = creditDetails.num.slice(-4);
         
-        // CVV לא נשלח כי הוא גורם לשגיאת סכמה בשרת זה
+        // ללא CVV (כי זה גורם לקריסה טכנית בשרת הזה)
 
     } else if (user.token) {
         tranData.Token = fixToken(user.token);
@@ -167,13 +175,12 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/manager', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
 app.get('/firebase-messaging-sw.js', (req, res) => res.sendFile(path.join(__dirname, 'firebase-messaging-sw.js')));
 
-// ✅✅✅ התיקון: שחזור שליחת האימייל! ✅✅✅
+// ✅ שליחת מייל עובדת
 app.post('/update-code', async (req, res) => {
     let { email, phone, code } = req.body;
     let cleanEmail = email ? email.toLowerCase().trim() : undefined;
     let cleanPhone = phone ? phone.replace(/\D/g, '').trim() : undefined;
     
-    // קוד שליחת המייל שחסר
     if (cleanEmail) {
         try { 
             await axios.post('https://api.emailjs.com/api/v1.0/email/send', { 
@@ -214,7 +221,6 @@ app.post('/donate', async (req, res) => {
     const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin } = req.body;
     let u = await User.findById(userId);
     
-    // בדיקות גמישות
     if (u.securityPin && u.securityPin.trim() !== "") {
         if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" });
     }
@@ -246,7 +252,7 @@ app.post('/donate', async (req, res) => {
     }
 });
 
-// ✅ עדכון פרופיל + חיוב 1 ₪
+// ✅ עדכון פרופיל + חיוב 0.1 ₪ + מזהה ייחודי
 app.post('/admin/update-profile', async (req, res) => {
     try {
         const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails } = req.body;
@@ -260,16 +266,22 @@ app.post('/admin/update-profile', async (req, res) => {
             try {
                 u.name = name || u.name; u.phone = phone || u.phone; u.email = email || u.email; u.tz = tz || u.tz;
                 
-                // חיוב 1 ₪ (J4, MMYY -> YYMM)
-                const r = await chargeKesher(u, 1, "בדיקת כרטיס (1 ₪)", newCardDetails);
+                // ✅ חיוב 0.1 ₪
+                const r = await chargeKesher(u, 0.1, "בדיקת כרטיס (0.10 ₪)", newCardDetails);
                 
-                if (r.success && r.token) {
-                    updateData.token = fixToken(r.token);
+                const isSuccess = r.success; 
+                const isDouble = r.data.Description === "עיסקה כפולה";
+
+                // ב-0.1, עסקה כפולה נחשבת הצלחה אם יש טוקן
+                if (isSuccess || (isDouble && (r.data.Token || r.token))) {
+                    updateData.token = fixToken(r.token || r.data.Token);
                     updateData.lastExpiry = r.finalExpiry;
                     updateData.lastCardDigits = r.currentCardDigits;
                     
-                    u.totalDonated += 1;
-                    u.donationsHistory.push({ amount: 1, note: "שמירת כרטיס (1 ₪)", status: 'success', date: new Date() });
+                    if (isSuccess) {
+                        u.totalDonated += 0.1;
+                        u.donationsHistory.push({ amount: 0.1, note: "שמירת כרטיס", status: 'success', date: new Date() });
+                    }
                 } else {
                     let err = r.data.Description || r.data.RequestResult?.Description || "סירוב";
                     return res.json({ success: false, error: "אימות נכשל: " + err });
