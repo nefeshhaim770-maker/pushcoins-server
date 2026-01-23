@@ -105,12 +105,19 @@ const goalSchema = new mongoose.Schema({
 const GlobalGoal = mongoose.model('GlobalGoal', goalSchema);
 
 // --- Helpers ---
-function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
+function sortObjectKeys(obj) { 
+    return Object.keys(obj).sort().reduce((r, k) => { 
+        r[k] = obj[k]; 
+        return r; 
+    }, {}); 
+}
 
 function fixToken(token) {
     if (!token) return "";
+    // תיקון: לא להוסיף 0 באופן אוטומטי, רק לנקות רווחים ותווים מיותרים
+    // במערכות סליקה מסוימות הטוקן הוא בדיוק כפי שמתקבל
     let strToken = String(token).replace(/['"]+/g, '').trim();
-    return (strToken.length > 0 && !strToken.startsWith('0')) ? '0' + strToken : strToken;
+    return strToken;
 }
 
 async function getActiveToken(user) {
@@ -168,14 +175,25 @@ async function chargeKesher(user, amount, note, creditDetails = null, useReceipt
         if (usedToken) {
             tranData.Token = fixToken(usedToken);
             const activeCard = user.cards.find(c => fixToken(c.token) === tranData.Token);
-            if(activeCard) { tranData.Expiry = activeCard.expiry; currentCardDigits = activeCard.lastDigits; finalExpiry = activeCard.expiry; }
+            if(activeCard) { 
+                tranData.Expiry = activeCard.expiry; 
+                currentCardDigits = activeCard.lastDigits; 
+                finalExpiry = activeCard.expiry; 
+            }
         } else { throw new Error("No Payment Method"); }
     }
 
+    // מיון המפתחות לפי ABC כנדרש ב-API
+    const sortedTran = sortObjectKeys(tranData);
+    
+    console.log(`🚀 Sending Transaction for ${user.name}:`, JSON.stringify(sortedTran));
+
     const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
-        Json: { userName: '2181420WS2087', password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', func: "SendTransaction", format: "json", tran: sortObjectKeys(tranData) },
+        Json: { userName: '2181420WS2087', password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', func: "SendTransaction", format: "json", tran: sortedTran },
         format: "json"
     }, { validateStatus: () => true });
+
+    console.log(`📩 Response for ${user.name}:`, JSON.stringify(res.data));
 
     return { 
         success: res.data.RequestResult?.Status === true || res.data.Status === true, 
@@ -205,16 +223,28 @@ cron.schedule('0 8 * * *', async () => {
                 if(hasToken) {
                     try {
                         const r = await chargeKesher(u, u.recurringDailyAmount, "הוראת קבע יומית", null, useReceipt);
-                        u.totalDonated += u.recurringDailyAmount;
-                        u.donationsHistory.push({ 
-                            amount: u.recurringDailyAmount, 
-                            note: "יומי קבוע (מיידי)", 
-                            status: "success", 
-                            receiptNameUsed: r.receiptNameUsed,
-                            receiptTZUsed: r.receiptTZUsed 
-                        });
+                        
+                        if (r.success) {
+                            u.totalDonated += u.recurringDailyAmount;
+                            u.donationsHistory.push({ 
+                                amount: u.recurringDailyAmount, 
+                                note: "יומי קבוע (מיידי)", 
+                                status: "success", 
+                                receiptNameUsed: r.receiptNameUsed,
+                                receiptTZUsed: r.receiptTZUsed 
+                            });
+                        } else {
+                            // שמירת סיבת הכישלון ביומן
+                            const failReason = r.data.Description || r.data.errDesc || "תקלה בסליקה";
+                            u.donationsHistory.push({ 
+                                amount: u.recurringDailyAmount, 
+                                note: "יומי קבוע", 
+                                status: "failed", 
+                                failReason: failReason 
+                            });
+                        }
                     } catch(e) {
-                        u.donationsHistory.push({ amount: u.recurringDailyAmount, note: "יומי קבוע", status: "failed", failReason: "תקלה" });
+                        u.donationsHistory.push({ amount: u.recurringDailyAmount, note: "יומי קבוע", status: "failed", failReason: e.message });
                     }
                     saveUser = true;
                 }
@@ -238,18 +268,24 @@ cron.schedule('0 8 * * *', async () => {
                 try {
                     console.log(`Charging basket for user ${u.name} (Amount: ${totalToCharge})`);
                     const r = await chargeKesher(u, totalToCharge, "חיוב סל ממתין", null, useReceipt);
-                    u.totalDonated += totalToCharge;
-                    u.pendingDonations.forEach(d => { 
-                        u.donationsHistory.push({ 
-                            amount: d.amount, 
-                            note: d.note, 
-                            status: "success", 
-                            date: new Date(), 
-                            receiptNameUsed: r.receiptNameUsed,
-                            receiptTZUsed: r.receiptTZUsed
-                        }); 
-                    });
-                    u.pendingDonations = []; 
+                    
+                    if (r.success) {
+                        u.totalDonated += totalToCharge;
+                        u.pendingDonations.forEach(d => { 
+                            u.donationsHistory.push({ 
+                                amount: d.amount, 
+                                note: d.note, 
+                                status: "success", 
+                                date: new Date(), 
+                                receiptNameUsed: r.receiptNameUsed,
+                                receiptTZUsed: r.receiptTZUsed
+                            }); 
+                        });
+                        u.pendingDonations = []; 
+                    } else {
+                        console.log(`Basket charge failed: ${r.data.Description}`);
+                        // לא מנקים סל במקרה כישלון, אולי נרצה לשמור לוג?
+                    }
                 } catch (e) {
                     console.log(`Basket charge failed for ${u.name}: ${e.message}`);
                 }
@@ -410,6 +446,49 @@ app.post('/login-by-id', async (req, res) => {
             res.json({ success: true, user }); 
         } else res.json({ success: false }); 
     } catch(e) { res.json({ success: false }); }
+});
+
+app.post('/donate', async (req, res) => {
+    const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin, isGoalDonation, useReceiptDetails } = req.body;
+    let u = await User.findById(userId);
+    if (u.securityPin && u.securityPin.trim() !== "") { if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" }); }
+    
+    let shouldChargeNow = (isGoalDonation === true) || (forceImmediate === true) ? true : (u.billingPreference === 0 && forceImmediate !== false);
+    
+    if (shouldChargeNow) {
+        try {
+            const r = await chargeKesher(u, amount, note, !useToken ? ccDetails : null, useReceiptDetails);
+            if (r.success) {
+                u.totalDonated += parseFloat(amount);
+                u.donationsHistory.push({ 
+                    amount: parseFloat(amount), 
+                    note, 
+                    date: new Date(), 
+                    status: 'success',
+                    isGoal: isGoalDonation === true,
+                    receiptNameUsed: r.receiptNameUsed,
+                    receiptTZUsed: r.receiptTZUsed
+                });
+                await u.save();
+
+                if (isGoalDonation) {
+                    await GlobalGoal.findOneAndUpdate({ id: 'main_goal' }, { $inc: { currentAmount: parseFloat(amount) } });
+                }
+
+                res.json({ success: true, message: "תרומה התקבלה!" });
+            } else { 
+                // Return exact failure reason
+                res.json({ success: false, error: r.data.Description || r.data.errDesc || "סירוב עסקה" }); 
+            }
+        } catch(e) { 
+            console.error("Donate Error:", e);
+            res.json({ success: false, error: e.message }); 
+        }
+    } else {
+        u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() });
+        await u.save();
+        res.json({ success: true, message: "נוסף לסל" });
+    }
 });
 
 app.post('/delete-pending', async (req, res) => { 
