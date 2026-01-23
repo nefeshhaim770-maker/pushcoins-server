@@ -7,7 +7,8 @@ const cron = require('node-cron');
 const path = require('path');
 const app = express();
 
-app.use(express.json());
+// Increase payload limit for file uploads (Base64)
+app.use(express.json({ limit: '5mb' }));
 app.use(cors());
 
 // --- Firebase ---
@@ -35,6 +36,15 @@ const cardSchema = new mongoose.Schema({
     addedDate: { type: Date, default: Date.now }
 });
 
+const messageSchema = new mongoose.Schema({
+    direction: String, // 'user_to_admin' or 'admin_to_user'
+    content: String,
+    attachment: String, // Base64 string
+    attachmentName: String,
+    date: { type: Date, default: Date.now },
+    read: { type: Boolean, default: false }
+});
+
 const userSchema = new mongoose.Schema({
     email: { type: String, sparse: true },
     phone: { type: String, sparse: true },
@@ -54,6 +64,9 @@ const userSchema = new mongoose.Schema({
     // --- Tax Refund Widget ---
     showTaxWidget: { type: Boolean, default: true },
 
+    // --- Messages (Contact Us) ---
+    messages: [messageSchema],
+
     lastExpiry: String,
     lastCardDigits: String,
     token: { type: String, default: "" },
@@ -65,7 +78,6 @@ const userSchema = new mongoose.Schema({
     canRemoveFromBasket: { type: Boolean, default: true },
     securityPin: { type: String, default: "" },
     fcmToken: { type: String, default: "" },
-    // ADDED receiptTZUsed to history
     donationsHistory: [{ 
         amount: Number, 
         date: { type: Date, default: Date.now }, 
@@ -172,7 +184,7 @@ async function chargeKesher(user, amount, note, creditDetails = null, useReceipt
         finalExpiry, 
         currentCardDigits,
         receiptNameUsed: finalName,
-        receiptTZUsed: finalID // Returning ID used
+        receiptTZUsed: finalID 
     };
 }
 
@@ -254,6 +266,110 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/manager', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
 app.get('/firebase-messaging-sw.js', (req, res) => res.sendFile(path.join(__dirname, 'firebase-messaging-sw.js')));
 
+// --- CONTACT / MESSAGE ROUTES ---
+
+// Client sends message
+app.post('/contact/send', async (req, res) => {
+    const { userId, content, attachment, attachmentName } = req.body;
+    try {
+        const u = await User.findById(userId);
+        if(!u) return res.json({ success: false, error: 'User not found' });
+        
+        u.messages.push({
+            direction: 'user_to_admin',
+            content,
+            attachment,
+            attachmentName,
+            read: false,
+            date: new Date()
+        });
+        await u.save();
+        res.json({ success: true });
+    } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+// Admin replies
+app.post('/admin/reply', async (req, res) => {
+    if(req.body.password !== PASS) return res.json({ success: false });
+    const { userId, content, attachment, attachmentName } = req.body;
+    try {
+        const u = await User.findById(userId);
+        if(!u) return res.json({ success: false, error: 'User not found' });
+
+        u.messages.push({
+            direction: 'admin_to_user',
+            content,
+            attachment,
+            attachmentName,
+            read: false,
+            date: new Date()
+        });
+        await u.save();
+        
+        // Optional: Send Push Notification to user
+        if(u.fcmToken) {
+            try {
+                await admin.messaging().send({
+                    token: u.fcmToken,
+                    notification: {
+                        title: 'הודעה חדשה מההנהלה',
+                        body: content || 'התקבל קובץ חדש'
+                    }
+                });
+            } catch(e) {}
+        }
+
+        res.json({ success: true });
+    } catch(e) { res.json({ success: false, error: e.message }); }
+});
+
+// Admin Get Inbox (Users with messages)
+app.post('/admin/get-messages', async (req, res) => {
+    if(req.body.password !== PASS) return res.json({ success: false });
+    // Find users who have at least one message
+    const users = await User.find({ 'messages.0': { $exists: true } }).select('name phone messages _id');
+    
+    // Sort users by last message date desc
+    const sortedUsers = users.map(u => {
+        const lastMsg = u.messages[u.messages.length - 1];
+        const unreadCount = u.messages.filter(m => m.direction === 'user_to_admin' && !m.read).length;
+        return {
+            _id: u._id,
+            name: u.name,
+            phone: u.phone,
+            lastMessageDate: lastMsg ? lastMsg.date : 0,
+            unreadCount,
+            messages: u.messages // Return full conversation
+        };
+    }).sort((a,b) => new Date(b.lastMessageDate) - new Date(a.lastMessageDate));
+
+    res.json({ success: true, users: sortedUsers });
+});
+
+// Mark messages as read (User side or Admin side logic)
+app.post('/admin/mark-read', async (req, res) => {
+    if(req.body.password !== PASS) return res.json({ success: false });
+    const { userId } = req.body;
+    await User.updateOne(
+        { _id: userId },
+        { $set: { "messages.$[elem].read": true } },
+        { arrayFilters: [{ "elem.direction": "user_to_admin" }] }
+    );
+    res.json({ success: true });
+});
+
+app.post('/user/mark-read', async (req, res) => {
+    const { userId } = req.body;
+    await User.updateOne(
+        { _id: userId },
+        { $set: { "messages.$[elem].read": true } },
+        { arrayFilters: [{ "elem.direction": "admin_to_user" }] }
+    );
+    res.json({ success: true });
+});
+
+
+// --- AUTH ROUTES ---
 app.post('/update-code', async (req, res) => {
     let { email, phone, code } = req.body;
     let cleanEmail = email ? email.toLowerCase().trim() : undefined;
@@ -294,43 +410,6 @@ app.post('/login-by-id', async (req, res) => {
             res.json({ success: true, user }); 
         } else res.json({ success: false }); 
     } catch(e) { res.json({ success: false }); }
-});
-
-app.post('/donate', async (req, res) => {
-    const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin, isGoalDonation, useReceiptDetails } = req.body;
-    let u = await User.findById(userId);
-    if (u.securityPin && u.securityPin.trim() !== "") { if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" }); }
-    
-    let shouldChargeNow = (isGoalDonation === true) || (forceImmediate === true) ? true : (u.billingPreference === 0 && forceImmediate !== false);
-    
-    if (shouldChargeNow) {
-        try {
-            const r = await chargeKesher(u, amount, note, !useToken ? ccDetails : null, useReceiptDetails);
-            if (r.success) {
-                u.totalDonated += parseFloat(amount);
-                u.donationsHistory.push({ 
-                    amount: parseFloat(amount), 
-                    note, 
-                    date: new Date(), 
-                    status: 'success',
-                    isGoal: isGoalDonation === true,
-                    receiptNameUsed: r.receiptNameUsed,
-                    receiptTZUsed: r.receiptTZUsed
-                });
-                await u.save();
-
-                if (isGoalDonation) {
-                    await GlobalGoal.findOneAndUpdate({ id: 'main_goal' }, { $inc: { currentAmount: parseFloat(amount) } });
-                }
-
-                res.json({ success: true, message: "תרומה התקבלה!" });
-            } else { res.json({ success: false, error: r.data.Description || "סירוב" }); }
-        } catch(e) { res.json({ success: false, error: e.message }); }
-    } else {
-        u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() });
-        await u.save();
-        res.json({ success: true, message: "נוסף לסל" });
-    }
 });
 
 app.post('/delete-pending', async (req, res) => { 
