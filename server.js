@@ -41,11 +41,16 @@ const userSchema = new mongoose.Schema({
     name: String,
     tz: String,
     
-    // --- New Receipt Fields ---
-    receiptName: { type: String, default: "" }, // שם ייעודי לקבלה
-    receiptTZ: { type: String, default: "" },   // ת"ז או ח.פ לקבלה
-    receiptMode: { type: Number, default: 0 },  // 0=Use Personal, 1=Use Receipt Details, 2=Ask Every Time
+    // --- Receipt Fields ---
+    receiptName: { type: String, default: "" },
+    receiptTZ: { type: String, default: "" },
+    receiptMode: { type: Number, default: 0 }, 
     
+    // --- Maaser / Chomesh Fields ---
+    maaserActive: { type: Boolean, default: false }, // האם הווידג'ט פעיל
+    maaserRate: { type: Number, default: 10 }, // 10 או 20
+    maaserIncome: { type: Number, default: 0 }, // משכורת נטו
+
     lastExpiry: String,
     lastCardDigits: String,
     token: { type: String, default: "" },
@@ -97,12 +102,11 @@ async function getActiveToken(user) {
     return null;
 }
 
-// --- Charge Engine (Updated for Receipts) ---
+// --- Charge Engine ---
 async function chargeKesher(user, amount, note, creditDetails = null, useReceiptDetails = false) {
     const amountInAgorot = Math.round(parseFloat(amount) * 100);
     const safePhone = (user.phone || "0500000000").replace(/\D/g, '');
     
-    // Determine Identity (Personal vs Receipt)
     let finalName = user.name || "Torem";
     let finalID = user.tz;
 
@@ -119,7 +123,6 @@ async function chargeKesher(user, amount, note, creditDetails = null, useReceipt
     let lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "";
     if (!lastName) lastName = " "; 
 
-    // According to API rules: ClientApiIdentity and Id are crucial for the receipt
     let tranData = {
         Total: amountInAgorot, Currency: 1, CreditType: 1, ParamJ: "J4", TransactionType: "debit", 
         ProjectNumber: "00001", Phone: safePhone, FirstName: firstName, LastName: lastName, 
@@ -155,7 +158,7 @@ async function chargeKesher(user, amount, note, creditDetails = null, useReceipt
         token: res.data.Token, 
         finalExpiry, 
         currentCardDigits,
-        receiptNameUsed: finalName // Return which name was used
+        receiptNameUsed: finalName 
     };
 }
 
@@ -169,13 +172,8 @@ cron.schedule('0 8 * * *', async () => {
         let saveUser = false;
         const hasToken = await getActiveToken(u);
 
-        // Determine receipt mode for automatic charges
-        // For automatic charges, we use the "Default" logic. 
-        // If mode is 2 (Ask), we default to Personal (0) because we can't ask in Cron.
-        // If mode is 1 (Receipt), we use Receipt.
         const useReceipt = (u.receiptMode === 1 && u.receiptName && u.receiptTZ);
 
-        // 1. הוראת קבע יומית
         if (u.recurringDailyAmount > 0) {
             if (u.recurringImmediate === true || u.billingPreference === 0) {
                 if(hasToken) {
@@ -194,7 +192,6 @@ cron.schedule('0 8 * * *', async () => {
             }
         }
 
-        // 2. חיוב הסל
         const prefDay = parseInt(u.billingPreference);
         const currentDay = parseInt(today);
         
@@ -279,7 +276,6 @@ app.post('/donate', async (req, res) => {
     
     if (shouldChargeNow) {
         try {
-            // Pass useReceiptDetails flag (boolean)
             const r = await chargeKesher(u, amount, note, !useToken ? ccDetails : null, useReceiptDetails);
             if (r.success) {
                 u.totalDonated += parseFloat(amount);
@@ -289,7 +285,7 @@ app.post('/donate', async (req, res) => {
                     date: new Date(), 
                     status: 'success',
                     isGoal: isGoalDonation === true,
-                    receiptNameUsed: r.receiptNameUsed // Save which name was used
+                    receiptNameUsed: r.receiptNameUsed 
                 });
                 await u.save();
 
@@ -316,7 +312,7 @@ app.post('/delete-pending', async (req, res) => {
 
 app.post('/admin/update-profile', async (req, res) => {
     try {
-        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails, canRemoveFromBasket, activeCardId, deleteCardId, editCardData, addManualCardData, receiptName, receiptTZ, receiptMode } = req.body;
+        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails, canRemoveFromBasket, activeCardId, deleteCardId, editCardData, addManualCardData, receiptName, receiptTZ, receiptMode, maaserActive, maaserRate, maaserIncome } = req.body;
         
         let u = await User.findById(userId);
         
@@ -368,10 +364,14 @@ app.post('/admin/update-profile', async (req, res) => {
         u.securityPin = securityPin;
         u.canRemoveFromBasket = canRemoveFromBasket;
         
-        // Receipt Fields Update
         if(receiptName !== undefined) u.receiptName = receiptName;
         if(receiptTZ !== undefined) u.receiptTZ = receiptTZ;
         if(receiptMode !== undefined) u.receiptMode = parseInt(receiptMode);
+
+        // Maaser Update
+        if(maaserActive !== undefined) u.maaserActive = maaserActive;
+        if(maaserRate !== undefined) u.maaserRate = parseInt(maaserRate);
+        if(maaserIncome !== undefined) u.maaserIncome = parseInt(maaserIncome);
 
         await u.save();
         res.json({ success: true });
@@ -407,7 +407,6 @@ app.post('/admin/add-donation-manual', async (req, res) => {
     if (type === 'immediate') {
         if (!await getActiveToken(u)) return res.json({ success: false, error: "אין כרטיס אשראי שמור" });
         try {
-            // Manual charge always defaults to personal details unless we add UI for that too. Keeping it simple for now.
             const r = await chargeKesher(u, amount, note || "חיוב ע\"י מנהל");
             if (r.success) {
                 u.totalDonated += parseFloat(amount);
@@ -466,7 +465,7 @@ app.post('/admin/get-goal-donors', async (req, res) => {
                     amount: d.amount,
                     date: d.date,
                     note: d.note,
-                    receiptName: d.receiptNameUsed || (u.name || 'רגיל') // Show which name was on the receipt
+                    receiptName: d.receiptNameUsed || (u.name || 'רגיל') 
                 });
             }
         });
