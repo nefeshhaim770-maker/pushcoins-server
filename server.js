@@ -40,6 +40,12 @@ const userSchema = new mongoose.Schema({
     phone: { type: String, sparse: true },
     name: String,
     tz: String,
+    
+    // --- New Receipt Fields ---
+    receiptName: { type: String, default: "" }, // שם ייעודי לקבלה
+    receiptTZ: { type: String, default: "" },   // ת"ז או ח.פ לקבלה
+    receiptMode: { type: Number, default: 0 },  // 0=Use Personal, 1=Use Receipt Details, 2=Ask Every Time
+    
     lastExpiry: String,
     lastCardDigits: String,
     token: { type: String, default: "" },
@@ -51,8 +57,7 @@ const userSchema = new mongoose.Schema({
     canRemoveFromBasket: { type: Boolean, default: true },
     securityPin: { type: String, default: "" },
     fcmToken: { type: String, default: "" },
-    // ADDED isGoal field to history
-    donationsHistory: [{ amount: Number, date: { type: Date, default: Date.now }, note: String, status: String, failReason: String, isGoal: { type: Boolean, default: false } }],
+    donationsHistory: [{ amount: Number, date: { type: Date, default: Date.now }, note: String, status: String, failReason: String, isGoal: { type: Boolean, default: false }, receiptNameUsed: String }],
     pendingDonations: [{ amount: Number, date: { type: Date, default: Date.now }, note: String }],
     tempCode: String
 });
@@ -92,19 +97,29 @@ async function getActiveToken(user) {
     return null;
 }
 
-// --- Charge Engine ---
-async function chargeKesher(user, amount, note, creditDetails = null) {
+// --- Charge Engine (Updated for Receipts) ---
+async function chargeKesher(user, amount, note, creditDetails = null, useReceiptDetails = false) {
     const amountInAgorot = Math.round(parseFloat(amount) * 100);
     const safePhone = (user.phone || "0500000000").replace(/\D/g, '');
     
-    let uniqueId = user.tz && user.tz.length > 5 ? user.tz : null;
+    // Determine Identity (Personal vs Receipt)
+    let finalName = user.name || "Torem";
+    let finalID = user.tz;
+
+    if (useReceiptDetails && user.receiptName && user.receiptTZ) {
+        finalName = user.receiptName;
+        finalID = user.receiptTZ;
+    }
+
+    let uniqueId = finalID && finalID.length > 5 ? finalID : null;
     if (!uniqueId) uniqueId = safePhone !== "0500000000" ? safePhone : user._id.toString();
 
-    const nameParts = (user.name || "Torem").trim().split(" ");
+    const nameParts = finalName.trim().split(" ");
     const firstName = nameParts[0];
     let lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "";
     if (!lastName) lastName = " "; 
 
+    // According to API rules: ClientApiIdentity and Id are crucial for the receipt
     let tranData = {
         Total: amountInAgorot, Currency: 1, CreditType: 1, ParamJ: "J4", TransactionType: "debit", 
         ProjectNumber: "00001", Phone: safePhone, FirstName: firstName, LastName: lastName, 
@@ -134,7 +149,14 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
         format: "json"
     }, { validateStatus: () => true });
 
-    return { success: res.data.RequestResult?.Status === true || res.data.Status === true, data: res.data, token: res.data.Token, finalExpiry, currentCardDigits };
+    return { 
+        success: res.data.RequestResult?.Status === true || res.data.Status === true, 
+        data: res.data, 
+        token: res.data.Token, 
+        finalExpiry, 
+        currentCardDigits,
+        receiptNameUsed: finalName // Return which name was used
+    };
 }
 
 // --- Cron Job ---
@@ -147,14 +169,20 @@ cron.schedule('0 8 * * *', async () => {
         let saveUser = false;
         const hasToken = await getActiveToken(u);
 
+        // Determine receipt mode for automatic charges
+        // For automatic charges, we use the "Default" logic. 
+        // If mode is 2 (Ask), we default to Personal (0) because we can't ask in Cron.
+        // If mode is 1 (Receipt), we use Receipt.
+        const useReceipt = (u.receiptMode === 1 && u.receiptName && u.receiptTZ);
+
         // 1. הוראת קבע יומית
         if (u.recurringDailyAmount > 0) {
             if (u.recurringImmediate === true || u.billingPreference === 0) {
                 if(hasToken) {
                     try {
-                        await chargeKesher(u, u.recurringDailyAmount, "הוראת קבע יומית");
+                        const r = await chargeKesher(u, u.recurringDailyAmount, "הוראת קבע יומית", null, useReceipt);
                         u.totalDonated += u.recurringDailyAmount;
-                        u.donationsHistory.push({ amount: u.recurringDailyAmount, note: "יומי קבוע (מיידי)", status: "success" });
+                        u.donationsHistory.push({ amount: u.recurringDailyAmount, note: "יומי קבוע (מיידי)", status: "success", receiptNameUsed: r.receiptNameUsed });
                     } catch(e) {
                         u.donationsHistory.push({ amount: u.recurringDailyAmount, note: "יומי קבוע", status: "failed", failReason: "תקלה" });
                     }
@@ -180,9 +208,9 @@ cron.schedule('0 8 * * *', async () => {
             if (totalToCharge > 0 && hasToken) {
                 try {
                     console.log(`Charging basket for user ${u.name} (Amount: ${totalToCharge})`);
-                    await chargeKesher(u, totalToCharge, "חיוב סל ממתין");
+                    const r = await chargeKesher(u, totalToCharge, "חיוב סל ממתין", null, useReceipt);
                     u.totalDonated += totalToCharge;
-                    u.pendingDonations.forEach(d => { u.donationsHistory.push({ amount: d.amount, note: d.note, status: "success", date: new Date() }); });
+                    u.pendingDonations.forEach(d => { u.donationsHistory.push({ amount: d.amount, note: d.note, status: "success", date: new Date(), receiptNameUsed: r.receiptNameUsed }); });
                     u.pendingDonations = []; 
                 } catch (e) {
                     console.log(`Basket charge failed for ${u.name}: ${e.message}`);
@@ -243,7 +271,7 @@ app.post('/login-by-id', async (req, res) => {
 });
 
 app.post('/donate', async (req, res) => {
-    const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin, isGoalDonation } = req.body;
+    const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin, isGoalDonation, useReceiptDetails } = req.body;
     let u = await User.findById(userId);
     if (u.securityPin && u.securityPin.trim() !== "") { if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" }); }
     
@@ -251,16 +279,17 @@ app.post('/donate', async (req, res) => {
     
     if (shouldChargeNow) {
         try {
-            const r = await chargeKesher(u, amount, note, !useToken ? ccDetails : null);
+            // Pass useReceiptDetails flag (boolean)
+            const r = await chargeKesher(u, amount, note, !useToken ? ccDetails : null, useReceiptDetails);
             if (r.success) {
                 u.totalDonated += parseFloat(amount);
-                // Save with isGoal flag
                 u.donationsHistory.push({ 
                     amount: parseFloat(amount), 
                     note, 
                     date: new Date(), 
                     status: 'success',
-                    isGoal: isGoalDonation === true // Flagging the donation
+                    isGoal: isGoalDonation === true,
+                    receiptNameUsed: r.receiptNameUsed // Save which name was used
                 });
                 await u.save();
 
@@ -287,7 +316,7 @@ app.post('/delete-pending', async (req, res) => {
 
 app.post('/admin/update-profile', async (req, res) => {
     try {
-        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails, canRemoveFromBasket, activeCardId, deleteCardId, editCardData, addManualCardData } = req.body;
+        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails, canRemoveFromBasket, activeCardId, deleteCardId, editCardData, addManualCardData, receiptName, receiptTZ, receiptMode } = req.body;
         
         let u = await User.findById(userId);
         
@@ -338,6 +367,11 @@ app.post('/admin/update-profile', async (req, res) => {
         u.recurringImmediate = recurringImmediate===true;
         u.securityPin = securityPin;
         u.canRemoveFromBasket = canRemoveFromBasket;
+        
+        // Receipt Fields Update
+        if(receiptName !== undefined) u.receiptName = receiptName;
+        if(receiptTZ !== undefined) u.receiptTZ = receiptTZ;
+        if(receiptMode !== undefined) u.receiptMode = parseInt(receiptMode);
 
         await u.save();
         res.json({ success: true });
@@ -373,6 +407,7 @@ app.post('/admin/add-donation-manual', async (req, res) => {
     if (type === 'immediate') {
         if (!await getActiveToken(u)) return res.json({ success: false, error: "אין כרטיס אשראי שמור" });
         try {
+            // Manual charge always defaults to personal details unless we add UI for that too. Keeping it simple for now.
             const r = await chargeKesher(u, amount, note || "חיוב ע\"י מנהל");
             if (r.success) {
                 u.totalDonated += parseFloat(amount);
@@ -421,7 +456,6 @@ app.post('/admin/goal', async (req, res) => {
 // NEW: Get Goal Donors
 app.post('/admin/get-goal-donors', async (req, res) => {
     if(req.body.password !== PASS) return res.json({ success: false });
-    // Find users who have at least one donation marked as isGoal: true
     const users = await User.find({ 'donationsHistory.isGoal': true });
     let donors = [];
     users.forEach(u => {
@@ -431,12 +465,12 @@ app.post('/admin/get-goal-donors', async (req, res) => {
                     name: u.name || 'פלוני',
                     amount: d.amount,
                     date: d.date,
-                    note: d.note
+                    note: d.note,
+                    receiptName: d.receiptNameUsed || (u.name || 'רגיל') // Show which name was on the receipt
                 });
             }
         });
     });
-    // Sort by date descending
     donors.sort((a,b) => new Date(b.date) - new Date(a.date));
     res.json({ success: true, donors });
 });
