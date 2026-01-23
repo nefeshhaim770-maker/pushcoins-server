@@ -47,9 +47,12 @@ const userSchema = new mongoose.Schema({
     receiptMode: { type: Number, default: 0 }, 
     
     // --- Maaser / Chomesh Fields ---
-    maaserActive: { type: Boolean, default: false }, // האם הווידג'ט פעיל
-    maaserRate: { type: Number, default: 10 }, // 10 או 20
-    maaserIncome: { type: Number, default: 0 }, // משכורת נטו
+    maaserActive: { type: Boolean, default: false },
+    maaserRate: { type: Number, default: 10 },
+    maaserIncome: { type: Number, default: 0 },
+
+    // --- Tax Refund Widget ---
+    showTaxWidget: { type: Boolean, default: true },
 
     lastExpiry: String,
     lastCardDigits: String,
@@ -62,7 +65,17 @@ const userSchema = new mongoose.Schema({
     canRemoveFromBasket: { type: Boolean, default: true },
     securityPin: { type: String, default: "" },
     fcmToken: { type: String, default: "" },
-    donationsHistory: [{ amount: Number, date: { type: Date, default: Date.now }, note: String, status: String, failReason: String, isGoal: { type: Boolean, default: false }, receiptNameUsed: String }],
+    // ADDED receiptTZUsed to history
+    donationsHistory: [{ 
+        amount: Number, 
+        date: { type: Date, default: Date.now }, 
+        note: String, 
+        status: String, 
+        failReason: String, 
+        isGoal: { type: Boolean, default: false }, 
+        receiptNameUsed: String,
+        receiptTZUsed: String 
+    }],
     pendingDonations: [{ amount: Number, date: { type: Date, default: Date.now }, note: String }],
     tempCode: String
 });
@@ -158,7 +171,8 @@ async function chargeKesher(user, amount, note, creditDetails = null, useReceipt
         token: res.data.Token, 
         finalExpiry, 
         currentCardDigits,
-        receiptNameUsed: finalName 
+        receiptNameUsed: finalName,
+        receiptTZUsed: finalID // Returning ID used
     };
 }
 
@@ -180,7 +194,13 @@ cron.schedule('0 8 * * *', async () => {
                     try {
                         const r = await chargeKesher(u, u.recurringDailyAmount, "הוראת קבע יומית", null, useReceipt);
                         u.totalDonated += u.recurringDailyAmount;
-                        u.donationsHistory.push({ amount: u.recurringDailyAmount, note: "יומי קבוע (מיידי)", status: "success", receiptNameUsed: r.receiptNameUsed });
+                        u.donationsHistory.push({ 
+                            amount: u.recurringDailyAmount, 
+                            note: "יומי קבוע (מיידי)", 
+                            status: "success", 
+                            receiptNameUsed: r.receiptNameUsed,
+                            receiptTZUsed: r.receiptTZUsed 
+                        });
                     } catch(e) {
                         u.donationsHistory.push({ amount: u.recurringDailyAmount, note: "יומי קבוע", status: "failed", failReason: "תקלה" });
                     }
@@ -207,7 +227,16 @@ cron.schedule('0 8 * * *', async () => {
                     console.log(`Charging basket for user ${u.name} (Amount: ${totalToCharge})`);
                     const r = await chargeKesher(u, totalToCharge, "חיוב סל ממתין", null, useReceipt);
                     u.totalDonated += totalToCharge;
-                    u.pendingDonations.forEach(d => { u.donationsHistory.push({ amount: d.amount, note: d.note, status: "success", date: new Date(), receiptNameUsed: r.receiptNameUsed }); });
+                    u.pendingDonations.forEach(d => { 
+                        u.donationsHistory.push({ 
+                            amount: d.amount, 
+                            note: d.note, 
+                            status: "success", 
+                            date: new Date(), 
+                            receiptNameUsed: r.receiptNameUsed,
+                            receiptTZUsed: r.receiptTZUsed
+                        }); 
+                    });
                     u.pendingDonations = []; 
                 } catch (e) {
                     console.log(`Basket charge failed for ${u.name}: ${e.message}`);
@@ -285,7 +314,8 @@ app.post('/donate', async (req, res) => {
                     date: new Date(), 
                     status: 'success',
                     isGoal: isGoalDonation === true,
-                    receiptNameUsed: r.receiptNameUsed 
+                    receiptNameUsed: r.receiptNameUsed,
+                    receiptTZUsed: r.receiptTZUsed
                 });
                 await u.save();
 
@@ -312,7 +342,7 @@ app.post('/delete-pending', async (req, res) => {
 
 app.post('/admin/update-profile', async (req, res) => {
     try {
-        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails, canRemoveFromBasket, activeCardId, deleteCardId, editCardData, addManualCardData, receiptName, receiptTZ, receiptMode, maaserActive, maaserRate, maaserIncome } = req.body;
+        const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails, canRemoveFromBasket, activeCardId, deleteCardId, editCardData, addManualCardData, receiptName, receiptTZ, receiptMode, maaserActive, maaserRate, maaserIncome, showTaxWidget } = req.body;
         
         let u = await User.findById(userId);
         
@@ -368,10 +398,11 @@ app.post('/admin/update-profile', async (req, res) => {
         if(receiptTZ !== undefined) u.receiptTZ = receiptTZ;
         if(receiptMode !== undefined) u.receiptMode = parseInt(receiptMode);
 
-        // Maaser Update
         if(maaserActive !== undefined) u.maaserActive = maaserActive;
         if(maaserRate !== undefined) u.maaserRate = parseInt(maaserRate);
         if(maaserIncome !== undefined) u.maaserIncome = parseInt(maaserIncome);
+
+        if(showTaxWidget !== undefined) u.showTaxWidget = showTaxWidget;
 
         await u.save();
         res.json({ success: true });
@@ -465,7 +496,8 @@ app.post('/admin/get-goal-donors', async (req, res) => {
                     amount: d.amount,
                     date: d.date,
                     note: d.note,
-                    receiptName: d.receiptNameUsed || (u.name || 'רגיל') 
+                    receiptName: d.receiptNameUsed || (u.name || 'רגיל'),
+                    receiptTZ: d.receiptTZUsed || (u.tz || '-')
                 });
             }
         });
