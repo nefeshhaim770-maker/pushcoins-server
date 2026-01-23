@@ -51,15 +51,16 @@ const userSchema = new mongoose.Schema({
     canRemoveFromBasket: { type: Boolean, default: true },
     securityPin: { type: String, default: "" },
     fcmToken: { type: String, default: "" },
-    donationsHistory: [{ amount: Number, date: { type: Date, default: Date.now }, note: String, status: String, failReason: String }],
+    // ADDED isGoal field to history
+    donationsHistory: [{ amount: Number, date: { type: Date, default: Date.now }, note: String, status: String, failReason: String, isGoal: { type: Boolean, default: false } }],
     pendingDonations: [{ amount: Number, date: { type: Date, default: Date.now }, note: String }],
     tempCode: String
 });
 const User = mongoose.model('User', userSchema);
 
-// --- NEW GOAL SCHEMA (ADDITION) ---
+// --- NEW GOAL SCHEMA ---
 const goalSchema = new mongoose.Schema({
-    id: { type: String, default: 'main_goal' }, // Singleton ID
+    id: { type: String, default: 'main_goal' }, 
     title: String,
     targetAmount: Number,
     currentAmount: { type: Number, default: 0 },
@@ -136,12 +137,10 @@ async function chargeKesher(user, amount, note, creditDetails = null) {
     return { success: res.data.RequestResult?.Status === true || res.data.Status === true, data: res.data, token: res.data.Token, finalExpiry, currentCardDigits };
 }
 
-// --- Cron Job (FIXED) ---
-// רץ כל יום ב-8 בבוקר
+// --- Cron Job ---
 cron.schedule('0 8 * * *', async () => {
-    // קבלת היום הנוכחי - משתמש ב-Date מקומי של השרת
     const today = new Date().getDate(); 
-    console.log(`⏳ Starting Daily Cron. Day: ${today}`); // לוג לבדיקת תאריך השרת
+    console.log(`⏳ Starting Daily Cron. Day: ${today}`); 
 
     const users = await User.find({}); 
     for (const u of users) {
@@ -151,7 +150,6 @@ cron.schedule('0 8 * * *', async () => {
         // 1. הוראת קבע יומית
         if (u.recurringDailyAmount > 0) {
             if (u.recurringImmediate === true || u.billingPreference === 0) {
-                // חיוב מיידי
                 if(hasToken) {
                     try {
                         await chargeKesher(u, u.recurringDailyAmount, "הוראת קבע יומית");
@@ -163,14 +161,12 @@ cron.schedule('0 8 * * *', async () => {
                     saveUser = true;
                 }
             } else {
-                // צבירה לסל
                 u.pendingDonations.push({ amount: u.recurringDailyAmount, note: "יומי קבוע (הצטברות)" });
                 saveUser = true;
             }
         }
 
-        // 2. חיוב הסל (התיקון כאן)
-        // המרת שניהם למספרים כדי למנוע בעיות של String vs Number
+        // 2. חיוב הסל
         const prefDay = parseInt(u.billingPreference);
         const currentDay = parseInt(today);
         
@@ -181,15 +177,13 @@ cron.schedule('0 8 * * *', async () => {
             let totalToCharge = 0;
             u.pendingDonations.forEach(d => totalToCharge += d.amount);
             
-            // רק אם יש כרטיס ויש סכום
             if (totalToCharge > 0 && hasToken) {
                 try {
                     console.log(`Charging basket for user ${u.name} (Amount: ${totalToCharge})`);
                     await chargeKesher(u, totalToCharge, "חיוב סל ממתין");
                     u.totalDonated += totalToCharge;
-                    // העברת פריטים מהסל להיסטוריה
                     u.pendingDonations.forEach(d => { u.donationsHistory.push({ amount: d.amount, note: d.note, status: "success", date: new Date() }); });
-                    u.pendingDonations = []; // ריקון הסל
+                    u.pendingDonations = []; 
                 } catch (e) {
                     console.log(`Basket charge failed for ${u.name}: ${e.message}`);
                 }
@@ -253,7 +247,6 @@ app.post('/donate', async (req, res) => {
     let u = await User.findById(userId);
     if (u.securityPin && u.securityPin.trim() !== "") { if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד אבטחה (PIN) שגוי" }); }
     
-    // אם זו תרומה ליעד, או שהוגדר חיוב מיידי, או שהמשתמש מוגדר מיידי
     let shouldChargeNow = (isGoalDonation === true) || (forceImmediate === true) ? true : (u.billingPreference === 0 && forceImmediate !== false);
     
     if (shouldChargeNow) {
@@ -261,10 +254,16 @@ app.post('/donate', async (req, res) => {
             const r = await chargeKesher(u, amount, note, !useToken ? ccDetails : null);
             if (r.success) {
                 u.totalDonated += parseFloat(amount);
-                u.donationsHistory.push({ amount: parseFloat(amount), note, date: new Date(), status: 'success' });
+                // Save with isGoal flag
+                u.donationsHistory.push({ 
+                    amount: parseFloat(amount), 
+                    note, 
+                    date: new Date(), 
+                    status: 'success',
+                    isGoal: isGoalDonation === true // Flagging the donation
+                });
                 await u.save();
 
-                // עדכון יעד גלובלי אם רלוונטי
                 if (isGoalDonation) {
                     await GlobalGoal.findOneAndUpdate({ id: 'main_goal' }, { $inc: { currentAmount: parseFloat(amount) } });
                 }
@@ -417,6 +416,29 @@ app.post('/admin/goal', async (req, res) => {
     
     await GlobalGoal.findOneAndUpdate({ id: 'main_goal' }, update, { upsert: true });
     res.json({ success: true });
+});
+
+// NEW: Get Goal Donors
+app.post('/admin/get-goal-donors', async (req, res) => {
+    if(req.body.password !== PASS) return res.json({ success: false });
+    // Find users who have at least one donation marked as isGoal: true
+    const users = await User.find({ 'donationsHistory.isGoal': true });
+    let donors = [];
+    users.forEach(u => {
+        u.donationsHistory.forEach(d => {
+            if(d.isGoal && d.status === 'success') {
+                donors.push({
+                    name: u.name || 'פלוני',
+                    amount: d.amount,
+                    date: d.date,
+                    note: d.note
+                });
+            }
+        });
+    });
+    // Sort by date descending
+    donors.sort((a,b) => new Date(b.date) - new Date(a.date));
+    res.json({ success: true, donors });
 });
 
 app.post('/admin/get-users', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const users = await User.find().sort({ _id: -1 }); res.json({ success: true, users }); });
