@@ -5,7 +5,11 @@ const mongoose = require('mongoose');
 const admin = require('firebase-admin');
 const cron = require('node-cron');
 const path = require('path');
+const compression = require('compression'); // שיפור מהירות
 const app = express();
+
+// --- Optimization: Compression ---
+app.use(compression());
 
 // Increase payload limit for file uploads (Base64)
 app.use(express.json({ limit: '5mb' }));
