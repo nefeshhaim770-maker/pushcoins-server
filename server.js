@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 const admin = require('firebase-admin');
 const cron = require('node-cron');
 const path = require('path');
-const nodemailer = require('nodemailer'); // ⚠️ חובה להריץ: npm install nodemailer
+const nodemailer = require('nodemailer'); 
 const app = express();
 
 // הגדלת מגבלת המידע כדי לאפשר שליחת קבצים
@@ -13,18 +13,25 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(cors());
 
-// --- Email Configuration (Nodemailer) ---
-// הוגדר עם הפרטים האמיתיים שלך
+// --- Email Configuration (Nodemailer - Fixed) ---
+// שימוש בפורט 465 עם SSL מלא לפתרון בעיות חיבור
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true, // שימוש ב-SSL
     auth: {
         user: 'ceo1@nefesh-ha-chaim.org',
         pass: 'czxz xuvt hica dzlz'
+    },
+    tls: {
+        // אל תכשיל על אישורים לא חתומים (עוזר בשרתים מסוימים)
+        rejectUnauthorized: false
     }
 });
 
 async function sendEmail(to, subject, text) {
     try {
+        console.log(`⏳ Attempting to send email to ${to}...`);
         await transporter.sendMail({
             from: '"נפש החיים" <ceo1@nefesh-ha-chaim.org>',
             to: to,
@@ -32,10 +39,10 @@ async function sendEmail(to, subject, text) {
             text: text,
             html: `<div style="direction: rtl; text-align: right; font-family: Arial, sans-serif;">${text}</div>`
         });
-        console.log(`📧 Email sent to ${to}`);
+        console.log(`✅ Email sent successfully to ${to}`);
         return true;
     } catch (error) {
-        console.error("❌ Email Error:", error);
+        console.error("❌ Email Error Details:", error);
         return false;
     }
 }
@@ -115,7 +122,8 @@ const userSchema = new mongoose.Schema({
         failReason: String, 
         isGoal: { type: Boolean, default: false }, 
         receiptNameUsed: String,
-        receiptTZUsed: String
+        receiptTZUsed: String,
+        receiptUrl: String 
     }],
     pendingDonations: [{ amount: Number, date: { type: Date, default: Date.now }, note: String }],
     tempCode: String
@@ -225,6 +233,9 @@ async function chargeKesher(user, amount, note, creditDetails = null, useReceipt
 
     console.log(`📩 Response for ${user.name}:`, JSON.stringify(res.data));
 
+    // חילוץ קישור לקבלה
+    const receiptUrl = res.data.FileUrl || res.data.InvoiceUrl || null;
+
     return { 
         success: res.data.RequestResult?.Status === true || res.data.Status === true, 
         data: res.data, 
@@ -232,7 +243,8 @@ async function chargeKesher(user, amount, note, creditDetails = null, useReceipt
         finalExpiry, 
         currentCardDigits,
         receiptNameUsed: finalName,
-        receiptTZUsed: finalID 
+        receiptTZUsed: finalID,
+        receiptUrl: receiptUrl
     };
 }
 
@@ -254,7 +266,7 @@ cron.schedule('0 8 * * *', async () => {
                         const r = await chargeKesher(u, u.recurringDailyAmount, "הוראת קבע יומית", null, useReceipt);
                         if (r.success) {
                             u.totalDonated += u.recurringDailyAmount;
-                            u.donationsHistory.push({ amount: u.recurringDailyAmount, note: "יומי קבוע (מיידי)", status: "success", receiptNameUsed: r.receiptNameUsed, receiptTZUsed: r.receiptTZUsed });
+                            u.donationsHistory.push({ amount: u.recurringDailyAmount, note: "יומי קבוע (מיידי)", status: "success", receiptNameUsed: r.receiptNameUsed, receiptTZUsed: r.receiptTZUsed, receiptUrl: r.receiptUrl });
                         } else {
                             const failReason = r.data.Description || r.data.errDesc || "תקלה בסליקה";
                             u.donationsHistory.push({ amount: u.recurringDailyAmount, note: "יומי קבוע", status: "failed", failReason: failReason });
@@ -284,7 +296,7 @@ cron.schedule('0 8 * * *', async () => {
                     if (r.success) {
                         u.totalDonated += totalToCharge;
                         u.pendingDonations.forEach(d => { 
-                            u.donationsHistory.push({ amount: d.amount, note: d.note, status: "success", date: new Date(), receiptNameUsed: r.receiptNameUsed, receiptTZUsed: r.receiptTZUsed }); 
+                            u.donationsHistory.push({ amount: d.amount, note: d.note, status: "success", date: new Date(), receiptNameUsed: r.receiptNameUsed, receiptTZUsed: r.receiptTZUsed, receiptUrl: r.receiptUrl }); 
                         });
                         u.pendingDonations = []; 
                     } else { console.log(`Basket charge failed: ${r.data.Description}`); }
@@ -319,9 +331,9 @@ app.post('/contact/send', async (req, res) => {
         });
         await u.save();
         
-        // Notify admin via email about new message (Optional)
+        // שליחת מייל לאדמין על הודעה חדשה
         await sendEmail('ceo1@nefesh-ha-chaim.org', 'הודעה חדשה באפליקציה', `המשתמש ${u.name} שלח הודעה חדשה.`);
-        
+
         res.json({ success: true });
     } catch(e) { res.json({ success: false, error: e.message }); }
 });
@@ -350,11 +362,10 @@ app.post('/admin/reply', async (req, res) => {
     } catch(e) { res.json({ success: false, error: e.message }); }
 });
 
-// ✅ שיפור ביצועים: שליפת משתמשים לאדמין ללא תוכן ההודעות הכבדות
+// ✅ אופטימיזציה: שליפת משתמשים לאדמין ללא תוכן ההודעות הכבדות
 app.post('/admin/get-messages', async (req, res) => {
     if(req.body.password !== "admin1234") return res.json({ success: false });
     
-    // מביא רק את רשימת ההודעות בלי התוכן של הקבצים
     const users = await User.find({ 'messages.0': { $exists: true } })
         .select('name phone messages.date messages.direction messages.read _id')
         .lean();
@@ -374,7 +385,7 @@ app.post('/admin/get-messages', async (req, res) => {
     res.json({ success: true, users: sortedUsers });
 });
 
-// ✅ שליפת תוכן הצ'אט המלא (כולל קבצים) רק למשתמש ספציפי
+// ✅ שליפת תוכן הצ'אט המלא
 app.post('/admin/get-chat-content', async (req, res) => {
     if(req.body.password !== "admin1234") return res.json({ success: false });
     const { userId } = req.body;
@@ -383,7 +394,7 @@ app.post('/admin/get-chat-content', async (req, res) => {
     else res.json({ success: false });
 });
 
-// ✅ שליפת תוכן הצ'אט עבור הלקוח (גם כולל קבצים, אבל רק שלו)
+// ✅ שליפת תוכן הצ'אט עבור הלקוח
 app.post('/contact/get-my-messages', async (req, res) => {
     const { userId } = req.body;
     const u = await User.findById(userId).select('messages');
@@ -412,7 +423,6 @@ app.post('/update-code', async (req, res) => {
     let cleanPhone = phone ? phone.replace(/\D/g, '').trim() : undefined;
     
     if (cleanEmail) { 
-        // שימוש במערכת המיילים החדשה
         await sendEmail(cleanEmail, 'קוד אימות - נפש החיים', `<h1>קוד האימות שלך: ${code}</h1>`);
     }
     
@@ -442,10 +452,9 @@ app.post('/verify-auth', async (req, res) => {
     }
 });
 
-// ✅ אופטימיזציה קריטית: בטעינת משתמש ראשונית, לא שולחים את כל הקבצים של ההודעות!
+// ✅ אופטימיזציה: בטעינת משתמש ראשונית, לא שולחים את כל הקבצים
 app.post('/login-by-id', async (req, res) => {
     try { 
-        // Exclude attachment content entirely to speed up login
         let user = await User.findById(req.body.userId).select('-messages.attachment'); 
         if(user) {
             if ((!user.cards || user.cards.length === 0) && user.token) { 
@@ -477,7 +486,8 @@ app.post('/donate', async (req, res) => {
                     status: 'success',
                     isGoal: isGoalDonation === true,
                     receiptNameUsed: r.receiptNameUsed,
-                    receiptTZUsed: r.receiptTZUsed
+                    receiptTZUsed: r.receiptTZUsed,
+                    receiptUrl: r.receiptUrl
                 });
                 await u.save();
 
@@ -645,6 +655,56 @@ app.post('/admin/recalc-totals', async (req, res) => { if(req.body.password !== 
 app.post('/admin/send-push', async (req, res) => { if(req.body.password !== "admin1234") return res.json({ success: false }); const users = await User.find({ fcmToken: { $exists: true, $ne: "" } }); const tokens = users.map(u => u.fcmToken); if(tokens.length) { const response = await admin.messaging().sendMulticast({ notification: { title: req.body.title, body: req.body.body }, tokens }); res.json({ success: true, sentCount: response.successCount }); } else res.json({ success: false, error: "אין מכשירים" }); });
 app.post('/save-push-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { fcmToken: req.body.token }); res.json({ success: true }); });
 app.post('/reset-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "" }); res.json({ success: true }); });
+
+// --- REPORTS ROUTE ---
+app.post('/admin/get-all-donations', async (req, res) => {
+    if(req.body.password !== "admin1234") return res.json({ success: false });
+    
+    const { fromDate, toDate, search } = req.body;
+    let start = fromDate ? new Date(fromDate) : new Date(0); start.setHours(0,0,0,0);
+    let end = toDate ? new Date(toDate) : new Date(); end.setHours(23, 59, 59, 999);
+    
+    // גם כאן, נמנעים מלטעון הודעות
+    const users = await User.find().select('-messages');
+    let allDonations = [];
+
+    users.forEach(u => {
+        if(u.donationsHistory) {
+            u.donationsHistory.forEach(d => {
+                if(d.status === 'success') {
+                    const dDate = new Date(d.date);
+                    if (dDate >= start && dDate <= end) {
+                        const searchLower = (search || '').toLowerCase();
+                        const matchesSearch = 
+                            !search || 
+                            (u.name && u.name.toLowerCase().includes(searchLower)) ||
+                            (u.phone && u.phone.includes(searchLower)) ||
+                            (u.email && u.email.toLowerCase().includes(searchLower)) ||
+                            (u.tz && u.tz.includes(searchLower)) ||
+                            (d.receiptNameUsed && d.receiptNameUsed.toLowerCase().includes(searchLower));
+
+                        if(matchesSearch) {
+                            allDonations.push({
+                                donorName: u.name,
+                                donorPhone: u.phone,
+                                donorEmail: u.email,
+                                amount: d.amount,
+                                date: d.date,
+                                note: d.note,
+                                receiptName: d.receiptNameUsed || u.name,
+                                receiptTZ: d.receiptTZUsed || u.tz,
+                                receiptUrl: d.receiptUrl || ''
+                            });
+                        }
+                    }
+                }
+            });
+        }
+    });
+
+    allDonations.sort((a,b) => new Date(b.date) - new Date(a.date));
+    res.json({ success: true, donations: allDonations });
+});
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`✅ Server Live`));
