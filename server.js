@@ -5,13 +5,12 @@ const mongoose = require('mongoose');
 const admin = require('firebase-admin');
 const cron = require('node-cron');
 const path = require('path');
-const compression = require('compression'); // שיפור מהירות
+const compression = require('compression'); // חובה להתקין: npm install compression
 const app = express();
 
-// --- Optimization: Compression ---
+// --- Optimization: Compression & Performance ---
+// דחיסת Gzip לכל הבקשות - מאיץ את הטעינה משמעותית
 app.use(compression());
-
-// Increase payload limit for file uploads (Base64)
 app.use(express.json({ limit: '5mb' }));
 app.use(cors());
 
@@ -26,8 +25,13 @@ try {
     } catch (err) { console.log("⚠️ No Firebase Key"); }
 }
 
-// --- MongoDB ---
-mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
+// --- MongoDB Optimization ---
+// הגדרות אופטימליות לחיבור מהיר ויציב
+mongoose.connect('mongodb+srv://nefeshhaim770_db_user:DxNzxIrIaoji0gWm@cluster0.njggbyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0', {
+    maxPoolSize: 10, // שומר עד 10 חיבורים פתוחים לשימוש חוזר
+    serverSelectionTimeoutMS: 5000, // זמן קצוב לחיבור
+    socketTimeoutMS: 45000, // זמן קצוב לפעולה
+})
     .then(() => console.log('✅ DB Connected'))
     .catch(err => console.error('❌ DB Error:', err));
 
@@ -50,8 +54,8 @@ const messageSchema = new mongoose.Schema({
 });
 
 const userSchema = new mongoose.Schema({
-    email: { type: String, sparse: true },
-    phone: { type: String, sparse: true },
+    email: { type: String, sparse: true, index: true }, // Added Index for speed
+    phone: { type: String, sparse: true, index: true }, // Added Index for speed
     name: String,
     tz: String,
     
