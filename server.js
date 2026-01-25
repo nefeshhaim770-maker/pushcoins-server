@@ -412,13 +412,21 @@ app.post('/admin/manage-bank-auth', async (req, res) => {
              u.messages.push({ direction: 'admin_to_user', content: 'הוראת הקבע הבנקאית נדחתה.', date: new Date(), read: false });
         }
         else if (action === 'manual_setup') {
+            // Admin manually sets up bank for user
             u.bankDetails = {
-                bankId: data.bankId, branchId: data.branchId, accountId: data.accountId,
-                ownerName: data.ownerName, status: 'active', dailyLimit: data.limit ? parseInt(data.limit) : 0,
-                submissionType: 'manual', approvedDate: new Date()
+                bankId: data.bankId, 
+                branchId: data.branchId, 
+                accountId: data.accountId,
+                ownerName: data.ownerName, 
+                ownerID: data.ownerID, // Save ID
+                status: 'active', // Immediately active
+                dailyLimit: data.limit ? parseInt(data.limit) : 0,
+                submissionType: 'manual', 
+                approvedDate: new Date()
             };
             if (data.validUntil) u.bankDetails.validUntil = new Date(data.validUntil);
             u.preferredPaymentMethod = 'bank';
+            u.messages.push({ direction: 'admin_to_user', content: 'הוגדרה הוראת קבע בנקאית ע"י ההנהלה.', date: new Date(), read: false });
         }
 
         await u.save();
