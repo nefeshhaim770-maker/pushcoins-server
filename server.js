@@ -50,7 +50,7 @@ const bankDetailsSchema = new mongoose.Schema({
     branchId: String,
     accountId: String,
     ownerName: String,
-    ownerID: String, // Must exist for Masav
+    ownerID: String, 
     ownerPhone: String,
     signature: String,
     authFile: String,
@@ -124,19 +124,16 @@ async function getActiveToken(user) {
 
 function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
-// --- Charge Engine Fixed for Bank ---
+// --- Charge Engine Fixed ---
 async function chargeKesher(user, amount, note, creditDetails = null, useReceiptDetails = false) {
     const amountInAgorot = Math.round(parseFloat(amount) * 100);
     const safePhone = (user.phone || "0500000000").replace(/\D/g, '');
     
-    // Determine Method
     let isBankPayment = false;
-    // If the user prefers bank AND we are not passing explicit CC details (like new card check)
     if (user.preferredPaymentMethod === 'bank' && !creditDetails) {
         isBankPayment = true;
     }
 
-    // Safety check for Bank
     if (isBankPayment) {
         if (!user.bankDetails || user.bankDetails.status !== 'active') throw new Error("אין הרשאה בנקאית מאושרת");
         if (user.bankDetails.validUntil && new Date() > new Date(user.bankDetails.validUntil)) throw new Error("תוקף ההרשאה הבנקאית פג");
@@ -168,26 +165,19 @@ async function chargeKesher(user, amount, note, creditDetails = null, useReceipt
     let currentCardDigits = "";
     
     if (isBankPayment) {
-        // --- Bank Transaction Logic (Masav) ---
-        // CreditType 8 is commonly used for Masav in Kesher
-        // IMPORTANT: Params must match Kesher expectations for Masav
+        // --- Bank Transaction Logic Fixed (Masav) ---
         tranData.CreditType = 8; 
-        tranData.Bank = user.bankDetails.bankId; // Sometimes "BankNumber"
-        tranData.Branch = user.bankDetails.branchId; // Sometimes "BranchNumber"
-        tranData.Account = user.bankDetails.accountId; // Sometimes "AccountNumber"
-        
-        // Also add standard names just in case api varies
         tranData.BankNumber = user.bankDetails.bankId;
         tranData.BranchNumber = user.bankDetails.branchId;
         tranData.AccountNumber = user.bankDetails.accountId;
-
-        tranData.HolderID = user.bankDetails.ownerID; // Critical
+        // Important: Mapping ID correctly for Kesher Schema
+        tranData.HolderID = user.bankDetails.ownerID; 
+        tranData.UniqNum = user.bankDetails.ownerID; 
         tranData.OwnerName = user.bankDetails.ownerName;
-        
+
         currentCardDigits = "Bank-" + user.bankDetails.accountId.slice(-3);
         console.log(`🏦 Executing BANK Charge for ${user.name}`);
     } else {
-        // --- Credit Card Logic ---
         tranData.CreditType = 1;
         if (creditDetails) {
             tranData.CreditNum = creditDetails.num;
@@ -199,18 +189,12 @@ async function chargeKesher(user, amount, note, creditDetails = null, useReceipt
             if (usedToken) {
                 tranData.Token = fixToken(usedToken);
                 const activeCard = user.cards.find(c => fixToken(c.token) === tranData.Token);
-                if(activeCard) { 
-                    tranData.Expiry = activeCard.expiry; 
-                    currentCardDigits = activeCard.lastDigits; 
-                    finalExpiry = activeCard.expiry; 
-                }
+                if(activeCard) { tranData.Expiry = activeCard.expiry; currentCardDigits = activeCard.lastDigits; finalExpiry = activeCard.expiry; }
             } else { throw new Error("No Payment Method"); }
         }
     }
 
     const sortedTran = sortObjectKeys(tranData);
-    
-    // Log the actual request for debugging
     console.log("Sending to Kesher:", JSON.stringify(sortedTran));
 
     const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
@@ -218,9 +202,9 @@ async function chargeKesher(user, amount, note, creditDetails = null, useReceipt
         format: "json"
     }, { validateStatus: () => true });
     
-    // Log response
     console.log("Kesher Response:", JSON.stringify(res.data));
 
+    // For Bank, Pending (Status=null but no error) might be success
     const isSuccess = res.data.RequestResult?.Status === true || res.data.Status === true;
 
     return { 
