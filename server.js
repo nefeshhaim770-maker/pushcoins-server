@@ -5,11 +5,40 @@ const mongoose = require('mongoose');
 const admin = require('firebase-admin');
 const cron = require('node-cron');
 const path = require('path');
+const nodemailer = require('nodemailer'); // חובה: npm install nodemailer
 const app = express();
 
 // Increase payload limit for file uploads (Base64)
 app.use(express.json({ limit: '5mb' }));
 app.use(cors());
+
+// --- Email Configuration (Nodemailer) ---
+// ❗❗ שים לב: עליך להחליף את הפרטים כאן בפרטים האמיתיים שלך ❗❗
+const transporter = nodemailer.createTransport({
+    service: 'gmail', // מתאים לג'ימייל וגם ל-G-Suite ארגוני
+    auth: {
+        user: 'ceo1@nefesh-ha-chaim.org', // ⬅️ הכנס כאן את המייל שלך
+        pass: 'czxz xuvt hica dzlz'    // ⬅️ הכנס כאן את "סיסמת האפליקציה" (לא הסיסמה הרגילה)
+    }
+});
+
+// פונקציית עזר לשליחת מייל
+async function sendEmail(to, subject, text) {
+    try {
+        await transporter.sendMail({
+            from: '"נפש החיים" <no-reply@nefesh.org>', // השם שיופיע כשולח
+            to: to,
+            subject: subject,
+            text: text,
+            html: `<div style="direction: rtl; text-align: right; font-family: Arial;">${text}</div>`
+        });
+        console.log(`📧 Email sent to ${to}`);
+        return true;
+    } catch (error) {
+        console.error("❌ Email Error:", error);
+        return false;
+    }
+}
 
 // --- Firebase ---
 try {
@@ -39,7 +68,7 @@ const cardSchema = new mongoose.Schema({
 const messageSchema = new mongoose.Schema({
     direction: String, // 'user_to_admin' or 'admin_to_user'
     content: String,
-    attachment: String, // Base64 string
+    attachment: String, // Base64 string (Heavy!)
     attachmentName: String,
     date: { type: Date, default: Date.now },
     read: { type: Boolean, default: false }
@@ -91,6 +120,10 @@ const userSchema = new mongoose.Schema({
     pendingDonations: [{ amount: Number, date: { type: Date, default: Date.now }, note: String }],
     tempCode: String
 });
+// אינדקסים לשיפור ביצועים
+userSchema.index({ phone: 1 });
+userSchema.index({ email: 1 });
+
 const User = mongoose.model('User', userSchema);
 
 // --- NEW GOAL SCHEMA ---
@@ -308,7 +341,7 @@ app.post('/contact/send', async (req, res) => {
         u.messages.push({
             direction: 'user_to_admin',
             content,
-            attachment,
+            attachment, // Storing base64 here
             attachmentName,
             read: false,
             date: new Date()
@@ -351,9 +384,14 @@ app.post('/admin/reply', async (req, res) => {
     } catch(e) { res.json({ success: false, error: e.message }); }
 });
 
+// ✅ שיפור ביצועים: שליפת משתמשים לאדמין ללא תוכן ההודעות הכבדות
 app.post('/admin/get-messages', async (req, res) => {
     if(req.body.password !== PASS) return res.json({ success: false });
-    const users = await User.find({ 'messages.0': { $exists: true } }).select('name phone messages _id');
+    
+    // Select specific fields and EXCLUDE 'attachment' from messages to improve speed
+    const users = await User.find({ 'messages.0': { $exists: true } })
+        .select('name phone messages.date messages.direction messages.read _id')
+        .lean();
     
     const sortedUsers = users.map(u => {
         const lastMsg = u.messages[u.messages.length - 1];
@@ -364,11 +402,28 @@ app.post('/admin/get-messages', async (req, res) => {
             phone: u.phone,
             lastMessageDate: lastMsg ? lastMsg.date : 0,
             unreadCount,
-            messages: u.messages 
+            // Messages array here is light (no attachments)
         };
     }).sort((a,b) => new Date(b.lastMessageDate) - new Date(a.lastMessageDate));
 
     res.json({ success: true, users: sortedUsers });
+});
+
+// ✅ נתיב חדש: שליפת תוכן צ'אט מלא (כולל קבצים) רק כשנכנסים לצ'אט ספציפי
+app.post('/admin/get-chat-content', async (req, res) => {
+    if(req.body.password !== PASS) return res.json({ success: false });
+    const { userId } = req.body;
+    const u = await User.findById(userId).select('messages');
+    if(u) res.json({ success: true, messages: u.messages });
+    else res.json({ success: false });
+});
+
+// ✅ נתיב חדש: ללקוח לשליפת ההודעות שלו (כולל קבצים) כשהוא פותח את הצ'אט
+app.post('/contact/get-my-messages', async (req, res) => {
+    const { userId } = req.body;
+    const u = await User.findById(userId).select('messages');
+    if(u) res.json({ success: true, messages: u.messages });
+    else res.json({ success: false });
 });
 
 app.post('/admin/mark-read', async (req, res) => {
@@ -393,43 +448,54 @@ app.post('/user/mark-read', async (req, res) => {
 });
 
 // --- AUTH & USER ROUTES ---
+
+// ✅ שימוש ב-Nodemailer
 app.post('/update-code', async (req, res) => {
     let { email, phone, code } = req.body;
     let cleanEmail = email ? email.toLowerCase().trim() : undefined;
     let cleanPhone = phone ? phone.replace(/\D/g, '').trim() : undefined;
-    if (cleanEmail) { try { await axios.post('https://api.emailjs.com/api/v1.0/email/send', { service_id: 'service_8f6h188', template_id: 'template_tzbq0k4', user_id: 'yLYooSdg891aL7etD', template_params: { email: cleanEmail, code: code }, accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3" }); } catch (e) { console.log("Email Error", e.message); } }
-    await User.findOneAndUpdate(cleanEmail ? { email: cleanEmail } : { phone: cleanPhone }, { tempCode: code, email: cleanEmail, phone: cleanPhone }, { upsert: true });
+    
+    if (cleanEmail) { 
+        await sendEmail(cleanEmail, 'קוד אימות - נפש החיים', `קוד האימות שלך הוא: <b>${code}</b>`);
+    }
+    
+    await User.findOneAndUpdate(
+        cleanEmail ? { email: cleanEmail } : { phone: cleanPhone }, 
+        { tempCode: code, email: cleanEmail, phone: cleanPhone }, 
+        { upsert: true }
+    );
     res.json({ success: true });
 });
 
 app.post('/send-verification', async (req, res) => {
     const { email, code } = req.body;
-    try {
-        await axios.post('https://api.emailjs.com/api/v1.0/email/send', { 
-            service_id: 'service_8f6h188', 
-            template_id: 'template_tzbq0k4', 
-            user_id: 'yLYooSdg891aL7etD', 
-            template_params: { email, code }, 
-            accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3" 
-        });
-        res.json({ success: true });
-    } catch(e) {
-        res.json({ success: false });
-    }
+    const sent = await sendEmail(email, 'אימות מייל - נפש החיים', `קוד לאימות מייל: <b>${code}</b>`);
+    res.json({ success: sent });
 });
 
 app.post('/verify-auth', async (req, res) => {
     let { email, phone, code } = req.body;
     if(code === 'check') return res.json({ success: true });
+    
     let u = await User.findOne(email ? { email: email.toLowerCase().trim() } : { phone: phone.replace(/\D/g, '').trim() });
-    if (u && String(u.tempCode).trim() === String(code).trim()) res.json({ success: true, user: u }); else res.json({ success: false });
+    if (u && String(u.tempCode).trim() === String(code).trim()) {
+        res.json({ success: true, user: u });
+    } else {
+        res.json({ success: false });
+    }
 });
 
+// ✅ שיפור ביצועים: בלא-אין ללקוח, לא שולחים את הקבצים של ההודעות
 app.post('/login-by-id', async (req, res) => {
     try { 
-        let user = await User.findById(req.body.userId); 
+        // Exclude attachment content entirely to speed up login
+        let user = await User.findById(req.body.userId).select('-messages.attachment'); 
         if(user) {
-            if ((!user.cards || user.cards.length === 0) && user.token) { user.cards.push({ token: user.token, lastDigits: user.lastCardDigits, expiry: user.lastExpiry, active: true }); user.token = ""; await user.save(); }
+            if ((!user.cards || user.cards.length === 0) && user.token) { 
+                user.cards.push({ token: user.token, lastDigits: user.lastCardDigits, expiry: user.lastExpiry, active: true }); 
+                user.token = ""; 
+                await user.save(); 
+            }
             res.json({ success: true, user }); 
         } else res.json({ success: false }); 
     } catch(e) { res.json({ success: false }); }
@@ -553,7 +619,6 @@ app.post('/admin/update-profile', async (req, res) => {
     } catch(e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// --- ADMIN ROUTES ---
 const PASS = "admin1234";
 
 app.post('/admin/stats', async (req, res) => {
@@ -611,6 +676,7 @@ app.post('/admin/global-basket-lock', async (req, res) => {
     res.json({ success: true });
 });
 
+// --- GOAL ROUTES ---
 app.get('/goal', async (req, res) => {
     let g = await GlobalGoal.findOne({ id: 'main_goal' });
     if (!g) g = await GlobalGoal.create({ id: 'main_goal', title: 'יעד קהילתי', targetAmount: 1000, currentAmount: 0, isActive: false });
@@ -649,7 +715,14 @@ app.post('/admin/get-goal-donors', async (req, res) => {
     res.json({ success: true, donors });
 });
 
-app.post('/admin/get-users', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const users = await User.find().sort({ _id: -1 }); res.json({ success: true, users }); });
+// ✅ שיפור ביצועים: שליפת משתמשים לאדמין ללא תוכן ההודעות הכבדות
+app.post('/admin/get-users', async (req, res) => { 
+    if(req.body.password !== PASS) return res.json({ success: false }); 
+    // הוספתי .select('-messages') כדי לא לטעון את כל ההודעות הכבדות (Base64) ברשימה הראשית
+    const users = await User.find().select('-messages').sort({ _id: -1 }); 
+    res.json({ success: true, users }); 
+});
+
 app.post('/admin/update-user-full', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); await User.findByIdAndUpdate(req.body.userId, req.body.userData); res.json({ success: true }); });
 app.post('/admin/delete-user', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); await User.findByIdAndDelete(req.body.userId); res.json({ success: true }); });
 app.post('/admin/recalc-totals', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const users = await User.find(); let c=0; for (const u of users) { let t=0; if(u.donationsHistory) u.donationsHistory.forEach(d => { if(d.status==='success') t += d.amount||0; }); if(u.totalDonated!==t) { u.totalDonated=t; await u.save(); c++; } } res.json({ success: true, count: c }); });
