@@ -5,40 +5,12 @@ const mongoose = require('mongoose');
 const admin = require('firebase-admin');
 const cron = require('node-cron');
 const path = require('path');
-const nodemailer = require('nodemailer'); 
 const app = express();
 
+// הגדלת מגבלת המידע כדי לאפשר שליחת קבצים בצ'אט
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(cors());
-
-// --- Email Configuration (Secure) ---
-// הקוד מושך את הפרטים מהגדרות השרת ב-Render
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: process.env.EMAIL_USER || 'ceo1@nefesh-ha-chaim.org', // גיבוי למקרה שלא הגדרת
-        pass: process.env.EMAIL_PASS || 'czxz xuvt hica dzlz'        // גיבוי למקרה שלא הגדרת
-    }
-});
-
-async function sendEmail(to, subject, text) {
-    try {
-        console.log(`⏳ Sending email to ${to}...`);
-        await transporter.sendMail({
-            from: '"נפש החיים" <ceo1@nefesh-ha-chaim.org>',
-            to: to,
-            subject: subject,
-            text: text,
-            html: `<div style="direction: rtl; text-align: right; font-family: Arial;">${text}</div>`
-        });
-        console.log(`✅ Email sent to ${to}`);
-        return true;
-    } catch (error) {
-        console.error("❌ Email Error:", error.message);
-        return false;
-    }
-}
 
 // --- Firebase ---
 try {
@@ -68,7 +40,7 @@ const cardSchema = new mongoose.Schema({
 const messageSchema = new mongoose.Schema({
     direction: String, // 'user_to_admin' or 'admin_to_user'
     content: String,
-    attachment: String, 
+    attachment: String, // Base64 string
     attachmentName: String,
     date: { type: Date, default: Date.now },
     read: { type: Boolean, default: false }
@@ -80,16 +52,20 @@ const userSchema = new mongoose.Schema({
     name: String,
     tz: String,
     
+    // Receipt Fields
     receiptName: { type: String, default: "" },
     receiptTZ: { type: String, default: "" },
     receiptMode: { type: Number, default: 0 }, 
     
+    // Maaser Fields
     maaserActive: { type: Boolean, default: false },
     maaserRate: { type: Number, default: 10 },
     maaserIncome: { type: Number, default: 0 },
 
+    // Tax Widget
     showTaxWidget: { type: Boolean, default: true },
 
+    // Messages
     messages: [messageSchema],
 
     lastExpiry: String,
@@ -116,13 +92,9 @@ const userSchema = new mongoose.Schema({
     pendingDonations: [{ amount: Number, date: { type: Date, default: Date.now }, note: String }],
     tempCode: String
 });
-
-userSchema.index({ phone: 1 });
-userSchema.index({ email: 1 });
-
 const User = mongoose.model('User', userSchema);
 
-// --- GOAL SCHEMA ---
+// --- NEW GOAL SCHEMA ---
 const goalSchema = new mongoose.Schema({
     id: { type: String, default: 'main_goal' }, 
     title: String,
@@ -144,6 +116,7 @@ function sortObjectKeys(obj) {
 function fixToken(token) {
     if (!token) return "";
     let strToken = String(token).replace(/['"]+/g, '').trim();
+    // ✅ הוספת 0 בהתחלה כפי שביקשת
     return (strToken.length > 0 && !strToken.startsWith('0')) ? '0' + strToken : strToken;
 }
 
@@ -240,7 +213,6 @@ cron.schedule('0 8 * * *', async () => {
     for (const u of users) {
         let saveUser = false;
         const hasToken = await getActiveToken(u);
-
         const useReceipt = (u.receiptMode === 1 && u.receiptName && u.receiptTZ);
 
         if (u.recurringDailyAmount > 0) {
@@ -298,7 +270,7 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/manager', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
 app.get('/firebase-messaging-sw.js', (req, res) => res.sendFile(path.join(__dirname, 'firebase-messaging-sw.js')));
 
-// --- CONTACT / MESSAGE ROUTES ---
+// --- CONTACT ROUTES ---
 app.post('/contact/send', async (req, res) => {
     const { userId, content, attachment, attachmentName } = req.body;
     try {
@@ -306,7 +278,6 @@ app.post('/contact/send', async (req, res) => {
         if(!u) return res.json({ success: false, error: 'User not found' });
         u.messages.push({ direction: 'user_to_admin', content, attachment, attachmentName, read: false, date: new Date() });
         await u.save();
-        await sendEmail('ceo1@nefesh-ha-chaim.org', 'הודעה חדשה באפליקציה', `המשתמש ${u.name} שלח הודעה.`);
         res.json({ success: true });
     } catch(e) { res.json({ success: false, error: e.message }); }
 });
@@ -326,9 +297,7 @@ app.post('/admin/reply', async (req, res) => {
 
 app.post('/admin/get-messages', async (req, res) => {
     if(req.body.password !== "admin1234") return res.json({ success: false });
-    const users = await User.find({ 'messages.0': { $exists: true } })
-        .select('name phone messages.date messages.direction messages.read _id')
-        .lean();
+    const users = await User.find({ 'messages.0': { $exists: true } }).select('name phone messages.date messages.direction messages.read _id').lean();
     const sortedUsers = users.map(u => {
         const lastMsg = u.messages[u.messages.length - 1];
         const unreadCount = u.messages.filter(m => m.direction === 'user_to_admin' && !m.read).length;
@@ -361,37 +330,34 @@ app.post('/user/mark-read', async (req, res) => {
     res.json({ success: true });
 });
 
+// --- AUTH & USER ROUTES ---
 app.post('/update-code', async (req, res) => {
     let { email, phone, code } = req.body;
     let cleanEmail = email ? email.toLowerCase().trim() : undefined;
     let cleanPhone = phone ? phone.replace(/\D/g, '').trim() : undefined;
-    if (cleanEmail) { await sendEmail(cleanEmail, 'קוד אימות', `<h1>קוד האימות: ${code}</h1>`); }
+    // EmailJS (Standard)
+    if (cleanEmail) { try { await axios.post('https://api.emailjs.com/api/v1.0/email/send', { service_id: 'service_8f6h188', template_id: 'template_tzbq0k4', user_id: 'yLYooSdg891aL7etD', template_params: { email: cleanEmail, code: code }, accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3" }); } catch (e) { console.log("Email Error", e.message); } }
     await User.findOneAndUpdate(cleanEmail ? { email: cleanEmail } : { phone: cleanPhone }, { tempCode: code, email: cleanEmail, phone: cleanPhone }, { upsert: true });
     res.json({ success: true });
 });
 
 app.post('/send-verification', async (req, res) => {
     const { email, code } = req.body;
-    const sent = await sendEmail(email, 'אימות מייל', `קוד לאימות: ${code}`);
-    res.json({ success: sent });
+    try { await axios.post('https://api.emailjs.com/api/v1.0/email/send', { service_id: 'service_8f6h188', template_id: 'template_tzbq0k4', user_id: 'yLYooSdg891aL7etD', template_params: { email, code }, accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3" }); res.json({ success: true }); } catch(e) { res.json({ success: false }); }
 });
 
 app.post('/verify-auth', async (req, res) => {
     let { email, phone, code } = req.body;
     if(code === 'check') return res.json({ success: true });
     let u = await User.findOne(email ? { email: email.toLowerCase().trim() } : { phone: phone.replace(/\D/g, '').trim() });
-    if (u && String(u.tempCode).trim() === String(code).trim()) { res.json({ success: true, user: u }); } else { res.json({ success: false }); }
+    if (u && String(u.tempCode).trim() === String(code).trim()) res.json({ success: true, user: u }); else res.json({ success: false });
 });
 
 app.post('/login-by-id', async (req, res) => {
     try { 
         let user = await User.findById(req.body.userId).select('-messages.attachment'); 
         if(user) {
-            if ((!user.cards || user.cards.length === 0) && user.token) { 
-                user.cards.push({ token: user.token, lastDigits: user.lastCardDigits, expiry: user.lastExpiry, active: true }); 
-                user.token = ""; 
-                await user.save(); 
-            }
+            if ((!user.cards || user.cards.length === 0) && user.token) { user.cards.push({ token: user.token, lastDigits: user.lastCardDigits, expiry: user.lastExpiry, active: true }); user.token = ""; await user.save(); }
             res.json({ success: true, user }); 
         } else res.json({ success: false }); 
     } catch(e) { res.json({ success: false }); }
@@ -412,7 +378,7 @@ app.post('/donate', async (req, res) => {
                 if (isGoalDonation) { await GlobalGoal.findOneAndUpdate({ id: 'main_goal' }, { $inc: { currentAmount: parseFloat(amount) } }); }
                 res.json({ success: true, message: "תרומה התקבלה!" });
             } else { res.json({ success: false, error: r.data.Description || r.data.errDesc || "סירוב עסקה" }); }
-        } catch(e) { res.json({ success: false, error: e.message }); }
+        } catch(e) { console.error("Donate Error:", e); res.json({ success: false, error: e.message }); }
     } else {
         u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() });
         await u.save();
