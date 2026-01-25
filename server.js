@@ -131,10 +131,12 @@ async function chargeKesher(user, amount, note, creditDetails = null, useReceipt
     
     // Determine Method
     let isBankPayment = false;
+    // If the user prefers bank AND we are not passing explicit CC details (like new card check)
     if (user.preferredPaymentMethod === 'bank' && !creditDetails) {
         isBankPayment = true;
     }
 
+    // Safety check for Bank
     if (isBankPayment) {
         if (!user.bankDetails || user.bankDetails.status !== 'active') throw new Error("אין הרשאה בנקאית מאושרת");
         if (user.bankDetails.validUntil && new Date() > new Date(user.bankDetails.validUntil)) throw new Error("תוקף ההרשאה הבנקאית פג");
@@ -168,11 +170,18 @@ async function chargeKesher(user, amount, note, creditDetails = null, useReceipt
     if (isBankPayment) {
         // --- Bank Transaction Logic (Masav) ---
         // CreditType 8 is commonly used for Masav in Kesher
+        // IMPORTANT: Params must match Kesher expectations for Masav
         tranData.CreditType = 8; 
+        tranData.Bank = user.bankDetails.bankId; // Sometimes "BankNumber"
+        tranData.Branch = user.bankDetails.branchId; // Sometimes "BranchNumber"
+        tranData.Account = user.bankDetails.accountId; // Sometimes "AccountNumber"
+        
+        // Also add standard names just in case api varies
         tranData.BankNumber = user.bankDetails.bankId;
         tranData.BranchNumber = user.bankDetails.branchId;
         tranData.AccountNumber = user.bankDetails.accountId;
-        tranData.IdentityNumber = user.bankDetails.ownerID; // Critical for Bank
+
+        tranData.HolderID = user.bankDetails.ownerID; // Critical
         tranData.OwnerName = user.bankDetails.ownerName;
         
         currentCardDigits = "Bank-" + user.bankDetails.accountId.slice(-3);
@@ -190,20 +199,38 @@ async function chargeKesher(user, amount, note, creditDetails = null, useReceipt
             if (usedToken) {
                 tranData.Token = fixToken(usedToken);
                 const activeCard = user.cards.find(c => fixToken(c.token) === tranData.Token);
-                if(activeCard) { tranData.Expiry = activeCard.expiry; currentCardDigits = activeCard.lastDigits; finalExpiry = activeCard.expiry; }
+                if(activeCard) { 
+                    tranData.Expiry = activeCard.expiry; 
+                    currentCardDigits = activeCard.lastDigits; 
+                    finalExpiry = activeCard.expiry; 
+                }
             } else { throw new Error("No Payment Method"); }
         }
     }
 
     const sortedTran = sortObjectKeys(tranData);
+    
+    // Log the actual request for debugging
+    console.log("Sending to Kesher:", JSON.stringify(sortedTran));
+
     const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
         Json: { userName: '2181420WS2087', password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', func: "SendTransaction", format: "json", tran: sortedTran },
         format: "json"
     }, { validateStatus: () => true });
+    
+    // Log response
+    console.log("Kesher Response:", JSON.stringify(res.data));
+
+    const isSuccess = res.data.RequestResult?.Status === true || res.data.Status === true;
 
     return { 
-        success: res.data.RequestResult?.Status === true || res.data.Status === true, 
-        data: res.data, token: res.data.Token, finalExpiry, currentCardDigits, receiptNameUsed: finalName, receiptTZUsed: finalID,
+        success: isSuccess, 
+        data: res.data, 
+        token: res.data.Token, 
+        finalExpiry, 
+        currentCardDigits,
+        receiptNameUsed: finalName,
+        receiptTZUsed: finalID,
         paymentMethod: isBankPayment ? 'bank' : 'cc'
     };
 }
@@ -327,7 +354,7 @@ app.post('/admin/manage-bank-auth', async (req, res) => {
                 submissionType: 'manual', approvedDate: new Date()
             };
             if (data.validUntil) u.bankDetails.validUntil = new Date(data.validUntil);
-            u.preferredPaymentMethod = 'bank'; // Set active method
+            u.preferredPaymentMethod = 'bank';
             u.messages.push({ direction: 'admin_to_user', content: 'הוגדרה הוראת קבע בנקאית ע"י ההנהלה.', date: new Date(), read: false });
         }
         await u.save();
@@ -342,7 +369,7 @@ app.post('/admin/get-bank-requests', async (req, res) => {
     res.json({ success: true, users });
 });
 
-// Standard Routes (Same as before)
+// Standard Routes
 app.post('/contact/send', async (req, res) => { const { userId, content, attachment, attachmentName } = req.body; try { const u = await User.findById(userId); if(!u) return res.json({ success: false }); u.messages.push({ direction: 'user_to_admin', content, attachment, attachmentName, read: false, date: new Date() }); await u.save(); res.json({ success: true }); } catch(e) { res.json({ success: false }); } });
 app.post('/admin/reply', async (req, res) => { const { userId, content, attachment, attachmentName } = req.body; try { const u = await User.findById(userId); if(!u) return res.json({ success: false }); u.messages.push({ direction: 'admin_to_user', content, attachment, attachmentName, read: false, date: new Date() }); await u.save(); if(u.fcmToken) admin.messaging().send({ token: u.fcmToken, notification: { title: 'הודעה חדשה', body: content } }).catch(e=>{}); res.json({ success: true }); } catch(e) { res.json({ success: false }); } });
 app.post('/admin/get-messages', async (req, res) => { const users = await User.find({ 'messages.0': { $exists: true } }).select('name phone messages _id'); const sorted = users.map(u => { const last = u.messages[u.messages.length - 1]; return { _id: u._id, name: u.name, phone: u.phone, lastMessageDate: last?last.date:0, unreadCount: u.messages.filter(m => m.direction === 'user_to_admin' && !m.read).length, messages: u.messages }; }).sort((a,b)=>new Date(b.lastMessageDate)-new Date(a.lastMessageDate)); res.json({ success: true, users: sorted }); });
@@ -354,7 +381,7 @@ app.post('/verify-auth', async (req, res) => { let { email, phone, code } = req.
 app.post('/login-by-id', async (req, res) => { try { let user = await User.findById(req.body.userId); if(user) { if ((!user.cards || user.cards.length === 0) && user.token) { user.cards.push({ token: user.token, lastDigits: user.lastCardDigits, expiry: user.lastExpiry, active: true }); user.token = ""; await user.save(); } res.json({ success: true, user }); } else res.json({ success: false }); } catch(e) { res.json({ success: false }); } });
 app.post('/donate', async (req, res) => { const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin, isGoalDonation, useReceiptDetails } = req.body; let u = await User.findById(userId); if (u.securityPin && u.securityPin.trim() !== "") { if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד שגוי" }); } let shouldChargeNow = (isGoalDonation === true) || (forceImmediate === true) ? true : (u.billingPreference === 0 && forceImmediate !== false); if (shouldChargeNow) { try { if (u.preferredPaymentMethod === 'bank' && u.bankDetails.dailyLimit > 0 && parseFloat(amount) > u.bankDetails.dailyLimit) return res.json({ success: false, error: "חריגה מתקרה יומית" }); const r = await chargeKesher(u, amount, note, !useToken ? ccDetails : null, useReceiptDetails); if (r.success) { u.totalDonated += parseFloat(amount); u.donationsHistory.push({ amount: parseFloat(amount), note, date: new Date(), status: 'success', isGoal: isGoalDonation === true, receiptNameUsed: r.receiptNameUsed, receiptTZUsed: r.receiptTZUsed, paymentMethod: r.paymentMethod }); await u.save(); if (isGoalDonation) await GlobalGoal.findOneAndUpdate({ id: 'main_goal' }, { $inc: { currentAmount: parseFloat(amount) } }); res.json({ success: true, message: "תרומה התקבלה!" }); } else res.json({ success: false, error: r.data.Description || "סירוב" }); } catch(e) { res.json({ success: false, error: e.message }); } } else { u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() }); await u.save(); res.json({ success: true, message: "נוסף לסל" }); } });
 app.post('/delete-pending', async (req, res) => { const u = await User.findById(req.body.userId); if (u.canRemoveFromBasket === false) return res.json({ success: false, error: "ננעל" }); await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } }); res.json({ success: true }); });
-app.post('/admin/update-profile', async (req, res) => { try { const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails, canRemoveFromBasket, activeCardId, deleteCardId, addManualCardData, receiptName, receiptTZ, receiptMode, maaserActive, maaserRate, maaserIncome, showTaxWidget } = req.body; let u = await User.findById(userId); if (deleteCardId) { u.cards = u.cards.filter(c => c._id.toString() !== deleteCardId); if (!u.cards.some(c => c.active) && u.cards.length > 0) u.cards[0].active = true; } if (activeCardId) u.cards.forEach(c => c.active = (c._id.toString() === activeCardId)); if (newCardDetails && newCardDetails.num) { try { const r = await chargeKesher(u, 0.1, "בדיקה", newCardDetails); if (r.success || r.token) { u.cards.forEach(c => c.active = false); u.cards.push({ token: fixToken(r.token), lastDigits: r.currentCardDigits, expiry: r.finalExpiry, active: true }); if(r.success) { u.totalDonated += 0.1; u.donationsHistory.push({ amount: 0.1, note: "בדיקה", status: 'success', date: new Date() }); } } else return res.json({ success: false, error: "אימות נכשל" }); } catch(e) { return res.json({ success: false, error: e.message }); } } if (addManualCardData) { u.cards.forEach(c => c.active = false); u.cards.push({ token: fixToken(addManualCardData.token), lastDigits: addManualCardData.lastDigits, expiry: addManualCardData.expiry, active: true }); } if(name) u.name = name; if(phone) u.phone = phone; if(email) u.email = email; if(tz) u.tz = tz; u.billingPreference = parseInt(billingPreference)||0; u.recurringDailyAmount = parseInt(recurringDailyAmount)||0; u.recurringImmediate = recurringImmediate===true; u.securityPin = securityPin; u.canRemoveFromBasket = canRemoveFromBasket; if(receiptName !== undefined) u.receiptName = receiptName; if(receiptTZ !== undefined) u.receiptTZ = receiptTZ; if(receiptMode !== undefined) u.receiptMode = parseInt(receiptMode); if(maaserActive !== undefined) u.maaserActive = maaserActive; if(maaserRate !== undefined) u.maaserRate = parseInt(maaserRate); if(maaserIncome !== undefined) u.maaserIncome = parseInt(maaserIncome); if(showTaxWidget !== undefined) u.showTaxWidget = showTaxWidget; await u.save(); res.json({ success: true }); } catch(e) { res.status(500).json({ success: false, error: e.message }); } });
+app.post('/admin/update-profile', async (req, res) => { try { const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails, canRemoveFromBasket, activeCardId, deleteCardId, addManualCardData, receiptName, receiptTZ, receiptMode, maaserActive, maaserRate, maaserIncome, showTaxWidget, preferredPaymentMethod } = req.body; let u = await User.findById(userId); if (deleteCardId) { u.cards = u.cards.filter(c => c._id.toString() !== deleteCardId); if (!u.cards.some(c => c.active) && u.cards.length > 0) u.cards[0].active = true; } if (activeCardId) u.cards.forEach(c => c.active = (c._id.toString() === activeCardId)); if (newCardDetails && newCardDetails.num) { try { const r = await chargeKesher(u, 0.1, "בדיקה", newCardDetails); if (r.success || r.token) { u.cards.forEach(c => c.active = false); u.cards.push({ token: fixToken(r.token), lastDigits: r.currentCardDigits, expiry: r.finalExpiry, active: true }); if(r.success) { u.totalDonated += 0.1; u.donationsHistory.push({ amount: 0.1, note: "בדיקה", status: 'success', date: new Date() }); } } else return res.json({ success: false, error: "אימות נכשל" }); } catch(e) { return res.json({ success: false, error: e.message }); } } if (addManualCardData) { u.cards.forEach(c => c.active = false); u.cards.push({ token: fixToken(addManualCardData.token), lastDigits: addManualCardData.lastDigits, expiry: addManualCardData.expiry, active: true }); } if(name) u.name = name; if(phone) u.phone = phone; if(email) u.email = email; if(tz) u.tz = tz; u.billingPreference = parseInt(billingPreference)||0; u.recurringDailyAmount = parseInt(recurringDailyAmount)||0; u.recurringImmediate = recurringImmediate===true; u.securityPin = securityPin; u.canRemoveFromBasket = canRemoveFromBasket; if(receiptName !== undefined) u.receiptName = receiptName; if(receiptTZ !== undefined) u.receiptTZ = receiptTZ; if(receiptMode !== undefined) u.receiptMode = parseInt(receiptMode); if(maaserActive !== undefined) u.maaserActive = maaserActive; if(maaserRate !== undefined) u.maaserRate = parseInt(maaserRate); if(maaserIncome !== undefined) u.maaserIncome = parseInt(maaserIncome); if(showTaxWidget !== undefined) u.showTaxWidget = showTaxWidget; if(preferredPaymentMethod) u.preferredPaymentMethod = preferredPaymentMethod; await u.save(); res.json({ success: true }); } catch(e) { res.status(500).json({ success: false, error: e.message }); } });
 const PASS = "admin1234";
 app.post('/admin/stats', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const { fromDate, toDate } = req.body; let start = fromDate ? new Date(fromDate) : new Date(0); start.setHours(0,0,0,0); let end = toDate ? new Date(toDate) : new Date(); end.setHours(23, 59, 59, 999); const now = new Date(); const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1); const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59); const users = await User.find(); let totalRange = 0; let countRange = 0; let totalMonth = 0; let uniqueDonors = new Set(); users.forEach(u => u.donationsHistory?.forEach(d => { let dDate = new Date(d.date); if (d.status === 'success') { const amount = d.amount || 0; if (dDate >= start && dDate <= end) { totalRange += amount; countRange++; uniqueDonors.add(u._id.toString()); } if (dDate >= startOfMonth && dDate <= endOfMonth) { totalMonth += amount; } } })); res.json({ success: true, stats: { totalDonated: totalRange, totalDonations: countRange, totalUsers: users.length, uniqueDonorsRange: uniqueDonors.size, totalMonth: totalMonth } }); });
 app.post('/admin/add-donation-manual', async (req, res) => { if(req.body.password !== PASS) return res.json({ success: false }); const { userId, amount, type, note } = req.body; let u = await User.findById(userId); if (!u) return res.json({ success: false }); if (type === 'immediate') { try { const r = await chargeKesher(u, amount, note || "חיוב מנהל"); if (r.success) { u.totalDonated += parseFloat(amount); u.donationsHistory.push({ amount: parseFloat(amount), note: note || "חיוב מנהל", date: new Date(), status: 'success', paymentMethod: r.paymentMethod }); await u.save(); res.json({ success: true }); } else { res.json({ success: false, error: "סירוב" }); } } catch (e) { res.json({ success: false, error: e.message }); } } else { u.pendingDonations.push({ amount: parseFloat(amount), note: note || "הוסף ע\"י מנהל", date: new Date() }); await u.save(); res.json({ success: true }); } });
