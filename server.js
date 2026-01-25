@@ -50,7 +50,7 @@ const bankDetailsSchema = new mongoose.Schema({
     branchId: String,
     accountId: String,
     ownerName: String,
-    ownerID: String, 
+    ownerID: String, // Critical for Masav
     ownerPhone: String,
     signature: String,
     authFile: String,
@@ -124,11 +124,12 @@ async function getActiveToken(user) {
 
 function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
-// --- Charge Engine Fixed ---
+// --- Charge Engine Fixed (Bank Params) ---
 async function chargeKesher(user, amount, note, creditDetails = null, useReceiptDetails = false) {
     const amountInAgorot = Math.round(parseFloat(amount) * 100);
     const safePhone = (user.phone || "0500000000").replace(/\D/g, '');
     
+    // Determine Method
     let isBankPayment = false;
     if (user.preferredPaymentMethod === 'bank' && !creditDetails) {
         isBankPayment = true;
@@ -137,7 +138,7 @@ async function chargeKesher(user, amount, note, creditDetails = null, useReceipt
     if (isBankPayment) {
         if (!user.bankDetails || user.bankDetails.status !== 'active') throw new Error("אין הרשאה בנקאית מאושרת");
         if (user.bankDetails.validUntil && new Date() > new Date(user.bankDetails.validUntil)) throw new Error("תוקף ההרשאה הבנקאית פג");
-        if (!user.bankDetails.ownerID) throw new Error("חסרה תעודת זהות של בעל החשבון");
+        if (!user.bankDetails.ownerID) throw new Error("חסרה תעודת זהות של בעל החשבון לחיוב מס\"ב");
     }
 
     let finalName = user.name || "Torem";
@@ -165,19 +166,25 @@ async function chargeKesher(user, amount, note, creditDetails = null, useReceipt
     let currentCardDigits = "";
     
     if (isBankPayment) {
-        // --- Bank Transaction Logic Fixed (Masav) ---
+        // --- Bank Transaction Logic Fixed for Kesher API ---
         tranData.CreditType = 8; 
+        
+        // Correct Field Names based on error log
         tranData.BankNumber = user.bankDetails.bankId;
         tranData.BranchNumber = user.bankDetails.branchId;
         tranData.AccountNumber = user.bankDetails.accountId;
-        // Important: Mapping ID correctly for Kesher Schema
-        tranData.HolderID = user.bankDetails.ownerID; 
+        
+        // UniqNum is likely the owner ID (TZ) for Masav
         tranData.UniqNum = user.bankDetails.ownerID; 
+        
+        // Optional fields that might be helpful
+        tranData.HolderID = user.bankDetails.ownerID;
         tranData.OwnerName = user.bankDetails.ownerName;
 
         currentCardDigits = "Bank-" + user.bankDetails.accountId.slice(-3);
-        console.log(`🏦 Executing BANK Charge for ${user.name}`);
+        console.log(`🏦 Executing BANK Charge for ${user.name} (Masav)`);
     } else {
+        // --- Credit Card Logic ---
         tranData.CreditType = 1;
         if (creditDetails) {
             tranData.CreditNum = creditDetails.num;
@@ -204,7 +211,7 @@ async function chargeKesher(user, amount, note, creditDetails = null, useReceipt
     
     console.log("Kesher Response:", JSON.stringify(res.data));
 
-    // For Bank, Pending (Status=null but no error) might be success
+    // For Bank, Pending (Status=null but no error) might be success or pending approval
     const isSuccess = res.data.RequestResult?.Status === true || res.data.Status === true;
 
     return { 
