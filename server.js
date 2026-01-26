@@ -241,22 +241,21 @@ async function createBankTransfer(user, amount, note) {
         Bank: user.bankDetails.bankId,
         Total: parseFloat(amount), // Note: CURL example had 150 (Total)
         Id: user.bankDetails.ownerID || user.tz, // "Id" field from your example
-
-        // ClientApiIdentity: null, 
-        // Signature: null,
-        // Address: "Israel",
-        // City: null,
-        // Currency: 1,
-        // Phone: (user.phone || "00000000").replace(/\D/g, ''),
-        // Comment1: note || "",
-        // FirstName: user.bankDetails.ownerName || user.name || "Donor",
-        // LastName: null,
-        // ProjectNumber: "1",
-        // Mail: user.email || "no@mail.com",
-        // ReceiptName: user.receiptName || user.name || "",
-        // ReceiptFor: "",
-        // TransactionDate: new Date().toISOString().split('T')[0],
-        // NumPayment: 9999, // As per CURL
+        ClientApiIdentity: null, 
+        Signature: null,
+        Address: "Israel",
+        City: null,
+        Currency: 1,
+        Phone: (user.phone || "00000000").replace(/\D/g, ''),
+        Comment1: note || "",
+        FirstName: user.bankDetails.ownerName || user.name || "Donor",
+        LastName: null,
+        ProjectNumber: "1",
+        Mail: user.email || "no@mail.com",
+        ReceiptName: user.receiptName || user.name || "",
+        ReceiptFor: "",
+        TransactionDate: new Date().toISOString().split('T')[0],
+        NumPayment: 9999, // As per CURL
     };
 
     console.log(`🏦 Sending Bank TRANSFER:`, JSON.stringify(bankPayload));
