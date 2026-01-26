@@ -443,7 +443,7 @@ app.post('/admin/get-bank-requests', async (req, res) => {
 });
 
 app.post('/donate', async (req, res) => {
-    const { userId, amount, note, forceImmediate, providedPin, isGoalDonation } = req.body;
+    const { userId, preferredPaymentMethod, amount, note, forceImmediate, providedPin, isGoalDonation } = req.body;
     
     try {
         let u = await User.findById(userId);
@@ -459,7 +459,7 @@ app.post('/donate', async (req, res) => {
 
         if (shouldChargeNow) {
             // בדיקת תקרה רק אם זה בנק
-            if (u.preferredPaymentMethod === 'bank' && u.bankDetails.dailyLimit > 0) {
+            if (preferredPaymentMethod === 'bank' && u.bankDetails.dailyLimit > 0) {
                 if (parseFloat(amount) > u.bankDetails.dailyLimit) {
                     return res.json({ success: false, error: "חריגה מתקרה יומית" });
                 }
