@@ -7,6 +7,7 @@ const cron = require('node-cron');
 const path = require('path');
 const app = express();
 
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(cors());
@@ -534,3 +535,4 @@ app.post('/reset-token', async (req, res) => { await User.findByIdAndUpdate(req.
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`✅ Server Live`));
+
