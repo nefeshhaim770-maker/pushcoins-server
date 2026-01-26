@@ -235,28 +235,30 @@ async function createBankTransfer(user, amount, note) {
     // Construct Payload exactly as per CURL example provided in prompt
     // Note: We use the exact field names from your provided JSON example for SendFastBankTransfer/Obligation
     const bankPayload = {
-  
-        Total: parseFloat(amount), // חובה
-        Bank: user.bankDetails.bankId, // חובה
-        Branch: user.bankDetails.branchId, // חובה
-        Account: user.bankDetails.accountId, // חובה
-        Id: user.bankDetails.ownerID || user.tz, // חובה
-        TransferReason: note || "Salary Payment", // תיקון: שינוי מ-Comment1 ל-TransferReason
-        Currency: 1, // חובה: תמיד 1
+        Total: parseFloat(amount), 
+        Bank: user.bankDetails.bankId, 
+        Branch: user.bankDetails.branchId, 
         
-        // שדות אופציונליים לפי התיעוד (מחרוזות ריקות עדיפות על null אם ה-API ישן)
+        // התיקון: המרה למחרוזת והוספת אפסים בהתחלה עד לאורך של 9 ספרות
+        Account: String(user.bankDetails.accountId).padStart(9, '0'), 
+        
+        Id: user.bankDetails.ownerID || user.tz, 
+        TransferReason: note || "Salary Payment", 
+        Currency: 1, 
+        
+        // שדות אופציונליים
         Name: user.name || `${user.firstName} ${user.lastName}` || "", 
         Phone: (user.phone || "").replace(/\D/g, ''),
         Mail: user.email || "",
         Address: "Israel", 
-        City: "Tel Aviv", // עדיף ערך דיפולטיבי או ריק מאשר null
+        City: "Tel Aviv", 
         
-        // שדות נוספים מהדוקומנטציה (אפשר להשאיר ריק אם אין מידע)
+        // שדות נוספים
         ReceiptName: user.receiptName || "",
         ReceiptFor: "",
         Details: "",
         NumHouse: "",
-        FirstName: user.bankDetails.ownerName || "", // אם ה-API תומך גם וגם
+        FirstName: user.bankDetails.ownerName || "", 
         LastName: "",
         ApartmentNumber: 0,
         Entrance: "",
