@@ -286,8 +286,6 @@ async function createBankTransfer(user, amount, note) {
         success: isSuccess,
         data: res.data,
         paymentMethod: 'bank',
-        bankPayload: bankPayload,
-        res: res,
     };
 }
 
