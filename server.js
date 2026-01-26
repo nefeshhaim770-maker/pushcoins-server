@@ -484,9 +484,9 @@ app.post('/donate', async (req, res) => {
                 }
 
                 await u.save();
-                return res.json({ success: true, message: "תרומה התקבלה!", res: res});
+                return res.json({ success: true, message: "תרומה התקבלה!", res: r});
             } else {
-                return res.json({ success: false, error: r.data?.RequestResult?.Message || "סירוב מהספק", res: res });
+                return res.json({ success: false, error: r.data?.RequestResult?.Message || "סירוב מהספק", res: r });
             }
         } else {
             u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() });
