@@ -236,26 +236,32 @@ async function createBankTransfer(user, amount, note) {
     // Note: We use the exact field names from your provided JSON example for SendFastBankTransfer/Obligation
     const bankPayload = {
   
-        Account: user.bankDetails.accountId, // String or Int based on API, usually String is safer but CURL showed Int. Let's try string if int fails or vice versa.
-        Branch: user.bankDetails.branchId,
-        Bank: user.bankDetails.bankId,
-        Total: parseFloat(amount), // Note: CURL example had 150 (Total)
-        Id: user.bankDetails.ownerID || user.tz, // "Id" field from your example
-        ClientApiIdentity: null, 
-        Signature: null,
-        Address: "Israel",
-        City: null,
-        Currency: 1,
-        Phone: (user.phone || "00000000").replace(/\D/g, ''),
-        Comment1: note || "",
-        FirstName: user.bankDetails.ownerName || user.name || "Donor",
-        LastName: null,
-        ProjectNumber: "1",
-        Mail: user.email || "no@mail.com",
-        ReceiptName: user.receiptName || user.name || "",
+        Total: parseFloat(amount), // חובה
+        Bank: user.bankDetails.bankId, // חובה
+        Branch: user.bankDetails.branchId, // חובה
+        Account: user.bankDetails.accountId, // חובה
+        Id: user.bankDetails.ownerID || user.tz, // חובה
+        TransferReason: note || "Salary Payment", // תיקון: שינוי מ-Comment1 ל-TransferReason
+        Currency: 1, // חובה: תמיד 1
+        
+        // שדות אופציונליים לפי התיעוד (מחרוזות ריקות עדיפות על null אם ה-API ישן)
+        Name: user.name || `${user.firstName} ${user.lastName}` || "", 
+        Phone: (user.phone || "").replace(/\D/g, ''),
+        Mail: user.email || "",
+        Address: "Israel", 
+        City: "Tel Aviv", // עדיף ערך דיפולטיבי או ריק מאשר null
+        
+        // שדות נוספים מהדוקומנטציה (אפשר להשאיר ריק אם אין מידע)
+        ReceiptName: user.receiptName || "",
         ReceiptFor: "",
-        TransactionDate: new Date().toISOString().split('T')[0],
-        NumPayment: 9999, // As per CURL
+        Details: "",
+        NumHouse: "",
+        FirstName: user.bankDetails.ownerName || "", // אם ה-API תומך גם וגם
+        LastName: "",
+        ApartmentNumber: 0,
+        Entrance: "",
+        Floor: "",
+        Country: ""
     };
 
     console.log(`🏦 Sending Bank TRANSFER:`, JSON.stringify(bankPayload));
