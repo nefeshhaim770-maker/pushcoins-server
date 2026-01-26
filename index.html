@@ -1,491 +1,1194 @@
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>נפש החיים</title>
+
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+    <link rel="preconnect" href="https://pushcoins-server.onrender.com" crossorigin>
+
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        /* אותם סגנונות כמו קודם */
-        .swal2-container { z-index: 20000 !important; }
-        body { background: linear-gradient(180deg, #a1c4fd 0%, #c2e9fb 100%); font-family: 'Segoe UI', sans-serif; margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; user-select: none; }
-        .main-content-wrapper { flex: 1; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding-top: 80px; padding-bottom: 20px; overflow-y: auto; }
-        #app-loader { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #ffffff; z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s ease-out; }
-        .loader-logo { width: 100px; height: 100px; border-radius: 50%; margin-bottom: 20px; animation: pulse 1.5s infinite; box-shadow: 0 5px 15px rgba(0,0,0,0.1); object-fit: contain; }
-        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #1e3c72; border-radius: 50%; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
-        .fade-out { opacity: 0; pointer-events: none; }
-        .header-icons { position: absolute; top: 15px; width: 100%; padding: 0 20px; display: flex; justify-content: space-between; z-index: 200; }
-        .icon-btn { background: rgba(255,255,255,0.9); border: none; width: 45px; height: 45px; border-radius: 50%; color: #1e3c72; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-size: 1.2rem; position: relative; }
-        .badge-count { position: absolute; top: -5px; left: -5px; background: #dc3545; color: white; font-size: 0.75rem; padding: 2px 6px; border-radius: 10px; border: 2px solid white; }
-        .coins-container { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; z-index: 10; position: relative; max-width: 400px; flex-shrink: 0; margin-bottom: 20px; }
-        .coin { width: 75px; height: 75px; background: radial-gradient(circle at 30% 30%, #fff, #ffd700); border-radius: 50%; border: 4px solid #b8860b; box-shadow: 0 4px 10px rgba(0,0,0,0.2); display: flex; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; position: relative; z-index: 100; transition: transform 0.1s; }
-        .coin:active { transform: scale(0.95); }
-        .coin.silver { background: radial-gradient(circle at 30% 30%, #fff, #e0e0e0); border-color: #a9a9a9; }
-        .coin span { font-weight: bold; font-size: 1.4rem; line-height: 1; color: #444; pointer-events: none; }
-        .coin small { font-size: 0.7rem; color: #666; pointer-events: none; }
-        .flying-coin { position: fixed; z-index: 9999; pointer-events: none; transition: all 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
-        .pushka-box-container { position: relative; width: 290px; height: 340px; display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
-        .slot-area { width: 140px; height: 15px; background: #2a2a2a; border-radius: 10px; margin-bottom: -5px; box-shadow: inset 0 2px 5px rgba(0,0,0,0.5); z-index: 5; }
-        .pushka-body { width: 100%; height: 100%; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); border-radius: 20px 20px 0 0; box-shadow: 0 -5px 25px rgba(0,0,0,0.3); display: flex; flex-direction: column; align-items: center; color: white; padding-top: 15px; position: relative; }
-        .pushka-logo { width: 80px; height: 80px; background: white; border-radius: 50%; padding: 5px; margin-bottom: 5px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); object-fit: contain; }
-        .digital-screen { background: #222; color: #00e676; font-family: 'Courier New', monospace; padding: 5px 15px; border-radius: 5px; font-size: 1.8rem; font-weight: bold; border: 3px solid #444; margin-bottom: 10px; min-width: 140px; text-align: center; box-shadow: inset 0 0 10px rgba(0,0,0,0.8); text-shadow: 0 0 5px rgba(0,230,118,0.5); }
-        .actions-block { width: 100%; padding: 0 20px; display: flex; gap: 10px; margin-top: auto; margin-bottom: 15px; }
-        .btn-game { flex: 1; padding: 12px; border: none; border-radius: 25px; font-weight: bold; color: white; box-shadow: 0 4px 10px rgba(0,0,0,0.2); transition: 0.2s; }
-        .btn-basket { background: #fbc02d; color: #333; }
-        .btn-pay { background: #00c853; }
-        .btn-game:active { transform: scale(0.95); opacity: 0.9; }
-        .note-input { width: 85%; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); border-radius: 20px; padding: 8px; text-align: center; font-size: 0.9rem; color: white; outline: none; margin-bottom: 10px; }
-        .note-input::placeholder { color: rgba(255,255,255,0.7); }
-        .overlay-screen { position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.7); z-index: 5000; display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; visibility: hidden; opacity: 0; transition: 0.3s; padding: 20px 0; }
-        .overlay-screen.open { visibility: visible; opacity: 1; }
-        .modal-card { background: white; width: 90%; max-width: 400px; border-radius: 25px; padding: 25px; text-align: center; margin: 20px auto; box-shadow: 0 10px 30px rgba(0,0,0,0.3); position: relative; }
-        .list-item { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 10px 0; align-items: center; }
-        .required-label::after { content: "*"; color: red; margin-right: 4px; }
+        .swal2-container {
+            z-index: 20000 !important;
+        }
+
+        body {
+            background: linear-gradient(180deg, #a1c4fd 0%, #c2e9fb 100%);
+            font-family: 'Segoe UI', sans-serif;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        .main-content-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 80px;
+            padding-bottom: 20px;
+            overflow-y: auto;
+        }
+
+        #app-loader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #ffffff;
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.5s ease-out;
+        }
+
+        .loader-logo {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            margin-bottom: 20px;
+            animation: pulse 1.5s infinite;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            object-fit: contain;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #1e3c72;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        .fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .header-icons {
+            position: absolute;
+            top: 15px;
+            width: 100%;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            z-index: 200;
+        }
+
+        .icon-btn {
+            background: rgba(255, 255, 255, 0.9);
+            border: none;
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            color: #1e3c72;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            font-size: 1.2rem;
+            position: relative;
+        }
+
+        .badge-count {
+            position: absolute;
+            top: -5px;
+            left: -5px;
+            background: #dc3545;
+            color: white;
+            font-size: 0.75rem;
+            padding: 2px 6px;
+            border-radius: 10px;
+            border: 2px solid white;
+        }
+
+        .coins-container {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            z-index: 10;
+            position: relative;
+            max-width: 400px;
+            flex-shrink: 0;
+            margin-bottom: 20px;
+        }
+
+        .coin {
+            width: 75px;
+            height: 75px;
+            background: radial-gradient(circle at 30% 30%, #fff, #ffd700);
+            border-radius: 50%;
+            border: 4px solid #b8860b;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            position: relative;
+            z-index: 100;
+            transition: transform 0.1s;
+        }
+
+        .coin:active {
+            transform: scale(0.95);
+        }
+
+        .coin.silver {
+            background: radial-gradient(circle at 30% 30%, #fff, #e0e0e0);
+            border-color: #a9a9a9;
+        }
+
+        .coin span {
+            font-weight: bold;
+            font-size: 1.4rem;
+            line-height: 1;
+            color: #444;
+            pointer-events: none;
+        }
+
+        .coin small {
+            font-size: 0.7rem;
+            color: #666;
+            pointer-events: none;
+        }
+
+        .flying-coin {
+            position: fixed;
+            z-index: 9999;
+            pointer-events: none;
+            transition: all 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+
+        .pushka-box-container {
+            position: relative;
+            width: 290px;
+            height: 340px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .slot-area {
+            width: 140px;
+            height: 15px;
+            background: #2a2a2a;
+            border-radius: 10px;
+            margin-bottom: -5px;
+            box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5);
+            z-index: 5;
+        }
+
+        .pushka-body {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            border-radius: 20px 20px 0 0;
+            box-shadow: 0 -5px 25px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: white;
+            padding-top: 15px;
+            position: relative;
+        }
+
+        .pushka-logo {
+            width: 80px;
+            height: 80px;
+            background: white;
+            border-radius: 50%;
+            padding: 5px;
+            margin-bottom: 5px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            object-fit: contain;
+        }
+
+        .digital-screen {
+            background: #222;
+            color: #00e676;
+            font-family: 'Courier New', monospace;
+            padding: 5px 15px;
+            border-radius: 5px;
+            font-size: 1.8rem;
+            font-weight: bold;
+            border: 3px solid #444;
+            margin-bottom: 10px;
+            min-width: 140px;
+            text-align: center;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8);
+            text-shadow: 0 0 5px rgba(0, 230, 118, 0.5);
+        }
+
+        .actions-block {
+            width: 100%;
+            padding: 0 20px;
+            display: flex;
+            gap: 10px;
+            margin-top: auto;
+            margin-bottom: 15px;
+        }
+
+        .btn-game {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 25px;
+            font-weight: bold;
+            color: white;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            transition: 0.2s;
+        }
+
+        .btn-basket {
+            background: #fbc02d;
+            color: #333;
+        }
+
+        .btn-pay {
+            background: #00c853;
+        }
+
+        .btn-game:active {
+            transform: scale(0.95);
+            opacity: 0.9;
+        }
+
+        .note-input {
+            width: 85%;
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px;
+            padding: 8px;
+            text-align: center;
+            font-size: 0.9rem;
+            color: white;
+            outline: none;
+            margin-bottom: 10px;
+        }
+
+        .note-input::placeholder {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .overlay-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 5000;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            overflow-y: auto;
+            visibility: hidden;
+            opacity: 0;
+            transition: 0.3s;
+            padding: 20px 0;
+        }
+
+        .overlay-screen.open {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .modal-card {
+            background: white;
+            width: 90%;
+            max-width: 400px;
+            border-radius: 25px;
+            padding: 25px;
+            text-align: center;
+            margin: 20px auto;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+
+        .list-item {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid #eee;
+            padding: 10px 0;
+            align-items: center;
+        }
+
+        .card-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px;
+            border: 1px solid #eee;
+            border-radius: 10px;
+            margin-bottom: 5px;
+        }
+
+        .card-item.active {
+            border-color: #198754;
+            background: #f0fff4;
+        }
+
+        #goal-widget,
+        #maaser-widget,
+        #tax-widget {
+            display: none;
+            width: 90%;
+            max-width: 400px;
+            background: white;
+            border-radius: 15px;
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            position: relative;
+            z-index: 50;
+        }
+
+        #maaser-widget {
+            border-right: 5px solid #6f42c1;
+        }
+
+        #tax-widget {
+            border-right: 5px solid #198754;
+            background: #f8fff9;
+        }
+
+        .progress-container {
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 8px 0;
+            position: relative;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #00c6ff, #0072ff);
+            width: 0%;
+            transition: width 1s ease-in-out;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+
+        .progress-bar.maaser-bar {
+            background: linear-gradient(90deg, #b084cc, #6f42c1);
+        }
+
+        .btn-goal-donate {
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: bold;
+            box-shadow: 0 3px 6px rgba(255, 107, 107, 0.3);
+            width: 100%;
+        }
+
+        .tax-amount {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #198754;
+        }
+
+        .chat-bubble {
+            padding: 8px 12px;
+            border-radius: 15px;
+            margin-bottom: 8px;
+            max-width: 80%;
+            word-wrap: break-word;
+            font-size: 0.9rem;
+        }
+
+        .chat-me {
+            background: #d1e7dd;
+            color: #0f5132;
+            margin-left: auto;
+            border-bottom-right-radius: 2px;
+        }
+
+        .chat-other {
+            background: #e9ecef;
+            color: #333;
+            margin-right: auto;
+            border-bottom-left-radius: 2px;
+        }
+
+        .chat-date {
+            font-size: 0.65rem;
+            opacity: 0.7;
+            display: block;
+            margin-top: 3px;
+        }
+
+        .file-preview {
+            background: #f8f9fa;
+            border: 1px dashed #ced4da;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.8rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        #signature-pad {
+            border: 1px solid #ced4da;
+            border-radius: 8px;
+            width: 100%;
+            height: 200px;
+            touch-action: none;
+            background: white;
+            cursor: crosshair;
+        }
     </style>
 </head>
+
 <body>
 
-<div id="app-loader">
-    <img src="https://www.nefesh-ha-chaim.org/icons/logo.png" class="loader-logo" alt="טוען...">
-    <div class="spinner"></div>
-    <div style="margin-top: 10px; color: #555; font-weight: bold;">טוען את הקופה...</div>
-</div>
-
-<div class="header-icons">
-    <button class="icon-btn" onclick="openSettings()"><i class="fas fa-cog"></i></button>
-    <div class="bg-white px-3 py-2 rounded-pill shadow-sm text-primary fw-bold d-flex align-items-center">
-        <span id="user-total">₪0</span>
-    </div>
-    <button class="icon-btn" onclick="openBasket()">
-        <i class="fas fa-shopping-cart"></i>
-        <span class="badge-count d-none" id="basket-badge">0</span>
-    </button>
-</div>
-
-<div class="main-content-wrapper">
-    <div class="coins-container">
-        <div class="coin silver" onclick="clickCoin(1, this)"><span>1</span><small>₪</small></div>
-        <div class="coin silver" onclick="clickCoin(2, this)"><span>2</span><small>₪</small></div>
-        <div class="coin silver" onclick="clickCoin(5, this)"><span>5</span><small>₪</small></div>
-        <div class="coin" onclick="clickCoin(10, this)"><span>10</span><small>₪</small></div>
-        <div class="coin" onclick="clickCoin(18, this)"><span>18</span><small>ח"י</small></div>
-        <div class="coin" id="custom-coin" onclick="handleCustomCoin(this)"><i class="fas fa-pen"></i><small>אחר</small></div>
+    <div id="app-loader">
+        <img src="https://www.nefesh-ha-chaim.org/icons/logo.png" class="loader-logo" alt="טוען..."
+            fetchpriority="high">
+        <div class="spinner"></div>
+        <div style="margin-top: 10px; color: #555; font-weight: bold;">טוען את הקופה...</div>
     </div>
 
-    <div class="pushka-box-container">
-        <div class="slot-area" id="target-slot"></div>
-        <div class="pushka-body">
-            <img src="https://www.nefesh-ha-chaim.org/icons/logo.png" alt="Logo" class="pushka-logo"> 
-            <div id="screen" class="digital-screen">₪0</div>
-            <input type="text" id="donation-note" class="note-input" placeholder="הוסף הערה / הקדשה">
-            <div class="actions-block">
-                <button class="btn-game btn-basket" onclick="submit(false)">הוסף לסל</button>
-                <button class="btn-game btn-pay" onclick="submit(true)">תרום</button>
+    <div class="header-icons">
+        <button class="icon-btn" onclick="openSettings()"><i class="fas fa-cog"></i></button>
+        <button class="icon-btn" onclick="openContact()"><i class="fas fa-envelope"></i>
+            <span class="badge-count d-none" id="contact-badge">0</span>
+        </button>
+        <div class="bg-white px-3 py-2 rounded-pill shadow-sm text-primary fw-bold d-flex align-items-center">
+            <span id="user-total">₪0</span>
+        </div>
+        <button class="icon-btn" onclick="openBasket()">
+            <i class="fas fa-shopping-cart"></i>
+            <span class="badge-count d-none" id="basket-badge">0</span>
+        </button>
+    </div>
+
+    <!-- Main Payment Selector on Home -->
+    <div class="main-content-wrapper">
+        <!-- Active Payment Method Indicator -->
+        <div class="mb-3 text-center w-75">
+            <div class="btn-group w-100 shadow-sm" role="group">
+                <input type="radio" class="btn-check" name="mainPaymentMethod" id="main-pm-cc" autocomplete="off"
+                    checked onchange="setMainPaymentMethod('cc')">
+                <label class="btn btn-outline-light border-0 fw-bold" for="main-pm-cc"
+                    style="background: rgba(255,255,255,0.3); color: #333;"><i class="fas fa-credit-card"></i>
+                    אשראי</label>
+
+                <input type="radio" class="btn-check" name="mainPaymentMethod" id="main-pm-bank" autocomplete="off"
+                    onchange="setMainPaymentMethod('bank')">
+                <label class="btn btn-outline-light border-0 fw-bold" for="main-pm-bank"
+                    style="background: rgba(255,255,255,0.3); color: #333;"><i class="fas fa-university"></i>
+                    בנק</label>
             </div>
-            <small id="status-text" style="color: rgba(255,255,255,0.7); font-size: 0.75rem;">מצב: טוען...</small>
+            <small id="bank-warning-label" class="d-none text-danger fw-bold bg-white px-2 rounded mt-1">שים לב: חיוב
+                בנקאי דורש אישור מנהל</small>
         </div>
-    </div>
-</div>
 
-<div id="login-modal" class="overlay-screen" style="z-index: 9000;">
-    <div class="modal-card">
-        <img src="https://www.nefesh-ha-chaim.org/icons/logo.png" width="80" class="mb-3 rounded-circle shadow">
-        <h3 class="fw-bold text-primary">ברוכים הבאים</h3>
-        <div class="form-floating mb-3 border rounded-4 mt-4">
-            <input type="text" id="login-val" class="form-control border-0 bg-light text-center" placeholder="פרטים">
-            <label class="w-100 text-center">נייד או אימייל</label>
-        </div>
-        <div id="otp-area" class="d-none mb-3 border rounded-4">
-            <input type="number" id="otp-val" class="form-control border-0 bg-light text-center fs-4" placeholder="קוד">
-        </div>
-        <button onclick="sendCode()" id="btn-send" class="btn btn-primary w-100 btn-lg rounded-pill shadow">שלח קוד</button>
-        <button onclick="verifyCode()" id="btn-verify" class="btn btn-success w-100 btn-lg rounded-pill shadow d-none">כניסה</button>
-    </div>
-</div>
-
-<div id="basket-modal" class="overlay-screen">
-    <div class="modal-card">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="m-0 fw-bold">🛒 העגלה שלי</h5>
-            <button class="btn-close" onclick="closeModal('basket-modal')"></button>
-        </div>
-        <div class="alert alert-info py-2 small fw-bold" id="basket-summary-text">טוען...</div>
-        <div id="basket-list" class="mb-3 text-start"></div>
-        <div class="text-muted small bg-light p-2 rounded">
-            חיוב מרוכז יתבצע ב-<span id="basket-date" class="fw-bold">--</span> לחודש<br>
-            <span style="font-size: 0.8em; color: #666;">(בשעה 08:00 בבוקר)</span>
-        </div>
-    </div>
-</div>
-
-<div id="history-modal" class="overlay-screen">
-    <div class="modal-card">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="m-0 fw-bold">📜 היסטוריה</h5>
-            <button class="btn-close" onclick="closeModal('history-modal')"></button>
-        </div>
-        <div class="modal-body p-0" style="max-height: 60vh; overflow-y: auto;">
-            <table class="table table-striped mb-0 text-center small">
-                <thead class="table-dark table-sm sticky-top">
-                    <tr><th>תאריך</th><th>סכום</th><th>הערה</th><th>סטטוס</th></tr>
-                </thead>
-                <tbody id="history-list"></tbody>
-            </table>
-        </div>
-        <div id="no-history" class="text-center text-muted py-3 d-none">אין תרומות עדיין</div>
-    </div>
-</div>
-
-<div id="settings-modal" class="overlay-screen">
-    <div class="modal-card text-end">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="m-0 fw-bold">הגדרות</h5>
-            <button class="btn-close" onclick="closeModal('settings-modal')"></button>
-        </div>
-        
-        <label class="small fw-bold text-primary required-label">פרטים אישיים</label>
-        <input id="set-name" class="form-control mb-1" placeholder="שם מלא">
-        <input id="set-phone" class="form-control mb-1" placeholder="טלפון" type="tel">
-        <input id="set-email" class="form-control mb-1" placeholder="אימייל" type="email">
-        <input id="set-tz" class="form-control mb-3" placeholder="תעודת זהות" type="tel">
-
-        <hr>
-
-        <label class="small fw-bold text-primary">אמצעי תשלום</label>
-        <div id="cc-saved-area" class="d-none justify-content-between border p-2 mb-3 rounded align-items-center bg-light">
-            <small id="card-digits" class="fw-bold text-success">****</small>
-            <button class="btn btn-sm btn-outline-danger" onclick="resetCard()">מחק</button>
-        </div>
-        <div id="cc-input-area">
-            <div class="alert alert-danger p-1 small mb-2" style="font-size: 0.75rem;">
-                <i class="fas fa-info-circle"></i> לצורך שמירת הכרטיס יתבצע חיוב חד-פעמי של 0.10 ₪
-            </div>
-            <input id="set-cc-num" class="form-control mb-1" placeholder="מספר כרטיס אשראי" maxlength="16" type="tel">
-            <div class="mb-3">
-                <input id="set-cc-exp" class="form-control" placeholder="תוקף (MMYY)" maxlength="4" type="tel">
+        <div id="tax-widget">
+            <div class="text-center">
+                <div class="fw-bold text-success mb-2"><i class="fas fa-hand-holding-usd"></i> החזר מס צפוי (35%)</div>
+                <div id="tax-content-eligible">
+                    <div class="tax-amount">₪<span id="tax-refund-amount">0</span></div><small class="text-muted">על סך
+                        תרומות של ₪<span id="tax-total-donated">0</span> השנה</small>
+                </div>
+                <div id="tax-content-not-eligible" class="d-none">
+                    <div class="text-muted small mb-1">עדיין לא הגעת למינימום (180₪)</div>
+                    <div class="progress-container" style="height: 10px;">
+                        <div class="progress-bar bg-success" id="tax-progress" style="width: 0%"></div>
+                    </div><small class="text-muted" style="font-size: 0.7rem;">עוד ₪<span id="tax-left">0</span>
+                        להחזר</small>
+                </div>
             </div>
         </div>
-
-        <label class="small fw-bold text-primary">יום חיוב הסל</label>
-        <div class="input-group mb-1">
-            <select id="billing-type" class="form-select text-center" onchange="toggleBillingInput()">
-                <option value="immediate">מיידי (ללא סל)</option>
-                <option value="monthly">יום בחודש</option>
-            </select>
-            <input type="tel" id="set-billing-day" class="form-control text-center d-none" placeholder="יום (1-31)" min="1" max="31" oninput="validateDay(this)">
+        <div id="maaser-widget">
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="fw-bold small" style="color: #6f42c1;"><i class="fas fa-calculator me-1"></i> <span
+                        id="maaser-title-text">מעקב מעשרות</span></div>
+                <div class="small fw-bold"><span id="maaser-current">0</span> / <span id="maaser-target">0</span> ₪
+                </div>
+            </div>
+            <div class="progress-container">
+                <div class="progress-bar maaser-bar" id="maaser-progress">0%</div>
+            </div>
+            <div class="text-center small text-muted">נותר להשלים החודש: <span id="maaser-left"
+                    class="fw-bold text-dark">0</span> ₪</div>
         </div>
-        <div class="text-muted small mb-3 fst-italic" style="font-size: 0.75rem;">* החיוב מתבצע בשעה 08:00 בבוקר</div>
-
-        <label class="small fw-bold text-primary">הוראת קבע יומית (₪)</label>
-        <input type="tel" id="set-daily" class="form-control mb-1" placeholder="0">
-        <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" id="set-daily-immediate">
-            <label class="form-check-label small" for="set-daily-immediate">חייב אשראי מידית (ולא לסל)</label>
+        <div id="goal-widget">
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="fw-bold text-primary small"><i class="fas fa-bullseye me-1"></i> <span
+                        id="goal-title-text">יעד</span></div>
+                <div class="small fw-bold"><span id="goal-current">0</span> / <span id="goal-target">0</span> ₪</div>
+            </div>
+            <div class="progress-container">
+                <div class="progress-bar" id="goal-progress">0%</div>
+            </div><button class="btn-goal-donate" onclick="submitGoalDonation()">תרום ליעד זה</button>
         </div>
-
-        <label class="small fw-bold text-primary">קוד אבטחה (PIN)</label>
-        <input type="password" id="set-pin" class="form-control mb-3" placeholder="4 ספרות" maxlength="4">
-
-        <button class="btn btn-outline-primary w-100 rounded-pill mb-2" onclick="openHistory()">📜 היסטוריית תרומות</button>
-        <button class="btn btn-primary w-100 rounded-pill mb-2" onclick="saveSettings()">שמור שינויים</button>
-        <button class="btn btn-outline-danger w-100 rounded-pill" onclick="logout()">יציאה</button>
+        <div class="coins-container">
+            <div class="coin silver" onclick="clickCoin(1, this)"><span>1</span><small>₪</small></div>
+            <div class="coin silver" onclick="clickCoin(2, this)"><span>2</span><small>₪</small></div>
+            <div class="coin silver" onclick="clickCoin(5, this)"><span>5</span><small>₪</small></div>
+            <div class="coin" onclick="clickCoin(10, this)"><span>10</span><small>₪</small></div>
+            <div class="coin" onclick="clickCoin(18, this)"><span>18</span><small>ח"י</small></div>
+            <div class="coin" id="custom-coin" onclick="handleCustomCoin(this)"><i
+                    class="fas fa-pen"></i><small>אחר</small></div>
+        </div>
+        <div class="pushka-box-container">
+            <div class="slot-area" id="target-slot"></div>
+            <div class="pushka-body"><img src="https://www.nefesh-ha-chaim.org/icons/logo.png" alt="Logo"
+                    class="pushka-logo">
+                <div id="screen" class="digital-screen">₪0</div><input type="text" id="donation-note" class="note-input"
+                    placeholder="הוסף הערה / הקדשה">
+                <div class="actions-block"><button class="btn-game btn-basket" onclick="submit(false)">הוסף
+                        לסל</button><button class="btn-game btn-pay" onclick="submit(true)">תרום</button></div><small
+                    id="status-text" style="color: rgba(255,255,255,0.7); font-size: 0.75rem;">מצב: טוען...</small>
+            </div>
+        </div>
     </div>
-</div>
 
-<script>
-    const API = "https://pushcoins-server.onrender.com";
-    let userId = localStorage.getItem('userId');
-    let user = null;
-    let tempSum = 0;
-    let customAmountValue = 0;
+    <div id="login-modal" class="overlay-screen" style="z-index: 9000;">
+        <div class="modal-card"><img src="https://www.nefesh-ha-chaim.org/icons/logo.png" width="80"
+                class="mb-3 rounded-circle shadow">
+            <h3 class="fw-bold text-primary">ברוכים הבאים</h3>
+            <div class="form-floating mb-3 border rounded-4 mt-4"><input type="text" id="login-val"
+                    class="form-control border-0 bg-light text-center" placeholder="פרטים"><label
+                    class="w-100 text-center">נייד או אימייל</label></div>
+            <div id="otp-area" class="d-none mb-3 border rounded-4"><input type="number" id="otp-val"
+                    class="form-control border-0 bg-light text-center fs-4" placeholder="קוד"></div><button
+                onclick="sendCode()" id="btn-send" class="btn btn-primary w-100 btn-lg rounded-pill shadow">שלח
+                קוד</button><button onclick="verifyCode()" id="btn-verify"
+                class="btn btn-success w-100 btn-lg rounded-pill shadow d-none">כניסה</button>
+        </div>
+    </div>
+    <div id="contact-modal" class="overlay-screen">
+        <div class="modal-card" style="height: 80vh; display: flex; flex-direction: column; padding: 0;">
+            <div class="modal-header bg-primary text-white p-3 rounded-top">
+                <h5 class="modal-title m-0">צור קשר</h5><button type="button" class="btn-close btn-close-white"
+                    onclick="closeModal('contact-modal')"></button>
+            </div>
+            <div class="modal-body p-3 overflow-auto flex-grow-1" id="contact-messages" style="background: #f0f2f5;">
+            </div>
+            <div class="p-2 bg-white border-top">
+                <div id="contact-file-preview" class="file-preview d-none"><span><i
+                            class="fas fa-file-alt text-primary me-2"></i><span
+                            id="contact-filename"></span></span><button class="btn btn-sm btn-link text-danger p-0"
+                        onclick="clearContactFile()"><i class="fas fa-times"></i></button></div>
+                <div class="input-group"><input type="text" id="contact-input" class="form-control"
+                        placeholder="כתוב הודעה..."><label class="btn btn-outline-secondary position-relative"><i
+                            class="fas fa-paperclip"></i><input type="file" id="contact-file" hidden
+                            onchange="handleContactFile(this)"><span id="contact-file-badge"
+                            class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle d-none"></span></label><button
+                        class="btn btn-primary" id="btn-contact-send" onclick="sendMessage()"><i
+                            class="fas fa-paper-plane"></i></button></div>
+            </div>
+        </div>
+    </div>
+    <div id="basket-modal" class="overlay-screen">
+        <div class="modal-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="m-0 fw-bold">🛒 העגלה שלי</h5><button class="btn-close"
+                    onclick="closeModal('basket-modal')"></button>
+            </div>
+            <div class="alert alert-info py-2 small fw-bold" id="basket-summary-text">טוען...</div>
+            <div id="basket-list" class="mb-3 text-start"></div>
+            <div class="text-muted small bg-light p-2 rounded">חיוב מרוכז יתבצע ב-<span id="basket-date"
+                    class="fw-bold">--</span> לחודש<br><span style="font-size: 0.8em; color: #666;">(בשעה 08:00
+                    בבוקר)</span></div>
+        </div>
+    </div>
 
-    window.onload = function() {
-        if(userId) loadUser(userId);
-        else {
-            document.getElementById('app-loader').classList.add('fade-out');
-            document.getElementById('login-modal').classList.add('open');
-        }
-    };
+    <div id="history-modal" class="overlay-screen">
+        <div class="modal-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="m-0 fw-bold">📜 היסטוריה</h5>
+                <button class="btn-close" onclick="closeModal('history-modal')"></button>
+            </div>
+            <div class="modal-body p-0" style="max-height: 60vh; overflow-y: auto;">
+                <table class="table table-striped mb-0 text-center small">
+                    <thead class="table-dark table-sm sticky-top">
+                        <tr>
+                            <th>תאריך</th>
+                            <th>סכום</th>
+                            <th>הערה</th>
+                            <th>קבלה</th>
+                            <th>סטטוס</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-list"></tbody>
+                </table>
+            </div>
+            <div id="no-history" class="text-center text-muted py-3 d-none">אין תרומות עדיין</div>
+        </div>
+    </div>
 
-    function toggleBillingInput() {
-        const type = document.getElementById('billing-type').value;
-        const input = document.getElementById('set-billing-day');
-        if (type === 'monthly') {
-            input.classList.remove('d-none');
-            if(!input.value || input.value == 0) input.value = 1;
-        } else {
-            input.classList.add('d-none');
-            input.value = 0;
-        }
-    }
+    <div id="settings-modal" class="overlay-screen">
+        <div class="modal-card text-end">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="m-0 fw-bold">הגדרות</h5><button class="btn-close"
+                    onclick="closeModal('settings-modal')"></button>
+            </div><label class="small fw-bold text-primary required-label">פרטים אישיים</label><input id="set-name"
+                class="form-control mb-1" placeholder="שם מלא"><input id="set-phone" class="form-control mb-1"
+                placeholder="טלפון" type="tel"><input id="set-email" class="form-control mb-1" placeholder="אימייל"
+                type="email"><input id="set-tz" class="form-control mb-1" placeholder="תעודת זהות" type="tel"
+                maxlength="9"><small class="d-block text-muted mb-3" style="font-size: 0.75rem;">* חובה להזין 9 ספרות
+                (כולל ספרת ביקורת/אפס מוביל)</small>
+            <hr><label class="small fw-bold text-success mb-1">פרטי קבלה (אופציונלי)</label>
+            <div class="p-2 mb-3 bg-light border rounded"><input id="set-receipt-name" class="form-control mb-1"
+                    placeholder="שם לקבלה (אם שונה)"><input id="set-receipt-tz" class="form-control mb-2"
+                    placeholder="תז/חפ לקבלה (אם שונה)"><label class="small text-muted mb-1">העדפת קבלה:</label><select
+                    id="set-receipt-mode" class="form-select form-select-sm">
+                    <option value="0">רגיל (תמיד פרטים אישיים)</option>
+                    <option value="1">תמיד השתמש בפרטי הקבלה</option>
+                    <option value="2">שאל אותי בכל תרומה</option>
+                </select></div><label class="small fw-bold text-purple mb-1" style="color: #6f42c1;"><i
+                    class="fas fa-calculator"></i> מעקב מעשר/חומש</label>
+            <div class="p-2 mb-3 bg-white border rounded">
+                <div class="form-check form-switch mb-2"><input class="form-check-input float-end ms-2" type="checkbox"
+                        id="set-maaser-active" onchange="toggleMaaserInputs()"><label
+                        class="form-check-label small fw-bold" for="set-maaser-active">הפעל כלי מעשרות</label></div>
+                <div id="maaser-inputs" class="d-none"><input id="set-maaser-income" type="number"
+                        class="form-control mb-1 text-center" placeholder="הכנס משכורת נטו (₪)"><select
+                        id="set-maaser-rate" class="form-select text-center">
+                        <option value="10">10% - מעשר כספים</option>
+                        <option value="20">20% - חומש</option>
+                    </select></div>
+            </div>
+            <div class="form-check form-switch mb-3 p-2 bg-light rounded border"><input
+                    class="form-check-input float-end ms-2" type="checkbox" id="set-tax-widget"><label
+                    class="form-check-label small fw-bold text-success" for="set-tax-widget"><i
+                        class="fas fa-hand-holding-usd"></i> הצג ווידג'ט החזר מס</label></div>
+            <!-- Settings Payment Method Toggle -->
+            <label class="small fw-bold text-primary">אמצעי תשלום להוראת קבע/סל</label>
+            <div class="btn-group w-100 mb-3" role="group">
+                <input type="radio" class="btn-check" name="paymentMethod" id="pm-cc" autocomplete="off"
+                    onchange="togglePaymentMethod('cc')">
+                <label class="btn btn-outline-primary" for="pm-cc"><i class="fas fa-credit-card"></i> אשראי</label>
 
-    function validateDay(el) {
-        if(el.value > 31) el.value = 31;
-        if(el.value < 1 && el.value !== "") el.value = 1;
-        el.value = el.value.replace(/[^0-9]/g, '');
-    }
+                <input type="radio" class="btn-check" name="paymentMethod" id="pm-bank" autocomplete="off"
+                    onchange="togglePaymentMethod('bank')">
+                <label class="btn btn-outline-primary" for="pm-bank"><i class="fas fa-university"></i> הוראת קבע
+                    בנקאית</label>
+            </div>
 
-    async function handleCustomCoin(el) {
-        if (customAmountValue > 0 && el.innerText.includes('₪')) {
-            clickCoin(customAmountValue, el);
-            setTimeout(() => {
-                customAmountValue = 0;
-                el.innerHTML = '<i class="fas fa-pen"></i><small>אחר</small>';
-            }, 1000);
-        } else {
-            const { value: amount } = await Swal.fire({ title: 'סכום לתרומה', input: 'number', confirmButtonText: 'אישור' });
-            if (amount > 0) {
-                customAmountValue = Number(amount);
-                el.innerHTML = `<span>${amount}</span><small>₪</small>`;
+            <!-- CC Section -->
+            <div id="cc-section">
+                <div id="cards-list" class="mb-2"></div><button class="btn btn-sm btn-outline-success w-100 mb-3"
+                    onclick="document.getElementById('cc-input-area').classList.toggle('d-none')">+ הוסף כרטיס
+                    אשראי</button>
+                <div id="cc-input-area" class="d-none border p-2 rounded mb-3 bg-light">
+                    <div class="alert alert-danger p-1 small mb-2" style="font-size: 0.75rem;"><i
+                            class="fas fa-info-circle"></i> חיוב 0.10 ₪ לבדיקת כרטיס</div><input id="set-cc-num"
+                        class="form-control mb-1" placeholder="מספר כרטיס אשראי" maxlength="16" type="tel">
+                    <div class="mb-2"><input id="set-cc-exp" class="form-control" placeholder="תוקף (MMYY)"
+                            maxlength="4" type="tel"></div>
+                </div>
+            </div>
+
+            <!-- Bank Section -->
+            <div id="bank-section" class="d-none mb-3">
+                <div id="bank-status-alert" class="alert alert-secondary small p-2 text-center">טוען סטטוס...</div>
+
+                <!-- View Bank Details -->
+                <div id="bank-details-view" class="d-none bg-light p-2 rounded border mt-2 mb-2 small text-start">
+                    <div class="fw-bold mb-1 border-bottom">פרטי חשבון:</div>
+                    <div>בנק: <span id="view-bank-id"></span> סניף: <span id="view-branch-id"></span></div>
+                    <div>חשבון: <span id="view-account-id"></span></div>
+                    <div>בעלים: <span id="view-owner-name"></span></div>
+                </div>
+
+                <button class="btn btn-primary w-100 rounded-pill" onclick="openBankForm()">הגדרת הוראת קבע
+                    בנקאית</button>
+            </div>
+
+            <label class="small fw-bold text-primary">יום חיוב הסל</label>
+            <div class="input-group mb-1"><select id="billing-type" class="form-select text-center"
+                    onchange="toggleBillingInput()">
+                    <option value="immediate">מיידי (ללא סל)</option>
+                    <option value="monthly">יום בחודש</option>
+                </select><input type="tel" id="set-billing-day" class="form-control text-center d-none"
+                    placeholder="יום (1-31)" min="1" max="31" oninput="validateDay(this)"></div>
+            <div class="text-muted small mb-3 fst-italic" style="font-size: 0.75rem;">* החיוב מתבצע בשעה 08:00 בבוקר
+            </div><label class="small fw-bold text-primary">הוראת קבע יומית (₪)</label><input type="tel" id="set-daily"
+                class="form-control mb-1" placeholder="0">
+            <div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="set-daily-immediate"><label
+                    class="form-check-label small" for="set-daily-immediate">חייב אשראי מידית (ולא לסל)</label></div>
+            <label class="small fw-bold text-primary">קוד אבטחה (PIN)</label><input type="password" id="set-pin"
+                class="form-control mb-3" placeholder="4 ספרות" maxlength="4"><button
+                class="btn btn-outline-primary w-100 rounded-pill mb-2" onclick="openHistory()">📜 היסטוריית
+                תרומות</button><button class="btn btn-primary w-100 rounded-pill mb-2" onclick="saveSettings()">שמור
+                שינויים</button><button class="btn btn-outline-danger w-100 rounded-pill"
+                onclick="logout()">יציאה</button>
+        </div>
+    </div>
+
+    <!-- BANK AUTH MODAL -->
+    <div id="bank-auth-modal" class="overlay-screen">
+        <div class="modal-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="m-0 fw-bold text-primary">הקמת הרשאה בנקאית</h5>
+                <button class="btn-close" onclick="closeModal('bank-auth-modal')"></button>
+            </div>
+
+            <ul class="nav nav-tabs nav-fill mb-3" id="bankTab" role="tablist">
+                <li class="nav-item">
+                    <!-- Fixed onclick handler and bootstrap attributes -->
+                    <button class="nav-link active" id="digital-tab" data-bs-toggle="tab" data-bs-target="#digital-form"
+                        type="button" role="tab" aria-controls="digital-form" aria-selected="true"
+                        onclick="setTimeout(initSignaturePad, 200)">טופס דיגיטלי</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" id="upload-tab" data-bs-toggle="tab" data-bs-target="#upload-form"
+                        type="button" role="tab" aria-controls="upload-form" aria-selected="false">העלאת טופס</button>
+                </li>
+            </ul>
+
+            <div class="tab-content" id="bankTabContent">
+                <!-- Digital Form -->
+                <div class="tab-pane fade show active" id="digital-form" role="tabpanel">
+                    <div class="alert alert-info small p-1">מלא את הפרטים וחתום למטה</div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-4"><input id="bank-id" class="form-control form-control-sm text-center"
+                                placeholder="מס' בנק" type="tel" maxlength="2"></div>
+                        <div class="col-4"><input id="branch-id" class="form-control form-control-sm text-center"
+                                placeholder="סניף" type="tel" maxlength="3"></div>
+                        <div class="col-4"><input id="account-id" class="form-control form-control-sm text-center"
+                                placeholder="חשבון" type="tel" maxlength="12"></div>
+                    </div>
+                    <input id="bank-owner-name" class="form-control form-control-sm mb-2" placeholder="שם בעל החשבון">
+                    <input id="bank-owner-id" class="form-control form-control-sm mb-2" placeholder="ת.ז. בעל החשבון"
+                        type="tel" maxlength="9">
+                    <input id="bank-owner-phone" class="form-control form-control-sm mb-2"
+                        placeholder="טלפון בעל החשבון" type="tel">
+
+                    <label class="small fw-bold mb-1">חתימה (צייר בתיבה):</label>
+                    <div class="mb-2">
+                        <canvas id="signature-pad"></canvas>
+                        <button class="btn btn-sm btn-link text-danger p-0 float-end" onclick="clearSignature()">נקה
+                            חתימה</button>
+                    </div>
+                    <button class="btn btn-primary w-100 rounded-pill" onclick="submitBankAuth('digital')">שלח
+                        לאישור</button>
+                </div>
+
+                <!-- Upload Form -->
+                <div class="tab-pane fade" id="upload-form" role="tabpanel">
+                    <div class="text-center mb-3">
+                        <div class="alert alert-warning small fw-bold">נפש החיים - קוד מוסד 31807</div>
+                        <a href="https://nefesh-ha-chaim.org/docs/bank_auth_form.pdf" target="_blank"
+                            class="btn btn-outline-primary btn-sm mb-3">
+                            <i class="fas fa-file-pdf"></i> הורד טופס להדפסה
+                        </a>
+                        <div class="p-3 border border-dashed rounded bg-light">
+                            <i class="fas fa-cloud-upload-alt fa-2x text-muted mb-2"></i>
+                            <div class="small text-muted mb-2">העלה אישור חתום</div>
+                            <input type="file" id="bank-file-upload" class="form-control" accept="image/*,.pdf">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary w-100 rounded-pill" onclick="submitBankAuth('upload')">שלח
+                        קובץ</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = "https://pushcoins-server.onrender.com";
+        let userId = localStorage.getItem('userId');
+        let user = null;
+        let tempSum = 0;
+        let customAmountValue = 0;
+        let originalEmail = "";
+        let activeGoal = null;
+        let canvas, ctx;
+
+        document.addEventListener("DOMContentLoaded", function () {
+            if (userId) loadUser(userId);
+            else {
+                document.getElementById('app-loader').classList.add('fade-out');
+                document.getElementById('login-modal').classList.add('open');
             }
-        }
-    }
-
-    function clickCoin(amount, element) {
-        tempSum += amount;
-        updateScreen();
-        const clone = element.cloneNode(true);
-        const rect = element.getBoundingClientRect();
-        const target = document.getElementById('target-slot').getBoundingClientRect();
-        clone.className = 'coin flying-coin';
-        if(element.classList.contains('silver')) clone.classList.add('silver');
-        clone.style.width = rect.width + 'px';
-        clone.style.height = rect.height + 'px';
-        clone.style.left = rect.left + 'px';
-        clone.style.top = rect.top + 'px';
-        document.body.appendChild(clone);
-        setTimeout(() => {
-            clone.style.left = (target.left + target.width/2 - 37) + 'px';
-            clone.style.top = (target.top - 10) + 'px';
-            clone.style.transform = 'scale(0.3)';
-            clone.style.opacity = '0';
-        }, 10);
-        setTimeout(() => clone.remove(), 600);
-    }
-
-    function updateScreen() {
-        const screen = document.getElementById('screen');
-        screen.innerText = '₪' + tempSum;
-        screen.style.color = '#fff';
-        setTimeout(() => screen.style.color = '#00e676', 150);
-    }
-
-    async function submit(forceImmediate) {
-        if(tempSum === 0) return Swal.fire('הקופה ריקה', 'לחץ על המטבעות', 'info');
-        
-        let pin = "";
-        if(user.securityPin) {
-            const res = await Swal.fire({title: 'קוד אבטחה', input: 'password', inputAttributes:{maxlength:4, inputmode:'numeric'}, showCancelButton: true});
-            if(!res.isConfirmed) return;
-            pin = res.value;
-        }
-        if(forceImmediate && !user.token) {
-            Swal.fire({icon: 'warning', title: 'חסר אשראי', text: 'נא להוסיף כרטיס אשראי בהגדרות'});
-            openSettings();
-            return;
-        }
-        
-        Swal.fire({title: 'מעבד...', didOpen: () => Swal.showLoading()});
-        const note = document.getElementById('donation-note').value;
-        try {
-            const res = await fetch(`${API}/donate`, {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ userId: user._id, amount: tempSum, note, forceImmediate, providedPin: pin, useToken: true })
-            });
-            const d = await res.json();
-            if(d.success) {
-                Swal.fire({icon: 'success', title: d.message, timer: 1500, showConfirmButton: false});
-                tempSum = 0;
-                updateScreen();
-                document.getElementById('donation-note').value = '';
-                loadUser(user._id);
-            } else { Swal.fire('שגיאה', d.error, 'error'); }
-        } catch(e) { Swal.fire('תקלה', 'בעיית תקשורת', 'error'); }
-    }
-
-    async function loadUser(id) {
-        return fetch(`${API}/login-by-id`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({userId:id})})
-        .then(r=>r.json()).then(d => {
-            document.getElementById('app-loader').classList.add('fade-out');
-            if(d.success) {
-                user = d.user;
-                localStorage.setItem('userId', user._id);
-                document.getElementById('login-modal').classList.remove('open');
-                
-                document.getElementById('user-total').innerText = '₪' + (user.totalDonated||0).toLocaleString();
-                const basketCount = user.pendingDonations?.length || 0;
-                const badge = document.getElementById('basket-badge');
-                badge.innerText = basketCount;
-                badge.classList.toggle('d-none', basketCount === 0);
-                
-                const isImmediate = user.billingPreference === 0;
-                document.getElementById('status-text').innerText = isImmediate ? "מצב: חיוב מיידי" : `מצב: צבירה ל-${user.billingPreference} בחודש`;
-                document.getElementById('basket-date').innerText = isImmediate ? "מיידי" : user.billingPreference;
-
-                document.getElementById('set-name').value = user.name||'';
-                document.getElementById('set-phone').value = user.phone||'';
-                document.getElementById('set-email').value = user.email||'';
-                document.getElementById('set-tz').value = user.tz||'';
-                
-                if (user.billingPreference > 0) {
-                    document.getElementById('billing-type').value = 'monthly';
-                    document.getElementById('set-billing-day').value = user.billingPreference;
-                    document.getElementById('set-billing-day').classList.remove('d-none');
-                } else {
-                    document.getElementById('billing-type').value = 'immediate';
-                    document.getElementById('set-billing-day').classList.add('d-none');
-                }
-
-                document.getElementById('set-daily').value = user.recurringDailyAmount||'';
-                document.getElementById('set-daily-immediate').checked = user.recurringImmediate === true;
-                
-                document.getElementById('set-pin').value = user.securityPin||'';
-                
-                if (user.token) {
-                    document.getElementById('cc-saved-area').classList.remove('d-none');
-                    document.getElementById('cc-saved-area').classList.add('d-flex');
-                    document.getElementById('cc-input-area').classList.add('d-none');
-                    document.getElementById('card-digits').innerText = 'כרטיס שמור (' + (user.lastCardDigits || '****') + ')';
-                } else {
-                    document.getElementById('cc-saved-area').classList.add('d-none');
-                    document.getElementById('cc-saved-area').classList.remove('d-flex');
-                    document.getElementById('cc-input-area').classList.remove('d-none');
-                }
-
-            } else { document.getElementById('login-modal').classList.add('open'); }
+            checkGoalStatus();
         });
-    }
 
-    function openHistory() {
-        closeModal('settings-modal');
-        const list = document.getElementById('history-list');
-        const noHistory = document.getElementById('no-history');
-        list.innerHTML = '';
-        if (!user.donationsHistory || user.donationsHistory.length === 0) {
-            noHistory.classList.remove('d-none');
-        } else {
-            noHistory.classList.add('d-none');
-            [...user.donationsHistory].reverse().forEach(item => {
-                const date = new Date(item.date).toLocaleDateString('he-IL');
-                let statusBadge = item.status === 'success' ? '<span class="badge bg-success">בוצע</span>' : '<span class="badge bg-danger">נכשל</span>';
-                list.innerHTML += `<tr><td>${date}</td><td class="fw-bold">₪${item.amount}</td><td class="small text-muted">${item.note||'-'}</td><td>${statusBadge}</td></tr>`;
-            });
-        }
-        document.getElementById('history-modal').classList.add('open');
-    }
+        function toggleMaaserInputs() { const active = document.getElementById('set-maaser-active').checked; const inputs = document.getElementById('maaser-inputs'); if (active) inputs.classList.remove('d-none'); else inputs.classList.add('d-none'); }
+        function renderMaaserWidget() { if (user.maaserActive && user.maaserIncome > 0) { const now = new Date(); const currentMonth = now.getMonth(); const currentYear = now.getFullYear(); let monthlyDonated = 0; if (user.donationsHistory) { user.donationsHistory.forEach(d => { const dDate = new Date(d.date); if (d.status === 'success' && dDate.getMonth() === currentMonth && dDate.getFullYear() === currentYear) { monthlyDonated += (d.amount || 0); } }); } const target = Math.floor(user.maaserIncome * (user.maaserRate / 100)); const left = Math.max(0, target - monthlyDonated); document.getElementById('maaser-widget').style.display = 'block'; document.getElementById('maaser-title-text').innerText = (user.maaserRate === 20 ? 'מעקב חומש' : 'מעקב מעשר') + ' (חודשי)'; document.getElementById('maaser-current').innerText = monthlyDonated; document.getElementById('maaser-target').innerText = target; document.getElementById('maaser-left').innerText = left; let percent = 0; if (target > 0) percent = Math.min(100, Math.round((monthlyDonated / target) * 100)); document.getElementById('maaser-progress').style.width = percent + '%'; document.getElementById('maaser-progress').innerText = percent + '%'; } else { document.getElementById('maaser-widget').style.display = 'none'; } }
+        function renderTaxWidget() { if (user.showTaxWidget === false) { document.getElementById('tax-widget').style.display = 'none'; return; } const now = new Date(); const currentYear = now.getFullYear(); let yearlyTotal = 0; if (user.donationsHistory) { user.donationsHistory.forEach(d => { const dDate = new Date(d.date); if (d.status === 'success' && dDate.getFullYear() === currentYear) { yearlyTotal += (d.amount || 0); } }); } const REFUND_THRESHOLD = 180; const taxRefund = Math.floor(yearlyTotal * 0.35); document.getElementById('tax-widget').style.display = 'block'; document.getElementById('tax-total-donated').innerText = yearlyTotal; if (yearlyTotal > REFUND_THRESHOLD) { document.getElementById('tax-content-eligible').classList.remove('d-none'); document.getElementById('tax-content-not-eligible').classList.add('d-none'); document.getElementById('tax-refund-amount').innerText = taxRefund; } else { document.getElementById('tax-content-eligible').classList.add('d-none'); document.getElementById('tax-content-not-eligible').classList.remove('d-none'); const left = REFUND_THRESHOLD - yearlyTotal; document.getElementById('tax-left').innerText = left; let percent = Math.min(100, Math.round((yearlyTotal / REFUND_THRESHOLD) * 100)); document.getElementById('tax-progress').style.width = percent + '%'; } }
+        function checkGoalStatus() { fetch(`${API}/goal`).then(r => r.json()).then(d => { if (d.success && d.goal && d.goal.isActive) { activeGoal = d.goal; document.getElementById('goal-widget').style.display = 'block'; document.getElementById('goal-title-text').innerText = activeGoal.title || 'יעד'; document.getElementById('goal-current').innerText = activeGoal.currentAmount || 0; document.getElementById('goal-target').innerText = activeGoal.targetAmount || 0; let percent = 0; if (activeGoal.targetAmount > 0) { percent = Math.min(100, Math.round((activeGoal.currentAmount / activeGoal.targetAmount) * 100)); } document.getElementById('goal-progress').style.width = percent + '%'; document.getElementById('goal-progress').innerText = percent + '%'; } else { document.getElementById('goal-widget').style.display = 'none'; activeGoal = null; } }); }
+        function isValidIsraeliID(id) { id = String(id).trim(); if (id.length !== 9 || isNaN(id)) return false; let sum = 0, incNum; for (let i = 0; i < 9; i++) { incNum = Number(id[i]) * ((i % 2) + 1); sum += (incNum > 9) ? incNum - 9 : incNum; } return (sum % 10 === 0); }
+        function toggleBillingInput() { const type = document.getElementById('billing-type').value; const input = document.getElementById('set-billing-day'); if (type === 'monthly') { input.classList.remove('d-none'); if (!input.value || input.value == 0) input.value = 1; } else { input.classList.add('d-none'); input.value = 0; } }
+        function validateDay(el) { if (el.value > 31) el.value = 31; if (el.value < 1 && el.value !== "") el.value = 1; el.value = el.value.replace(/[^0-9]/g, ''); }
+        async function handleCustomCoin(el) { if (customAmountValue > 0 && el.innerText.includes('₪')) { clickCoin(customAmountValue, el); setTimeout(() => { customAmountValue = 0; el.innerHTML = '<i class="fas fa-pen"></i><small>אחר</small>'; }, 1000); } else { const { value: amount } = await Swal.fire({ title: 'סכום לתרומה', input: 'number', confirmButtonText: 'אישור' }); if (amount > 0) { customAmountValue = Number(amount); el.innerHTML = `<span>${amount}</span><small>₪</small>`; } } }
+        function clickCoin(amount, element) { tempSum += amount; updateScreen(); const clone = element.cloneNode(true); const rect = element.getBoundingClientRect(); const target = document.getElementById('target-slot').getBoundingClientRect(); clone.className = 'coin flying-coin'; if (element.classList.contains('silver')) clone.classList.add('silver'); clone.style.width = rect.width + 'px'; clone.style.height = rect.height + 'px'; clone.style.left = rect.left + 'px'; clone.style.top = rect.top + 'px'; document.body.appendChild(clone); setTimeout(() => { clone.style.left = (target.left + target.width / 2 - 37) + 'px'; clone.style.top = (target.top - 10) + 'px'; clone.style.transform = 'scale(0.3)'; clone.style.opacity = '0'; }, 10); setTimeout(() => clone.remove(), 600); }
+        function updateScreen() { const screen = document.getElementById('screen'); screen.innerText = '₪' + tempSum; screen.style.color = '#fff'; setTimeout(() => screen.style.color = '#00e676', 150); }
+        async function submitGoalDonation() { if (tempSum === 0) return Swal.fire('הקופה ריקה', 'לחץ על המטבעות תחילה', 'info'); if (!activeGoal) return; await submit(true, true); }
+        async function submit(forceImmediate, isGoal = false) {
+            if (tempSum === 0) {
+                return Swal.fire('הקופה ריקה', 'לחץ על המטבעות', 'info');
+            }
 
-    function saveSettings() {
-        const name = document.getElementById('set-name').value;
-        const phone = document.getElementById('set-phone').value;
-        const email = document.getElementById('set-email').value;
-        const tz = document.getElementById('set-tz').value;
+            let pin = "";
 
-        if (!name || !phone || !email || !tz) {
-            Swal.fire({icon: 'error', title: 'חסרים פרטים', text: 'נא למלא את כל הפרטים האישיים'});
-            return;
-        }
+            if (user.securityPin) {
+                const res = await Swal.fire({
+                    title: 'קוד אבטחה',
+                    input: 'password',
+                    inputAttributes: {
+                        maxlength: 4,
+                        inputmode: 'numeric'
+                    },
+                    showCancelButton: true
+                });
 
-        let billingPref = 0;
-        if (document.getElementById('billing-type').value === 'monthly') {
-            billingPref = document.getElementById('set-billing-day').value || 1;
-        }
+                if (!res.isConfirmed) return;
+                pin = res.value;
+            }
 
-        let newCardDetails = null;
-        // ניקוי קלט
-        const ccNum = document.getElementById('set-cc-num').value.replace(/\D/g, '');
-        const ccExp = document.getElementById('set-cc-exp').value.replace(/\D/g, '');
-        
-        if (ccNum && ccExp) {
-            if(ccExp.length !== 4) {
-                Swal.fire('שגיאה', 'תוקף לא תקין (צריך להיות 4 ספרות MMYY)', 'error');
+            if (forceImmediate && (!user.cards || user.cards.length === 0)) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'חסר אשראי',
+                    text: 'נא להוסיף כרטיס אשראי בהגדרות'
+                });
+
+                openSettings();
                 return;
             }
-            newCardDetails = { num: ccNum, exp: ccExp };
+
+            let useReceiptDetails = false;
+
+            if (user.receiptMode === 1 && user.receiptName && user.receiptTZ) {
+                useReceiptDetails = true;
+            } else if (user.receiptMode === 2 && user.receiptName && user.receiptTZ) {
+                const choice = await Swal.fire({
+                    title: 'עבור מי הקבלה?',
+                    icon: 'question',
+                    showDenyButton: true,
+                    showCancelButton: true,
+                    confirmButtonText: user.receiptName,
+                    denyButtonText: user.name,
+                    cancelButtonText: 'ביטול תרומה',
+                    confirmButtonColor: '#198754',
+                    denyButtonColor: '#0d6efd'
+                });
+
+                if (choice.isConfirmed) {
+                    useReceiptDetails = true;
+                } else if (choice.isDenied) {
+                    useReceiptDetails = false;
+                } else {
+                    return;
+                }
+            }
+
+            let note = document.getElementById('donation-note').value;
+
+            if (isGoal) {
+                note =
+                    (note ? note + " - " : "") +
+                    "עבור: " +
+                    activeGoal.title;
+            }
+
+            Swal.fire({
+                title: 'מעבד...',
+                didOpen: () => Swal.showLoading()
+            });
+
+            try {
+                console.log ('donatedonatedonate')
+
+                const res = await fetch(`${API}/donate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        userId: user._id,
+                        preferredPaymentMethod: user.preferredPaymentMethod,
+                        amount: tempSum,
+                        note: note,
+                        forceImmediate,
+                        providedPin: pin,
+                        useToken: true,
+                        isGoalDonation: isGoal,
+                        useReceiptDetails: useReceiptDetails
+                    })
+                });
+
+
+                // console.log ('preferredPaymentMethod-> ',  user.preferredPaymentMethod)
+                // console.log ('res-> ', res)
+                const d = await res.json();
+
+                if (d.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: d.message,
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
+
+                    tempSum = 0;
+                    updateScreen();
+                    document.getElementById('donation-note').value = '';
+                    loadUser(user._id);
+
+                    if (isGoal) {
+                        checkGoalStatus();
+                    }
+                } else {
+                    Swal.fire('שגיאה', d.error, 'error');
+                }
+            } catch (e) {
+                Swal.fire('תקלה', 'בעיית תקשורת', 'error');
+            }
         }
+        async function loadUser(id) {
+            return fetch(`${API}/login-by-id`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: id }) }).then(r => r.json()).then(d => {
+                document.getElementById('app-loader').classList.add('fade-out'); if (d.success) {
+                    user = d.user; localStorage.setItem('userId', user._id); document.getElementById('login-modal').classList.remove('open'); document.getElementById('user-total').innerText = '₪' + (user.totalDonated || 0).toLocaleString(); const basketCount = user.pendingDonations?.length || 0; const badge = document.getElementById('basket-badge'); badge.innerText = basketCount; badge.classList.toggle('d-none', basketCount === 0); const unreadMsgs = user.messages ? user.messages.filter(m => m.direction === 'admin_to_user' && !m.read).length : 0; const contactBadge = document.getElementById('contact-badge'); contactBadge.innerText = unreadMsgs; if (unreadMsgs > 0) contactBadge.classList.remove('d-none'); else contactBadge.classList.add('d-none'); const isImmediate = user.billingPreference === 0; document.getElementById('status-text').innerText = isImmediate ? "מצב: חיוב מיידי" : `מצב: צבירה ל-${user.billingPreference} בחודש`; document.getElementById('basket-date').innerText = isImmediate ? "מיידי" : user.billingPreference; document.getElementById('set-name').value = user.name || ''; document.getElementById('set-phone').value = user.phone || ''; document.getElementById('set-email').value = user.email || ''; originalEmail = user.email || ''; document.getElementById('set-tz').value = user.tz || ''; document.getElementById('set-receipt-name').value = user.receiptName || ''; document.getElementById('set-receipt-tz').value = user.receiptTZ || ''; document.getElementById('set-receipt-mode').value = user.receiptMode || 0; document.getElementById('set-maaser-active').checked = user.maaserActive === true; document.getElementById('set-maaser-income').value = user.maaserIncome || ''; document.getElementById('set-maaser-rate').value = user.maaserRate || 10; toggleMaaserInputs(); document.getElementById('set-tax-widget').checked = user.showTaxWidget !== false; renderMaaserWidget(); renderTaxWidget(); if (user.billingPreference > 0) { document.getElementById('billing-type').value = 'monthly'; document.getElementById('set-billing-day').value = user.billingPreference; document.getElementById('set-billing-day').classList.remove('d-none'); } else { document.getElementById('billing-type').value = 'immediate'; document.getElementById('set-billing-day').classList.add('d-none'); } document.getElementById('set-daily').value = user.recurringDailyAmount || ''; document.getElementById('set-daily-immediate').checked = user.recurringImmediate === true; document.getElementById('set-pin').value = user.securityPin || ''; renderCardsList(); if (document.getElementById('contact-modal').classList.contains('open')) { renderContactMessages(); }
 
-        const data = {
-            userId: user._id, name, phone, email, tz,
-            billingPreference: Number(billingPref),
-            recurringDailyAmount: Number(document.getElementById('set-daily').value),
-            recurringImmediate: document.getElementById('set-daily-immediate').checked,
-            securityPin: document.getElementById('set-pin').value,
-            newCardDetails
-        };
+                    // Set Main Payment Method UI
+                    const isBank = user.preferredPaymentMethod === 'bank';
+                    document.getElementById('main-pm-bank').checked = isBank;
+                    document.getElementById('main-pm-cc').checked = !isBank;
+                    setMainPaymentMethod(isBank ? 'bank' : 'cc', false);
 
-        Swal.fire({title:'שומר...', didOpen:()=>Swal.showLoading()});
-        
-        fetch(`${API}/admin/update-profile`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)})
-        .then(r=>r.json()).then(d => {
-            if(d.success) {
-                closeModal('settings-modal');
-                document.getElementById('set-cc-num').value = '';
-                document.getElementById('set-cc-exp').value = '';
-                loadUser(user._id);
-                Swal.fire('נשמר', '', 'success');
-            } else Swal.fire('שגיאה', d.error || 'לא נשמר', 'error');
-        });
-    }
+                    // Set Settings Payment Method UI
+                    document.getElementById('pm-bank').checked = isBank;
+                    document.getElementById('pm-cc').checked = !isBank;
+                    togglePaymentMethod(isBank ? 'bank' : 'cc', false);
 
-    // התיקון בלקוח (index.html) - בדיקת הרשאת מחיקה
-    function openBasket() {
-        const list = document.getElementById('basket-list');
-        list.innerHTML = '';
-        const count = user.pendingDonations?.length || 0;
-        document.getElementById('basket-summary-text').innerText = count > 0 ? `יש לך ${count} תרומות הממתינות לחיוב` : 'הסל שלך ריק';
-        if(count > 0) {
-            [...user.pendingDonations].reverse().forEach(item => {
-                // בדיקה אם מותר למשתמש למחוק
-                let removeBtn = (user.canRemoveFromBasket !== false) 
-                    ? `<button class="btn btn-sm btn-outline-danger rounded-pill" onclick="deleteItem('${item._id}')">הסר</button>`
-                    : `<span class="badge bg-secondary text-white">קבוע</span>`;
-
-                list.innerHTML += `
-                <div class="list-item">
-                    <div><span class="fw-bold">₪${item.amount}</span> <small class="text-muted ms-2">${item.note||''}</small></div>
-                    ${removeBtn}
-                </div>`;
+                } else { document.getElementById('login-modal').classList.add('open'); }
             });
         }
-        document.getElementById('basket-modal').classList.add('open');
-    }
+        function renderCardsList() { const list = document.getElementById('cards-list'); list.innerHTML = ''; if (user.cards && user.cards.length > 0) { user.cards.forEach(c => { const isActive = c.active ? 'checked' : ''; const activeClass = c.active ? 'active' : ''; list.innerHTML += `<div class="card-item ${activeClass}"><div class="form-check"><input class="form-check-input" type="radio" name="activeCard" id="card-${c._id}" ${isActive} onchange="setActiveCard('${c._id}')"><label class="form-check-label" for="card-${c._id}">**** ${c.lastDigits} <small class="text-muted">(${c.expiry})</small></label></div><button class="btn btn-sm text-danger" onclick="deleteCard('${c._id}')"><i class="fas fa-trash"></i></button></div>`; }); } else { list.innerHTML = '<div class="text-muted small text-center mb-2">אין כרטיסים שמורים</div>'; } }
+        function setActiveCard(cardId) { user.cards.forEach(c => c.active = (c._id === cardId)); fetch(`${API}/admin/update-profile`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user._id, activeCardId: cardId }) }).then(() => renderCardsList()); }
+        function deleteCard(cardId) { if (!confirm('למחוק כרטיס זה?')) return; fetch(`${API}/admin/update-profile`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user._id, deleteCardId: cardId }) }).then(() => loadUser(user._id)); }
 
-    async function deleteItem(itemId) {
-        Swal.fire({title:'מוחק...', timer: 1000, didOpen:()=>Swal.showLoading(), showConfirmButton:false});
-        await fetch(`${API}/delete-pending`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({userId: user._id, donationId: itemId})});
-        await loadUser(user._id); 
-        openBasket(); 
-    }
+        function openHistory() {
+            closeModal('settings-modal');
+            const list = document.getElementById('history-list');
+            const noHistory = document.getElementById('no-history');
+            list.innerHTML = '';
+            if (!user.donationsHistory || user.donationsHistory.length === 0) {
+                noHistory.classList.remove('d-none');
+            } else {
+                noHistory.classList.add('d-none');
+                [...user.donationsHistory].reverse().forEach(item => {
+                    const date = new Date(item.date).toLocaleDateString('he-IL');
+                    let statusBadge = item.status === 'success' ? '<span class="badge bg-success">בוצע</span>' : '<span class="badge bg-danger">נכשל</span>';
+                    let pmIcon = item.paymentMethod === 'bank' ? '<i class="fas fa-university text-muted" title="בנק"></i>' : '<i class="fas fa-credit-card text-muted" title="אשראי"></i>';
+                    list.innerHTML += `<tr><td>${date}</td><td class="fw-bold">₪${item.amount}</td><td class="small text-muted">${item.note || '-'}</td><td>${pmIcon}</td><td>${statusBadge}</td></tr>`;
+                });
+            }
+            document.getElementById('history-modal').classList.add('open');
+        }
 
-    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
-    function openSettings() { document.getElementById('settings-modal').classList.add('open'); }
-    function logout() { localStorage.removeItem('userId'); location.reload(); }
-    function resetCard() { if(confirm('למחוק כרטיס?')) fetch(`${API}/reset-token`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({userId:user._id})}).then(()=>loadUser(user._id)); }
+        async function saveSettings() { const name = document.getElementById('set-name').value; const phone = document.getElementById('set-phone').value; const email = document.getElementById('set-email').value; const tz = document.getElementById('set-tz').value; if (!name || !phone || !email || !tz) { Swal.fire({ icon: 'error', title: 'חסרים פרטים', text: 'נא למלא את כל הפרטים האישיים' }); return; } if (!isValidIsraeliID(tz)) { Swal.fire({ icon: 'error', title: 'תעודת זהות שגויה', text: 'חובה להזין 9 ספרות מלאות (כולל ספרת ביקורת/אפס מוביל)' }); return; } let isEmailChanged = (email.toLowerCase().trim() !== originalEmail.toLowerCase().trim()); if (isEmailChanged && email.length > 0) { const code = Math.floor(1000 + Math.random() * 9000); Swal.fire({ title: 'שולח קוד אימות...', didOpen: () => Swal.showLoading() }); try { await fetch(`${API}/send-verification`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email, code: code }) }); const { value: userCode } = await Swal.fire({ title: 'אימות מייל', text: `שלחנו קוד לכתובת ${email}. נא להזין אותו כדי לשמור.`, input: 'text', confirmButtonText: 'אמת ושמור', showCancelButton: true }); if (userCode != code) { return Swal.fire('שגיאה', 'קוד שגוי, השינויים לא נשמרו', 'error'); } } catch (e) { return Swal.fire('שגיאה', 'לא ניתן לשלוח קוד אימות למייל', 'error'); } } let billingPref = 0; if (document.getElementById('billing-type').value === 'monthly') { billingPref = document.getElementById('set-billing-day').value || 1; } let newCardDetails = null; const ccNum = document.getElementById('set-cc-num').value.replace(/\D/g, ''); const ccExp = document.getElementById('set-cc-exp').value.replace(/\D/g, ''); if (ccNum && ccExp) { if (ccExp.length !== 4) { Swal.fire('שגיאה', 'תוקף לא תקין (צריך להיות 4 ספרות MMYY)', 'error'); return; } newCardDetails = { num: ccNum, exp: ccExp }; } const data = { userId: user._id, name, phone, email, tz, billingPreference: Number(billingPref), recurringDailyAmount: Number(document.getElementById('set-daily').value), recurringImmediate: document.getElementById('set-daily-immediate').checked, securityPin: document.getElementById('set-pin').value, receiptName: document.getElementById('set-receipt-name').value, receiptTZ: document.getElementById('set-receipt-tz').value, receiptMode: Number(document.getElementById('set-receipt-mode').value), maaserActive: document.getElementById('set-maaser-active').checked, maaserIncome: Number(document.getElementById('set-maaser-income').value) || 0, maaserRate: Number(document.getElementById('set-maaser-rate').value), showTaxWidget: document.getElementById('set-tax-widget').checked, newCardDetails }; Swal.fire({ title: 'שומר...', didOpen: () => Swal.showLoading() }); fetch(`${API}/admin/update-profile`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json()).then(d => { if (d.success) { closeModal('settings-modal'); document.getElementById('set-cc-num').value = ''; document.getElementById('set-cc-exp').value = ''; document.getElementById('cc-input-area').classList.add('d-none'); loadUser(user._id); Swal.fire('נשמר', '', 'success'); } else Swal.fire('שגיאה', d.error || 'לא נשמר', 'error'); }); }
+        function openBasket() { const list = document.getElementById('basket-list'); list.innerHTML = ''; const count = user.pendingDonations?.length || 0; document.getElementById('basket-summary-text').innerText = count > 0 ? `יש לך ${count} תרומות הממתינות לחיוב` : 'הסל שלך ריק'; if (count > 0) { [...user.pendingDonations].reverse().forEach(item => { let removeBtn = (user.canRemoveFromBasket !== false) ? `<button class="btn btn-sm btn-outline-danger rounded-pill" onclick="deleteItem('${item._id}')">הסר</button>` : `<span class="badge bg-secondary text-white">קבוע</span>`; list.innerHTML += `<div class="list-item"><div><span class="fw-bold">₪${item.amount}</span> <small class="text-muted ms-2">${item.note || ''}</small></div>${removeBtn}</div>`; }); } document.getElementById('basket-modal').classList.add('open'); }
+        async function deleteItem(itemId) { Swal.fire({ title: 'מוחק...', timer: 1000, didOpen: () => Swal.showLoading(), showConfirmButton: false }); await fetch(`${API}/delete-pending`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user._id, donationId: itemId }) }); await loadUser(user._id); openBasket(); }
+        function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+        function openSettings() { document.getElementById('settings-modal').classList.add('open'); }
+        function logout() { localStorage.removeItem('userId'); location.reload(); }
+        function resetCard() { if (confirm('למחוק כרטיס?')) fetch(`${API}/reset-token`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user._id }) }).then(() => loadUser(user._id)); }
+        function sendCode() { const val = document.getElementById('login-val').value; const code = Math.floor(1000 + Math.random() * 9000); const payload = { code }; if (val.includes('@')) payload.email = val; else payload.phone = val; fetch(`${API}/update-code`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); document.getElementById('btn-send').classList.add('d-none'); document.getElementById('otp-area').classList.remove('d-none'); document.getElementById('btn-verify').classList.remove('d-none'); }
+        function verifyCode() { const val = document.getElementById('login-val').value; const code = document.getElementById('otp-val').value; const payload = { code }; if (val.includes('@')) payload.email = val; else payload.phone = val; fetch(`${API}/verify-auth`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(r => r.json()).then(d => { if (d.success) loadUser(d.user._id); else Swal.fire('שגיאה', 'קוד שגוי', 'error'); }); }
 
-    function sendCode() {
-        const val = document.getElementById('login-val').value;
-        const code = Math.floor(1000+Math.random()*9000);
-        const payload = { code };
-        if(val.includes('@')) payload.email = val; else payload.phone = val;
-        fetch(`${API}/update-code`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-        document.getElementById('btn-send').classList.add('d-none');
-        document.getElementById('otp-area').classList.remove('d-none');
-        document.getElementById('btn-verify').classList.remove('d-none');
-    }
-    
-    function verifyCode() {
-        const val = document.getElementById('login-val').value;
-        const code = document.getElementById('otp-val').value;
-        const payload = { code };
-        if(val.includes('@')) payload.email = val; else payload.phone = val;
-        fetch(`${API}/verify-auth`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)})
-        .then(r=>r.json()).then(d => {
-            if(d.success) loadUser(d.user._id); else Swal.fire('שגיאה', 'קוד שגוי', 'error');
-        });
-    }
-</script>
+        // --- CONTACT FUNCTIONS ---
+        function openContact() { renderContactMessages(); document.getElementById('contact-modal').classList.add('open'); fetch(`${API}/user/mark-read`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user._id }) }); }
+        function handleContactFile(input) { const file = input.files[0]; const preview = document.getElementById('contact-file-preview'); const badge = document.getElementById('contact-file-badge'); const filename = document.getElementById('contact-filename'); if (file) { filename.innerText = file.name; preview.classList.remove('d-none'); badge.classList.remove('d-none'); } else { clearContactFile(); } }
+        function clearContactFile() { document.getElementById('contact-file').value = ''; document.getElementById('contact-file-preview').classList.add('d-none'); document.getElementById('contact-file-badge').classList.add('d-none'); }
+        function renderContactMessages() { const container = document.getElementById('contact-messages'); container.innerHTML = ''; if (user.messages && user.messages.length > 0) { user.messages.forEach(m => { renderSingleMessage(m, container); }); container.scrollTop = container.scrollHeight; } else { container.innerHTML = '<div class="text-center text-muted mt-5">אין הודעות. שלח הודעה להנהלה.</div>'; } }
+        function renderSingleMessage(m, container) { const isMe = m.direction === 'user_to_admin'; const cls = isMe ? 'chat-me' : 'chat-other'; const align = isMe ? 'align-self-end' : 'align-self-start'; const date = new Date(m.date).toLocaleString('he-IL'); let attachmentHtml = ''; if (m.attachment) { attachmentHtml = `<div class="mt-1"><a href="${m.attachment}" download="${m.attachmentName || 'file'}" class="btn btn-sm btn-outline-dark"><i class="fas fa-download"></i> הורד קובץ</a></div>`; } const html = `<div class="d-flex flex-column ${align}" style="max-width:80%;"><div class="chat-bubble ${cls}"><div>${m.content || ''}</div>${attachmentHtml}</div><span class="chat-date ${align}">${date}</span></div>`; container.insertAdjacentHTML('beforeend', html); }
+        async function sendMessage() { const input = document.getElementById('contact-input'); const fileInput = document.getElementById('contact-file'); const btn = document.getElementById('btn-contact-send'); const content = input.value; const file = fileInput.files[0]; if (!content && !file) return; const tempMsg = { direction: 'user_to_admin', content: content, date: new Date(), attachment: file ? '...' : null, attachmentName: file ? file.name : null }; const container = document.getElementById('contact-messages'); if (container.innerText.includes('אין הודעות')) container.innerHTML = ''; renderSingleMessage(tempMsg, container); container.scrollTop = container.scrollHeight; input.disabled = true; btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; let attachment = null; let attachmentName = null; if (file) { if (file.size > 2 * 1024 * 1024) { Swal.fire('שגיאה', 'קובץ גדול מדי (עד 2MB)', 'error'); input.disabled = false; btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane"></i>'; container.lastElementChild.remove(); return; } attachmentName = file.name; const reader = new FileReader(); reader.readAsDataURL(file); await new Promise(resolve => reader.onload = () => { attachment = reader.result; resolve(); }); } await fetch(`${API}/contact/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user._id, content, attachment, attachmentName }) }); input.value = ''; clearContactFile(); input.disabled = false; btn.disabled = false; btn.innerHTML = '<i class="fas fa-paper-plane"></i>'; loadUser(user._id); }
+
+        // --- BANK FUNCTIONS ---
+        function setMainPaymentMethod(method, save = true) {
+            if (method === 'bank') {
+                document.getElementById('bank-warning-label').classList.remove('d-none');
+            } else {
+                document.getElementById('bank-warning-label').classList.add('d-none');
+            }
+            if (user) user.preferredPaymentMethod = method;
+            document.getElementById('pm-bank').checked = (method === 'bank');
+            document.getElementById('pm-cc').checked = (method === 'cc');
+            togglePaymentMethod(method, false);
+
+            if (save && user) {
+                fetch(`${API}/admin/update-profile`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: user._id, preferredPaymentMethod: method })
+                });
+            }
+        }
+
+        function togglePaymentMethod(method, save = true) {
+            if (method === 'bank') {
+                document.getElementById('cc-section').classList.add('d-none');
+                document.getElementById('bank-section').classList.remove('d-none');
+                updateBankStatusDisplay();
+            } else {
+                document.getElementById('cc-section').classList.remove('d-none');
+                document.getElementById('bank-section').classList.add('d-none');
+            }
+        }
+
+        function updateBankStatusDisplay() {
+            const el = document.getElementById('bank-status-alert');
+            const detailsView = document.getElementById('bank-details-view');
+
+            if (!user.bankDetails || user.bankDetails.status === 'none') {
+                el.className = 'alert alert-secondary small p-2 text-center';
+                el.innerHTML = 'טרם הוגדרה הוראת קבע. לחץ להגדרת';
+                detailsView.classList.add('d-none');
+            } else if (user.bankDetails.status === 'pending') {
+                el.className = 'alert alert-warning small p-2 text-center';
+                el.innerHTML = '<i class="fas fa-clock"></i> ממתין לאישור מנהל';
+                detailsView.classList.add('d-none');
+            } else if (user.bankDetails.status === 'active') {
+                el.className = 'alert alert-success small p-2 text-center';
+                el.innerHTML = '<i class="fas fa-check-circle"></i> הוראת קבע פעילה';
+                if (user.bankDetails.dailyLimit > 0) el.innerHTML += `<br>תקרה יומית: ₪${user.bankDetails.dailyLimit}`;
+                document.getElementById('view-bank-id').innerText = user.bankDetails.bankId;
+                document.getElementById('view-branch-id').innerText = user.bankDetails.branchId;
+                document.getElementById('view-account-id').innerText = user.bankDetails.accountId;
+                document.getElementById('view-owner-name').innerText = user.bankDetails.ownerName;
+                detailsView.classList.remove('d-none');
+            } else if (user.bankDetails.status === 'rejected') {
+                el.className = 'alert alert-danger small p-2 text-center';
+                el.innerHTML = '<i class="fas fa-times-circle"></i> הבקשה נדחתה. נסה שוב.';
+                detailsView.classList.add('d-none');
+            }
+        }
+
+        function openBankForm() {
+            document.getElementById('settings-modal').classList.remove('open');
+            document.getElementById('bank-auth-modal').classList.add('open');
+            setTimeout(initSignaturePad, 500);
+        }
+
+        function initSignaturePad() {
+            canvas = document.getElementById('signature-pad');
+            if (!canvas) return;
+            ctx = canvas.getContext('2d');
+            const ratio = Math.max(window.devicePixelRatio || 1, 1);
+            canvas.width = canvas.offsetWidth * ratio;
+            canvas.height = canvas.offsetHeight * ratio;
+            ctx.scale(ratio, ratio);
+            let isDrawing = false;
+            function start(e) { isDrawing = true; ctx.beginPath(); const pos = getPos(e); ctx.moveTo(pos.x, pos.y); e.preventDefault(); }
+            function draw(e) { if (!isDrawing) return; const pos = getPos(e); ctx.lineTo(pos.x, pos.y); ctx.stroke(); e.preventDefault(); }
+            function end() { isDrawing = false; }
+            function getPos(e) {
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return { x: clientX - rect.left, y: clientY - rect.top };
+            }
+            canvas.addEventListener('mousedown', start);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', end);
+            canvas.addEventListener('touchstart', start, { passive: false });
+            canvas.addEventListener('touchmove', draw, { passive: false });
+            canvas.addEventListener('touchend', end);
+        }
+
+        function clearSignature() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        async function submitBankAuth(type) {
+            const payload = { userId: user._id, type };
+
+            if (type === 'digital') {
+                payload.bankId = document.getElementById('bank-id').value;
+                payload.branchId = document.getElementById('branch-id').value;
+                payload.accountId = document.getElementById('account-id').value;
+                payload.ownerName = document.getElementById('bank-owner-name').value;
+                payload.ownerID = document.getElementById('bank-owner-id').value;
+                payload.ownerPhone = document.getElementById('bank-owner-phone').value;
+                payload.signature = canvas.toDataURL();
+
+                if (!payload.bankId || !payload.branchId || !payload.accountId || !payload.ownerName || !payload.ownerID) {
+                    return Swal.fire('חסרים פרטים', 'נא למלא את כל שדות הבנק כולל ת.ז', 'error');
+                }
+            } else {
+                const fileInput = document.getElementById('bank-file-upload');
+                if (fileInput.files.length === 0) return Swal.fire('חסר קובץ', 'נא לבחור קובץ', 'error');
+                const file = fileInput.files[0];
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                await new Promise(resolve => reader.onload = () => { payload.file = reader.result; resolve(); });
+            }
+
+            Swal.fire({ title: 'שולח...', didOpen: () => Swal.showLoading() });
+
+            try {
+                const res = await fetch(`${API}/user/submit-bank-auth`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const d = await res.json();
+                if (d.success) {
+                    Swal.fire('הבקשה נשלחה', 'המנהל יבדוק ויאשר את ההרשאה', 'success');
+                    closeModal('bank-auth-modal');
+                    loadUser(user._id);
+                } else {
+                    Swal.fire('שגיאה', d.error, 'error');
+                }
+            } catch (e) { Swal.fire('תקלה', e.message, 'error'); }
+        }
+    </script>
 </body>
+
 </html>
