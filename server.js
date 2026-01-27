@@ -176,50 +176,47 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
 async function createBankObligation(user, amount, note) {
     if (!user.bankDetails || !user.bankDetails.accountId) throw new Error("חסרים פרטי בנק");
     
-    // Construct Payload exactly as per CURL example provided in prompt
-    // Note: We use the exact field names from your provided JSON example for SendFastBankTransfer/Obligation
+    // --- שינוי קריטי: בניית האובייקט בדיוק לפי סדר ה-CURL שעובד, ללא מיון ---
     const bankPayload = {
-        ClientApiIdentity: null, 
+        ClientApiIdentity: null,
         Signature: null,
-        Account: user.bankDetails.accountId, // String or Int based on API, usually String is safer but CURL showed Int. Let's try string if int fails or vice versa.
-        Branch: user.bankDetails.branchId,
-        Bank: user.bankDetails.bankId,
+        Account: parseInt(user.bankDetails.accountId), // המרה למספר כפי שמופיע ב-CURL
+        Branch: parseInt(user.bankDetails.branchId),   // המרה למספר
+        Bank: parseInt(user.bankDetails.bankId),       // המרה למספר
         Address: "Israel",
         City: null,
-        Total: parseFloat(amount), // Note: CURL example had 150 (Total)
+        Total: parseFloat(amount),
         Currency: 1,
         Phone: (user.phone || "00000000").replace(/\D/g, ''),
         Comment1: note || "",
         FirstName: user.bankDetails.ownerName || user.name || "Donor",
         LastName: null,
-        ProjectNumber: "31807", // --- מעודכן: שימוש במספר המסוף כמספר הפרויקט ---
+        ProjectNumber: "1", // ה-CURL שעובד משתמש ב-1 (ולא ב-00001 או 31807)
         Mail: user.email || "no@mail.com",
         ReceiptName: user.receiptName || user.name || "",
         ReceiptFor: "",
         TransactionDate: new Date().toISOString().split('T')[0],
-        NumPayment: 9999, // As per CURL
-        Id: user.bankDetails.ownerID || user.tz // "Id" field from your example
+        NumPayment: 9999,
+        Id: user.bankDetails.ownerID || user.tz
     };
 
-    console.log(`🏦 Sending Bank Obligation:`, JSON.stringify(bankPayload));
+    console.log(`🏦 Sending Bank Obligation (CURL Format):`, JSON.stringify(bankPayload));
     
-    // --- מיון מפתחות (חשוב ל-API של קשר) ---
-    const sortedPayload = sortObjectKeys(bankPayload);
-
-    // NOTE: Function name is "SendBankObligation" as requested for standing order setup
+    // --- ביטול sortObjectKeys לבקשות בנק (חשוב!) ---
+    // אנחנו שולחים את האובייקט כפי שהוא, כי ה-CURL לא ממויין אלפביתית והוא עובד.
+    
     const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
         Json: { 
             userName: '2181420WS2087', 
             password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', 
             func: "SendBankObligation",
-            transaction: sortedPayload 
+            transaction: bankPayload 
         },
         format: "json"
     }, { validateStatus: () => true });
 
     console.log("Kesher Bank Response:", JSON.stringify(res.data));
     
-    // Check success
     const isSuccess = !res.data.error && (res.data.status !== 'error');
     
     return {
@@ -235,60 +232,47 @@ async function createBankObligation(user, amount, note) {
 async function createBankTransfer(user, amount, note) {
     if (!user.bankDetails || !user.bankDetails.accountId) throw new Error("חסרים פרטי בנק");
     
-    // Construct Payload exactly as per CURL example provided in prompt
-    // Note: We use the exact field names from your provided JSON example for SendFastBankTransfer/Obligation
+    // בניה זהה לפונקציה של הקמת ההוראה, לפי ה-CURL
     const bankPayload = {
-        Total: parseFloat(amount), 
-        Bank: user.bankDetails.bankId, 
-        Branch: user.bankDetails.branchId, 
-        
-        // התיקון: המרה למחרוזת והוספת אפסים בהתחלה עד לאורך של 9 ספרות
-        Account: String(user.bankDetails.accountId).padStart(9, '0'), 
-        
-        Id: user.bankDetails.ownerID || user.tz, 
-        TransferReason: note || "Salary Payment", 
+        ClientApiIdentity: null,
+        Signature: null,
+        Account: parseInt(user.bankDetails.accountId),
+        Branch: parseInt(user.bankDetails.branchId),
+        Bank: parseInt(user.bankDetails.bankId),
+        Address: "Israel",
+        City: null,
+        Total: parseFloat(amount),
         Currency: 1,
-        ProjectNumber: "31807", // --- מעודכן: שימוש במספר המסוף כמספר הפרויקט ---
-        
-        // שדות אופציונליים
-        Name: user.name || `${user.firstName} ${user.lastName}` || "", 
-        Phone: (user.phone || "").replace(/\D/g, ''),
-        Mail: user.email || "",
-        Address: "Israel", 
-        City: "Tel Aviv", 
-        
-        // שדות נוספים
-        ReceiptName: user.receiptName || "",
+        Phone: (user.phone || "00000000").replace(/\D/g, ''),
+        Comment1: note || "",
+        FirstName: user.bankDetails.ownerName || user.name || "Donor",
+        LastName: null,
+        ProjectNumber: "1", // ה-CURL שעובד משתמש ב-1
+        Mail: user.email || "no@mail.com",
+        ReceiptName: user.receiptName || user.name || "",
         ReceiptFor: "",
-        Details: "",
-        NumHouse: "",
-        FirstName: user.bankDetails.ownerName || "", 
-        LastName: "",
-        ApartmentNumber: 0,
-        Entrance: "",
-        Floor: "",
-        Country: ""
+        TransactionDate: new Date().toISOString().split('T')[0],
+        NumPayment: 9999,
+        Id: user.bankDetails.ownerID || user.tz,
+        TransferReason: note || "Payment" // שדה ספציפי להעברה, הוספתי בסוף למקרה הצורך
     };
 
-    console.log(`🏦 Sending Bank TRANSFER:`, JSON.stringify(bankPayload));
+    console.log(`🏦 Sending Bank TRANSFER (CURL Format):`, JSON.stringify(bankPayload));
     
-    // --- מיון מפתחות (חשוב ל-API של קשר) ---
-    const sortedPayload = sortObjectKeys(bankPayload);
+    // --- ביטול sortObjectKeys לבקשות בנק ---
 
-    // NOTE: Function name is "SendBankObligation" as requested for standing order setup
     const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
         Json: { 
             userName: '2181420WS2087', 
             password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', 
             func: "SendFastBankTransfer",
-            payment: sortedPayload 
+            payment: bankPayload 
         },
         format: "json"
     }, { validateStatus: () => true });
 
     console.log("Kesher Bank Response:", JSON.stringify(res.data));
     
-    // Check success
     const isSuccess = !res.data.error && (res.data.status !== 'error');
     
     return {
