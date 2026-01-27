@@ -192,7 +192,7 @@ async function createBankObligation(user, amount, note) {
         Comment1: note || "",
         FirstName: user.bankDetails.ownerName || user.name || "Donor",
         LastName: null,
-        ProjectNumber: "1", // --- תוקן: זה המזהה שממפה למסוף 31807 ---
+        ProjectNumber: "00001", // --- מעודכן: תואם לפורמט של האשראי (00001) ---
         Mail: user.email || "no@mail.com",
         ReceiptName: user.receiptName || user.name || "",
         ReceiptFor: "",
@@ -248,7 +248,7 @@ async function createBankTransfer(user, amount, note) {
         Id: user.bankDetails.ownerID || user.tz, 
         TransferReason: note || "Salary Payment", 
         Currency: 1,
-        ProjectNumber: "1", // --- תוקן: זה המזהה שממפה למסוף 31807 ---
+        ProjectNumber: "00001", // --- מעודכן: תואם לפורמט של האשראי (00001) ---
         
         // שדות אופציונליים
         Name: user.name || `${user.firstName} ${user.lastName}` || "", 
