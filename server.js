@@ -55,10 +55,12 @@ const bankDetailsSchema = new mongoose.Schema({
     signature: String,
     authFile: String,
     submissionType: String,
-    status: { type: String, default: 'none' }, // none, pending, active, rejected
+    status: { type: String, default: 'none' }, 
     dailyLimit: { type: Number, default: 0 }, 
     validUntil: { type: Date }, 
-    approvedDate: Date
+    approvedDate: Date,
+    kesherObligationId: String,
+    isSetup: { type: Boolean, default: false }
 });
 
 const userSchema = new mongoose.Schema({
@@ -91,7 +93,7 @@ const userSchema = new mongoose.Schema({
         amount: Number, date: { type: Date, default: Date.now }, note: String, 
         status: String, failReason: String, isGoal: { type: Boolean, default: false }, 
         paymentMethod: String, receiptNameUsed: String, receiptTZUsed: String,
-        receiptUrl: String // Added to store receipt link
+        receiptUrl: String // Stores the link to the receipt PDF
     }],
     pendingDonations: [{ amount: Number, date: { type: Date, default: Date.now }, note: String }],
     tempCode: String
@@ -124,6 +126,24 @@ async function getActiveToken(user) {
 }
 
 function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
+
+// --- Helper to extract receipt URL ---
+function extractReceiptUrl(data) {
+    if (!data) return null;
+    
+    // 1. Try root level fields
+    if (data.OriginalDoc) return data.OriginalDoc;
+    if (data.CopyDoc) return data.CopyDoc;
+
+    // 2. Try nested DocumentsDetails
+    if (data.DocumentsDetails && data.DocumentsDetails.DocumentDetails && Array.isArray(data.DocumentsDetails.DocumentDetails)) {
+        const docs = data.DocumentsDetails.DocumentDetails;
+        if (docs.length > 0) {
+            return docs[0].PdfLink || docs[0].PdfLinkCopy;
+        }
+    }
+    return null;
+}
 
 // --- Credit Card Charge ---
 async function chargeCreditCard(user, amount, note, creditDetails = null) {
@@ -165,18 +185,12 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
         format: "json"
     }, { validateStatus: () => true });
 
-    console.log(`📩 CC Response:`, JSON.stringify(res.data));
+    console.log(`📩 CC Response for ${user.name}:`, JSON.stringify(res.data));
 
     const isSuccess = res.data.RequestResult?.Status === true || res.data.Status === true;
-
-    // Extract Receipt URL if available
-    // Kesher usually returns 'CopyDoc' or 'OriginalDoc' for the receipt PDF link
-    // Also checking inside DocumentsDetails array as per provided JSON structure
-    let receiptUrl = res.data.CopyDoc || res.data.OriginalDoc || null;
+    const receiptUrl = extractReceiptUrl(res.data);
     
-    if (!receiptUrl && res.data.DocumentsDetails && res.data.DocumentsDetails.DocumentDetails && res.data.DocumentsDetails.DocumentDetails.length > 0) {
-        receiptUrl = res.data.DocumentsDetails.DocumentDetails[0].PdfLinkCopy || res.data.DocumentsDetails.DocumentDetails[0].PdfLink;
-    }
+    console.log(`📄 Receipt URL extracted: ${receiptUrl}`);
 
     return { 
         success: isSuccess, 
@@ -184,12 +198,12 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
         token: res.data.Token, 
         finalExpiry, currentCardDigits, 
         paymentMethod: 'cc',
-        receiptUrl: receiptUrl // Pass back the receipt URL
+        receiptUrl: receiptUrl
     };
 }
 
-// --- Bank Obligation (EXACTLY MATCHING YOUR CURL) ---
-async function createBankObligation(user, amount, note) {
+// --- Bank Obligation ---
+async function createBankObligation(user, amount, note, isRecurring = false) {
     if (!user.bankDetails || !user.bankDetails.accountId) throw new Error("חסרים פרטי בנק");
     
     const bankPayload = {
@@ -214,6 +228,12 @@ async function createBankObligation(user, amount, note) {
         NumPayment: 9999 
     };
 
+    if(user.bankDetails.ownerID) {
+        bankPayload.UniqNum = user.bankDetails.ownerID;
+    } else {
+        bankPayload.UniqNum = user.tz || "000000000";
+    }
+
     console.log(`🏦 Sending Bank Obligation:`, JSON.stringify(bankPayload));
 
     const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
@@ -229,13 +249,14 @@ async function createBankObligation(user, amount, note) {
     console.log("Kesher Bank Response:", JSON.stringify(res.data));
     
     const isSuccess = !res.data.error && (res.data.status !== 'error');
-    
-    // Check for receipt URL in bank response too
-    let receiptUrl = res.data.CopyDoc || res.data.OriginalDoc || null;
-    if (!receiptUrl && res.data.DocumentsDetails && res.data.DocumentsDetails.DocumentDetails && res.data.DocumentsDetails.DocumentDetails.length > 0) {
-        receiptUrl = res.data.DocumentsDetails.DocumentDetails[0].PdfLinkCopy || res.data.DocumentsDetails.DocumentDetails[0].PdfLink;
-    }
+    const receiptUrl = extractReceiptUrl(res.data);
 
+    if(isSuccess) {
+        user.bankDetails.isSetup = true;
+        if (res.data.Id) user.bankDetails.kesherObligationId = res.data.Id;
+        await user.save();
+    }
+    
     return {
         success: isSuccess,
         data: res.data,
@@ -283,7 +304,7 @@ cron.schedule('0 8 * * *', async () => {
                     try {
                         let r;
                         if(isBank) {
-                            r = { success: true, paymentMethod: 'bank' }; // Simulated for cron (usually file based)
+                            r = { success: true, paymentMethod: 'bank' }; 
                         } else {
                             r = await chargeCreditCard(u, amountToCharge, "הוראת קבע יומית");
                         }
@@ -295,7 +316,7 @@ cron.schedule('0 8 * * *', async () => {
                                 note: "יומי קבוע", 
                                 status: "success", 
                                 paymentMethod: r.paymentMethod,
-                                receiptUrl: r.receiptUrl // Save receipt if available
+                                receiptUrl: r.receiptUrl 
                             });
                         } else {
                             u.donationsHistory.push({ amount: amountToCharge, note: "יומי קבוע", status: "failed", failReason: r.data?.error || "תקלה", paymentMethod: isBank?'bank':'cc' });
@@ -334,7 +355,7 @@ cron.schedule('0 8 * * *', async () => {
                                 status: "success", 
                                 date: new Date(), 
                                 paymentMethod: r.paymentMethod,
-                                receiptUrl: r.receiptUrl // Save receipt
+                                receiptUrl: r.receiptUrl 
                             }); 
                         });
                         u.pendingDonations = []; 
@@ -361,10 +382,10 @@ app.post('/user/submit-bank-auth', async (req, res) => {
             u.bankDetails = {
                 bankId, branchId, accountId, ownerName, ownerID, ownerPhone,
                 signature: signature || "", authFile: file || "",
-                submissionType: 'digital', status: 'pending', dailyLimit: 0
+                submissionType: 'digital', status: 'pending', dailyLimit: 0, isSetup: false
             };
         } else if (type === 'upload') {
-             u.bankDetails = { authFile: file, submissionType: 'upload', status: 'pending', dailyLimit: 0 };
+             u.bankDetails = { authFile: file, submissionType: 'upload', status: 'pending', dailyLimit: 0, isSetup: false };
         }
         u.preferredPaymentMethod = 'bank'; 
         u.messages.push({ direction: 'user_to_admin', content: `בקשה להרשאה בנקאית (${type}). נא לאשר בניהול בנקים.`, date: new Date(), read: false });
@@ -385,7 +406,7 @@ app.post('/admin/manage-bank-auth', async (req, res) => {
                     if (data.limit) u.bankDetails.dailyLimit = parseInt(data.limit);
                     if (data.validUntil) u.bankDetails.validUntil = new Date(data.validUntil);
                 }
-                const kesherRes = await createBankObligation(u, 1, "הקמת הרשאה");
+                const kesherRes = await createBankObligation(u, 1, "הקמת הרשאה", true);
                 if (kesherRes.success) {
                     u.bankDetails.status = 'active'; 
                     u.bankDetails.approvedDate = new Date(); 
@@ -407,7 +428,7 @@ app.post('/admin/manage-bank-auth', async (req, res) => {
                 bankId: data.bankId, branchId: data.branchId, accountId: data.accountId,
                 ownerName: data.ownerName, ownerID: data.ownerID, 
                 status: 'active', dailyLimit: data.limit ? parseInt(data.limit) : 0,
-                submissionType: 'manual', approvedDate: new Date()
+                submissionType: 'manual', approvedDate: new Date(), isSetup: false
             };
             if (data.validUntil) u.bankDetails.validUntil = new Date(data.validUntil);
             u.preferredPaymentMethod = 'bank';
