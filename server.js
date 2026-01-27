@@ -191,13 +191,13 @@ async function createBankObligation(user, amount, note) {
         Comment1: note || "",
         FirstName: user.bankDetails.ownerName || user.name || "Donor",
         LastName: null,
-        ProjectNumber: "1", // ה-CURL שעובד משתמש ב-1 (ולא ב-00001 או 31807)
+        ProjectNumber: "1", // ה-CURL שעובד משתמש ב-1
         Mail: user.email || "no@mail.com",
         ReceiptName: user.receiptName || user.name || "",
         ReceiptFor: "",
         TransactionDate: new Date().toISOString().split('T')[0],
-        NumPayment: 9999,
-        Id: user.bankDetails.ownerID || user.tz
+        NumPayment: 9999
+        // Id removed to match CURL exactly
     };
 
     console.log(`🏦 Sending Bank Obligation (CURL Format):`, JSON.stringify(bankPayload));
@@ -253,8 +253,8 @@ async function createBankTransfer(user, amount, note) {
         ReceiptFor: "",
         TransactionDate: new Date().toISOString().split('T')[0],
         NumPayment: 9999,
-        Id: user.bankDetails.ownerID || user.tz,
-        TransferReason: note || "Payment" // שדה ספציפי להעברה, הוספתי בסוף למקרה הצורך
+        Id: user.bankDetails.ownerID || user.tz, // בהעברה כן משאירים ת"ז
+        TransferReason: note || "Payment" 
     };
 
     console.log(`🏦 Sending Bank TRANSFER (CURL Format):`, JSON.stringify(bankPayload));
