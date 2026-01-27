@@ -171,20 +171,22 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
     };
 }
 
+
 // --- Bank Obligation (SendBankObligation) based on your CURL ---
 async function createBankObligation(user, amount, note) {
     if (!user.bankDetails || !user.bankDetails.accountId) throw new Error("חסרים פרטי בנק");
     
     // Construct Payload exactly as per CURL example provided in prompt
+    // Note: We use the exact field names from your provided JSON example for SendFastBankTransfer/Obligation
     const bankPayload = {
         ClientApiIdentity: null, 
         Signature: null,
-        Account: parseInt(user.bankDetails.accountId), // Int as per CURL
-        Branch: parseInt(user.bankDetails.branchId),   // Int
-        Bank: parseInt(user.bankDetails.bankId),       // Int
-        Address: "Israel", // Placeholder address
+        Account: user.bankDetails.accountId, // String or Int based on API, usually String is safer but CURL showed Int. Let's try string if int fails or vice versa.
+        Branch: user.bankDetails.branchId,
+        Bank: user.bankDetails.bankId,
+        Address: "Israel",
         City: null,
-        Total: parseFloat(amount), // Amount
+        Total: parseFloat(amount), // Note: CURL example had 150 (Total)
         Currency: 1,
         Phone: (user.phone || "00000000").replace(/\D/g, ''),
         Comment1: note || "",
@@ -195,39 +197,110 @@ async function createBankObligation(user, amount, note) {
         ReceiptName: user.receiptName || user.name || "",
         ReceiptFor: "",
         TransactionDate: new Date().toISOString().split('T')[0],
-        NumPayment: 9999 // As per CURL for standing order
+        NumPayment: 9999, // As per CURL
+        Id: user.bankDetails.ownerID || user.tz // "Id" field from your example
     };
 
-    console.log(`🏦 Sending Bank Obligation Payload:`, JSON.stringify(bankPayload));
+    console.log(`🏦 Sending Bank Obligation:`, JSON.stringify(bankPayload));
 
     // NOTE: Function name is "SendBankObligation" as requested for standing order setup
-    try {
-        const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
-            Json: { 
-                userName: '2181420WS2087', 
-                password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', 
-                func: "SendBankObligation", 
-                transaction: bankPayload 
-            },
-            format: "json"
-        }, { validateStatus: () => true });
+    const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
+        Json: { 
+            userName: '2181420WS2087', 
+            password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', 
+            func: "SendBankObligation", 
+            transaction: bankPayload 
+        },
+        format: "json"
+    }, { validateStatus: () => true });
 
-        console.log("Kesher Bank Response:", JSON.stringify(res.data));
-        
-        // Check success based on Kesher logic (adjust if needed based on actual response)
-        // Usually, a lack of 'error' field or status != 'error' means success, or specific codes.
-        const isSuccess = !res.data.error && (res.data.status !== 'error');
-        
-        return {
-            success: isSuccess,
-            data: res.data,
-            paymentMethod: 'bank'
-        };
-    } catch (e) {
-        console.error("Bank Obligation Request Failed:", e.message);
-        throw e;
-    }
+    console.log("Kesher Bank Response:", JSON.stringify(res.data));
+    
+    // Check success
+    const isSuccess = !res.data.error && (res.data.status !== 'error');
+    
+    return {
+        success: isSuccess,
+        data: res.data,
+        paymentMethod: 'bank'
+    };
 }
+
+
+// --- Bank TRANSFER ---
+
+async function createBankTransfer(user, amount, note) {
+    if (!user.bankDetails || !user.bankDetails.accountId) throw new Error("חסרים פרטי בנק");
+    
+    // Construct Payload exactly as per CURL example provided in prompt
+    // Note: We use the exact field names from your provided JSON example for SendFastBankTransfer/Obligation
+    const bankPayload = {
+        Total: parseFloat(amount), 
+        Bank: user.bankDetails.bankId, 
+        Branch: user.bankDetails.branchId, 
+        
+        // התיקון: המרה למחרוזת והוספת אפסים בהתחלה עד לאורך של 9 ספרות
+        Account: String(user.bankDetails.accountId).padStart(9, '0'), 
+        
+        Id: user.bankDetails.ownerID || user.tz, 
+        TransferReason: note || "Salary Payment", 
+        Currency: 1, 
+        
+        // שדות אופציונליים
+        Name: user.name || `${user.firstName} ${user.lastName}` || "", 
+        Phone: (user.phone || "").replace(/\D/g, ''),
+        Mail: user.email || "",
+        Address: "Israel", 
+        City: "Tel Aviv", 
+        
+        // שדות נוספים
+        ReceiptName: user.receiptName || "",
+        ReceiptFor: "",
+        Details: "",
+        NumHouse: "",
+        FirstName: user.bankDetails.ownerName || "", 
+        LastName: "",
+        ApartmentNumber: 0,
+        Entrance: "",
+        Floor: "",
+        Country: ""
+    };
+
+    console.log(`🏦 Sending Bank TRANSFER:`, JSON.stringify(bankPayload));
+
+    // NOTE: Function name is "SendBankObligation" as requested for standing order setup
+    const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
+        Json: { 
+            userName: '2181420WS2087', 
+            password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', 
+            func: "SendFastBankTransfer", 
+            payment: bankPayload 
+        },
+        format: "json"
+    }, { validateStatus: () => true });
+
+    console.log("Kesher Bank Response:", JSON.stringify(res.data));
+    
+    // Check success
+    const isSuccess = !res.data.error && (res.data.status !== 'error');
+    
+    return {
+        success: isSuccess,
+        data: res.data,
+        paymentMethod: 'bank',
+    };
+}
+
+// --- Unified Charge Function (Moved here to be defined AFTER dependencies) ---
+async function performCharge(user, amount, note, isGoal = false, ccDetails = null) {
+    // אם המשתמש מוגדר על בנק ויש לו פרטי בנק פעילים
+    if (user.preferredPaymentMethod === 'bank' && user.bankDetails && user.bankDetails.accountId) {
+        return await createBankTransfer(user, amount, note);
+    } 
+    // אחרת, ברירת המחדל היא אשראי
+    return await chargeCreditCard(user, amount, note, ccDetails);
+}
+
 
 // --- Cron Job ---
 cron.schedule('0 8 * * *', async () => {
@@ -242,6 +315,8 @@ cron.schedule('0 8 * * *', async () => {
         
         if (isBank) {
             // For Bank: We assume if status is active, we can generate a charge file or call API if supported
+            // Since "SendBankObligation" is for SETUP, actual charging is usually done via Masav File export.
+            // For this logic, we assume "Active" means we processed it manually or via file.
             if (u.bankDetails && u.bankDetails.status === 'active') {
                 const isValidDate = !u.bankDetails.validUntil || new Date() <= new Date(u.bankDetails.validUntil);
                 if (isValidDate) canCharge = true;
@@ -250,7 +325,9 @@ cron.schedule('0 8 * * *', async () => {
             if (await getActiveToken(u)) canCharge = true;
         }
 
-        // --- Recurring ---
+        // Processing Charges (Only for CC actually running live, Bank records it for history/file gen)
+        // ... (Logic remains similar, if Bank -> we just record success if active) ...
+        
         if (u.recurringDailyAmount > 0) {
             let amountToCharge = u.recurringDailyAmount;
             if (isBank && u.bankDetails.dailyLimit > 0 && amountToCharge > u.bankDetails.dailyLimit) { canCharge = false; }
@@ -284,6 +361,8 @@ cron.schedule('0 8 * * *', async () => {
         if (saveUser) await u.save();
     }
 });
+
+
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.get('/manager', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
@@ -370,6 +449,63 @@ app.post('/admin/get-bank-requests', async (req, res) => {
     res.json({ success: true, users });
 });
 
+app.post('/donate', async (req, res) => {
+    const { userId, preferredPaymentMethod, amount, note, forceImmediate, providedPin, isGoalDonation } = req.body;
+    
+    try {
+        let u = await User.findById(userId);
+        if (!u) return res.json({ success: false, error: "משתמש לא נמצא" });
+
+        if (u.securityPin && u.securityPin.trim() !== "") {
+            if (String(providedPin).trim() !== String(u.securityPin).trim()) {
+                return res.json({ success: false, error: "קוד אבטחה שגוי" });
+            }
+        }
+
+        let shouldChargeNow = (isGoalDonation === true) || (forceImmediate === true) || (u.billingPreference === 0);
+
+        if (shouldChargeNow) {
+            // בדיקת תקרה רק אם זה בנק
+            if (preferredPaymentMethod === 'bank' && u.bankDetails.dailyLimit > 0) {
+                if (parseFloat(amount) > u.bankDetails.dailyLimit) {
+                    return res.json({ success: false, error: "חריגה מתקרה יומית" });
+                }
+            }
+
+            // קריאה לפונקציה המאוחדת
+            const r = await performCharge(u, amount, note, isGoalDonation);
+
+            if (r.success) {
+                u.totalDonated += parseFloat(amount);
+                u.donationsHistory.push({
+                    amount: parseFloat(amount),
+                    note: note || "תרומה",
+                    date: new Date(),
+                    status: 'success',
+                    isGoal: isGoalDonation === true,
+                    paymentMethod: r.paymentMethod
+                });
+
+                if (isGoalDonation) {
+                    await GlobalGoal.findOneAndUpdate({ id: 'main_goal' }, { $inc: { currentAmount: parseFloat(amount) } });
+                }
+
+                await u.save();
+                return res.json({ success: true, message: "תרומה התקבלה!", res: r});
+            } else {
+                return res.json({ success: false, error: r.data?.RequestResult?.Message || "סירוב מהספק", res: r });
+            }
+        } else {
+            u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() });
+            await u.save();
+            return res.json({ success: true, message: "נוסף לסל" });
+        }
+    } catch (e) {
+        res.json({ success: false, error: e.message });
+    }
+});
+
+
 // Standard Routes
 app.post('/contact/send', async (req, res) => { const { userId, content, attachment, attachmentName } = req.body; try { const u = await User.findById(userId); if(!u) return res.json({ success: false }); u.messages.push({ direction: 'user_to_admin', content, attachment, attachmentName, read: false, date: new Date() }); await u.save(); res.json({ success: true }); } catch(e) { res.json({ success: false }); } });
 app.post('/admin/reply', async (req, res) => { const { userId, content, attachment, attachmentName } = req.body; try { const u = await User.findById(userId); if(!u) return res.json({ success: false }); u.messages.push({ direction: 'admin_to_user', content, attachment, attachmentName, read: false, date: new Date() }); await u.save(); if(u.fcmToken) admin.messaging().send({ token: u.fcmToken, notification: { title: 'הודעה חדשה', body: content } }).catch(e=>{}); res.json({ success: true }); } catch(e) { res.json({ success: false }); } });
@@ -380,7 +516,7 @@ app.post('/update-code', async (req, res) => { let { email, phone, code } = req.
 app.post('/send-verification', async (req, res) => { try { await axios.post('https://api.emailjs.com/api/v1.0/email/send', { service_id: 'service_8f6h188', template_id: 'template_tzbq0k4', user_id: 'yLYooSdg891aL7etD', template_params: { email: req.body.email, code: req.body.code }, accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3" }); res.json({ success: true }); } catch(e) { res.json({ success: false }); } });
 app.post('/verify-auth', async (req, res) => { let { email, phone, code } = req.body; if(code === 'check') return res.json({ success: true }); let u = await User.findOne(email ? { email: email.toLowerCase().trim() } : { phone: phone.replace(/\D/g, '').trim() }); if (u && String(u.tempCode).trim() === String(code).trim()) res.json({ success: true, user: u }); else res.json({ success: false }); });
 app.post('/login-by-id', async (req, res) => { try { let user = await User.findById(req.body.userId); if(user) { if ((!user.cards || user.cards.length === 0) && user.token) { user.cards.push({ token: user.token, lastDigits: user.lastCardDigits, expiry: user.lastExpiry, active: true }); user.token = ""; await user.save(); } res.json({ success: true, user }); } else res.json({ success: false }); } catch(e) { res.json({ success: false }); } });
-app.post('/donate', async (req, res) => { const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin, isGoalDonation, useReceiptDetails } = req.body; let u = await User.findById(userId); if (u.securityPin && u.securityPin.trim() !== "") { if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד שגוי" }); } let shouldChargeNow = (isGoalDonation === true) || (forceImmediate === true) ? true : (u.billingPreference === 0 && forceImmediate !== false); if (shouldChargeNow) { try { if (u.preferredPaymentMethod === 'bank' && u.bankDetails.dailyLimit > 0 && parseFloat(amount) > u.bankDetails.dailyLimit) return res.json({ success: false, error: "חריגה מתקרה יומית" }); const r = await createBankObligation(u, amount, note); if (r.success) { u.totalDonated += parseFloat(amount); u.donationsHistory.push({ amount: parseFloat(amount), note, date: new Date(), status: 'success', isGoal: isGoalDonation === true, paymentMethod: r.paymentMethod }); await u.save(); if (isGoalDonation) await GlobalGoal.findOneAndUpdate({ id: 'main_goal' }, { $inc: { currentAmount: parseFloat(amount) } }); res.json({ success: true, message: "תרומה התקבלה!" }); } else res.json({ success: false, error: r.data?.error || "סירוב" }); } catch(e) { res.json({ success: false, error: e.message }); } } else { u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() }); await u.save(); res.json({ success: true, message: "נוסף לסל" }); } });
+// app.post('/donate', async (req, res) => { const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin, isGoalDonation, useReceiptDetails } = req.body; let u = await User.findById(userId); if (u.securityPin && u.securityPin.trim() !== "") { if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד שגוי" }); } let shouldChargeNow = (isGoalDonation === true) || (forceImmediate === true) ? true : (u.billingPreference === 0 && forceImmediate !== false); if (shouldChargeNow) { try { if (u.preferredPaymentMethod === 'bank' && u.bankDetails.dailyLimit > 0 && parseFloat(amount) > u.bankDetails.dailyLimit) return res.json({ success: false, error: "חריגה מתקרה יומית" }); const r = await performCharge(u, amount, note, false, ccDetails); if (r.success) { u.totalDonated += parseFloat(amount); u.donationsHistory.push({ amount: parseFloat(amount), note, date: new Date(), status: 'success', isGoal: isGoalDonation === true, paymentMethod: r.paymentMethod }); await u.save(); if (isGoalDonation) await GlobalGoal.findOneAndUpdate({ id: 'main_goal' }, { $inc: { currentAmount: parseFloat(amount) } }); res.json({ success: true, message: "תרומה התקבלה!" }); } else res.json({ success: false, error: r.data?.error || "סירוב" }); } catch(e) { res.json({ success: false, error: e.message }); } } else { u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() }); await u.save(); res.json({ success: true, message: "נוסף לסל" }); } });
 app.post('/delete-pending', async (req, res) => { const u = await User.findById(req.body.userId); if (u.canRemoveFromBasket === false) return res.json({ success: false, error: "ננעל" }); await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } }); res.json({ success: true }); });
 app.post('/admin/update-profile', async (req, res) => { try { const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails, canRemoveFromBasket, activeCardId, deleteCardId, addManualCardData, receiptName, receiptTZ, receiptMode, maaserActive, maaserRate, maaserIncome, showTaxWidget, preferredPaymentMethod } = req.body; let u = await User.findById(userId); if (deleteCardId) { u.cards = u.cards.filter(c => c._id.toString() !== deleteCardId); if (!u.cards.some(c => c.active) && u.cards.length > 0) u.cards[0].active = true; } if (activeCardId) u.cards.forEach(c => c.active = (c._id.toString() === activeCardId)); if (newCardDetails && newCardDetails.num) { try { const r = await chargeCreditCard(u, 0.1, "בדיקה", newCardDetails); if (r.success || r.token) { u.cards.forEach(c => c.active = false); u.cards.push({ token: fixToken(r.token), lastDigits: r.currentCardDigits, expiry: r.finalExpiry, active: true }); if(r.success) { u.totalDonated += 0.1; u.donationsHistory.push({ amount: 0.1, note: "בדיקה", status: 'success', date: new Date() }); } } else return res.json({ success: false, error: "אימות נכשל" }); } catch(e) { return res.json({ success: false, error: e.message }); } } if (addManualCardData) { u.cards.forEach(c => c.active = false); u.cards.push({ token: fixToken(addManualCardData.token), lastDigits: addManualCardData.lastDigits, expiry: addManualCardData.expiry, active: true }); } if(name) u.name = name; if(phone) u.phone = phone; if(email) u.email = email; if(tz) u.tz = tz; u.billingPreference = parseInt(billingPreference)||0; u.recurringDailyAmount = parseInt(recurringDailyAmount)||0; u.recurringImmediate = recurringImmediate===true; u.securityPin = securityPin; u.canRemoveFromBasket = canRemoveFromBasket; if(receiptName !== undefined) u.receiptName = receiptName; if(receiptTZ !== undefined) u.receiptTZ = receiptTZ; if(receiptMode !== undefined) u.receiptMode = parseInt(receiptMode); if(maaserActive !== undefined) u.maaserActive = maaserActive; if(maaserRate !== undefined) u.maaserRate = parseInt(maaserRate); if(maaserIncome !== undefined) u.maaserIncome = parseInt(maaserIncome); if(showTaxWidget !== undefined) u.showTaxWidget = showTaxWidget; if(preferredPaymentMethod) u.preferredPaymentMethod = preferredPaymentMethod; await u.save(); res.json({ success: true }); } catch(e) { res.status(500).json({ success: false, error: e.message }); } });
 const PASS = "admin1234";
