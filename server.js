@@ -192,7 +192,8 @@ async function createBankObligation(user, amount, note) {
         Comment1: note || "",
         FirstName: user.bankDetails.ownerName || user.name || "Donor",
         LastName: null,
-        ProjectNumber: "31807", // --- מעודכן: מספר המסוף ---
+        ProjectNumber: 31807, // --- מעודכן: מספר המסוף (Int) ---
+        Param1: "31807", // --- נסיון נוסף: שדה פרמטר למוסד ---
         Mail: user.email || "no@mail.com",
         ReceiptName: user.receiptName || user.name || "",
         ReceiptFor: "",
@@ -209,7 +210,6 @@ async function createBankObligation(user, amount, note) {
             userName: '2181420WS2087', 
             password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', 
             func: "SendBankObligation",
-            // Mosad הוסר מכאן כי הוא גרם לשגיאה
             transaction: bankPayload 
         },
         format: "json"
@@ -246,7 +246,8 @@ async function createBankTransfer(user, amount, note) {
         Id: user.bankDetails.ownerID || user.tz, 
         TransferReason: note || "Salary Payment", 
         Currency: 1,
-        ProjectNumber: "31807", // --- נוסף: מספר המסוף ---
+        ProjectNumber: 31807, // --- מעודכן: מספר המסוף (Int) ---
+        Param1: "31807", // --- נסיון נוסף: שדה פרמטר למוסד ---
         
         // שדות אופציונליים
         Name: user.name || `${user.firstName} ${user.lastName}` || "", 
@@ -276,7 +277,6 @@ async function createBankTransfer(user, amount, note) {
             userName: '2181420WS2087', 
             password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', 
             func: "SendFastBankTransfer",
-            // Mosad הוסר מכאן כי הוא גרם לשגיאה
             payment: bankPayload 
         },
         format: "json"
