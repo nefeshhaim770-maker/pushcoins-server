@@ -99,7 +99,7 @@ const userSchema = new mongoose.Schema({
         paymentMethod: String, 
         receiptNameUsed: String, 
         receiptTZUsed: String,
-        receiptUrl: String // Link to PDF
+        receiptUrl: String // Stores receipt link
     }],
     pendingDonations: [{ amount: Number, date: { type: Date, default: Date.now }, note: String }],
     tempCode: String
@@ -136,11 +136,10 @@ function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => {
 // --- Helper: Extract Receipt URL ---
 function getReceiptLinkFromResponse(data) {
     if (!data) return null;
-    // According to your JSON: CopyDoc is at root
+    // Prioritize CopyDoc (usually PDF), then OriginalDoc, then nested
     if (data.CopyDoc) return data.CopyDoc;
     if (data.OriginalDoc) return data.OriginalDoc;
     
-    // Fallback to array
     if (data.DocumentsDetails && data.DocumentsDetails.DocumentDetails && Array.isArray(data.DocumentsDetails.DocumentDetails)) {
         const docs = data.DocumentsDetails.DocumentDetails;
         if (docs.length > 0) {
@@ -205,11 +204,11 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
     };
 }
 
-// --- Bank Obligation ---
+// --- Bank Obligation (SendBankObligation) ---
 async function createBankObligation(user, amount, note, isRecurring = false) {
     if (!user.bankDetails || !user.bankDetails.accountId) throw new Error("חסרים פרטי בנק");
     
-    // Check existing
+    // Check existing mandate to avoid spamming setup
     if (user.bankDetails.isSetup && user.bankDetails.status === 'active') {
         console.log(`🏦 Bank mandate exists. Recording transaction locally.`);
         return {
