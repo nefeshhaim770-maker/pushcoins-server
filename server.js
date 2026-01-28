@@ -91,7 +91,7 @@ const userSchema = new mongoose.Schema({
         amount: Number, date: { type: Date, default: Date.now }, note: String, 
         status: String, failReason: String, isGoal: { type: Boolean, default: false }, 
         paymentMethod: String, receiptNameUsed: String, receiptTZUsed: String,
-        receiptUrl: String // Added to store receipt link
+        receiptUrl: String
     }],
     pendingDonations: [{ amount: Number, date: { type: Date, default: Date.now }, note: String }],
     tempCode: String
@@ -125,16 +125,49 @@ async function getActiveToken(user) {
 
 function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
+// --- Helper: Fetch Receipt Details (GetTranData) ---
+async function getReceiptFromKesher(transactionNum) {
+    if (!transactionNum) return null;
+    try {
+        console.log(`🔍 Fetching Receipt for Transaction: ${transactionNum}`);
+        const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
+            Json: {
+                userName: '2181420WS2087',
+                password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl',
+                func: "GetTranData",
+                transactionNum: String(transactionNum)
+            },
+            format: "json"
+        }, { validateStatus: () => true });
+
+        // Try to extract PDF link from GetTranData response
+        let link = res.data.CopyDoc || res.data.OriginalDoc || null;
+        if (!link && res.data.DocumentsDetails && res.data.DocumentsDetails.DocumentDetails && res.data.DocumentsDetails.DocumentDetails.length > 0) {
+            link = res.data.DocumentsDetails.DocumentDetails[0].PdfLinkCopy || res.data.DocumentsDetails.DocumentDetails[0].PdfLink;
+        }
+        return link;
+    } catch (e) {
+        console.error("❌ Error fetching receipt:", e.message);
+        return null;
+    }
+}
+
 // --- Credit Card Charge ---
 async function chargeCreditCard(user, amount, note, creditDetails = null) {
     const amountInAgorot = Math.round(parseFloat(amount) * 100);
     const safePhone = (user.phone || "0500000000").replace(/\D/g, '');
     let uniqueId = user.tz && user.tz.length > 5 ? user.tz : safePhone;
     
+    // Receipt Info Logic
+    const receiptName = user.receiptName || user.name || "Torem";
+    const receiptTZ = user.receiptTZ || uniqueId;
+
     let tranData = {
         Total: amountInAgorot, Currency: 1, ParamJ: "J4", TransactionType: "debit", CreditType: 1,
         ProjectNumber: "00001", Phone: safePhone, FirstName: user.name || "Torem", LastName: " ",
-        Mail: user.email || "no@mail.com", ClientApiIdentity: uniqueId, Id: uniqueId, Details: note || ""
+        Mail: user.email || "no@mail.com", ClientApiIdentity: uniqueId, Id: uniqueId, 
+        Details: "", // Always empty per request
+        ReceiptName: receiptName
     };
 
     let finalExpiry = "", currentCardDigits = "";
@@ -169,13 +202,18 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
 
     const isSuccess = res.data.RequestResult?.Status === true || res.data.Status === true;
 
-    // Extract Receipt URL if available
-    // Kesher usually returns 'CopyDoc' or 'OriginalDoc' for the receipt PDF link
-    // Also checking inside DocumentsDetails array as per provided JSON structure
-    let receiptUrl = res.data.CopyDoc || res.data.OriginalDoc || null;
+    // Identify Transaction ID
+    const transId = res.data.TransactionId || res.data.RequestResult?.TransactionId || res.data.Id;
     
+    let receiptUrl = res.data.CopyDoc || res.data.OriginalDoc || null;
     if (!receiptUrl && res.data.DocumentsDetails && res.data.DocumentsDetails.DocumentDetails && res.data.DocumentsDetails.DocumentDetails.length > 0) {
         receiptUrl = res.data.DocumentsDetails.DocumentDetails[0].PdfLinkCopy || res.data.DocumentsDetails.DocumentDetails[0].PdfLink;
+    }
+
+    // Explicit request: Call GetTranData to ensure receipt is fetched
+    if (isSuccess && transId) {
+        const extraReceiptUrl = await getReceiptFromKesher(transId);
+        if (extraReceiptUrl) receiptUrl = extraReceiptUrl;
     }
 
     return { 
@@ -184,20 +222,24 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
         token: res.data.Token, 
         finalExpiry, currentCardDigits, 
         paymentMethod: 'cc',
-        receiptUrl: receiptUrl // Pass back the receipt URL
+        receiptUrl: receiptUrl,
+        receiptNameUsed: receiptName, 
+        receiptTZUsed: receiptTZ      
     };
 }
 
-// --- Bank Obligation (EXACTLY MATCHING YOUR CURL) ---
+// --- Bank Obligation ---
 async function createBankObligation(user, amount, note) {
     if (!user.bankDetails || !user.bankDetails.accountId) throw new Error("חסרים פרטי בנק");
     
+    const receiptName = user.receiptName || user.name || "Donor";
+
     const bankPayload = {
         ClientApiIdentity: null, 
         Signature: null,
         Account: parseInt(user.bankDetails.accountId), 
-        Branch: parseInt(user.bankDetails.branchId),   
-        Bank: parseInt(user.bankDetails.bankId),       
+        Branch: parseInt(user.bankDetails.branchId),    
+        Bank: parseInt(user.bankDetails.bankId),        
         Address: "Israel",
         City: null,
         Total: parseFloat(amount), 
@@ -208,7 +250,7 @@ async function createBankObligation(user, amount, note) {
         LastName: null,
         ProjectNumber: "1",
         Mail: user.email || "no@mail.com",
-        ReceiptName: user.receiptName || user.name || "",
+        ReceiptName: receiptName, 
         ReceiptFor: "",
         TransactionDate: new Date().toISOString().split('T')[0],
         NumPayment: 9999 
@@ -230,17 +272,27 @@ async function createBankObligation(user, amount, note) {
     
     const isSuccess = !res.data.error && (res.data.status !== 'error');
     
-    // Check for receipt URL in bank response too
+    // Identify Transaction ID (if returned by Bank Obligation)
+    const transId = res.data.TransactionId || res.data.RequestResult?.TransactionId || res.data.Id;
+
     let receiptUrl = res.data.CopyDoc || res.data.OriginalDoc || null;
     if (!receiptUrl && res.data.DocumentsDetails && res.data.DocumentsDetails.DocumentDetails && res.data.DocumentsDetails.DocumentDetails.length > 0) {
         receiptUrl = res.data.DocumentsDetails.DocumentDetails[0].PdfLinkCopy || res.data.DocumentsDetails.DocumentDetails[0].PdfLink;
+    }
+
+    // Explicit request: Call GetTranData if we have an ID
+    if (isSuccess && transId) {
+        const extraReceiptUrl = await getReceiptFromKesher(transId);
+        if (extraReceiptUrl) receiptUrl = extraReceiptUrl;
     }
 
     return {
         success: isSuccess,
         data: res.data,
         paymentMethod: 'bank',
-        receiptUrl: receiptUrl
+        receiptUrl: receiptUrl,
+        receiptNameUsed: receiptName, 
+        receiptTZUsed: ""
     };
 }
 
@@ -283,7 +335,7 @@ cron.schedule('0 8 * * *', async () => {
                     try {
                         let r;
                         if(isBank) {
-                            r = { success: true, paymentMethod: 'bank' }; // Simulated for cron (usually file based)
+                            r = { success: true, paymentMethod: 'bank' }; 
                         } else {
                             r = await chargeCreditCard(u, amountToCharge, "הוראת קבע יומית");
                         }
@@ -295,7 +347,9 @@ cron.schedule('0 8 * * *', async () => {
                                 note: "יומי קבוע", 
                                 status: "success", 
                                 paymentMethod: r.paymentMethod,
-                                receiptUrl: r.receiptUrl // Save receipt if available
+                                receiptUrl: r.receiptUrl,
+                                receiptNameUsed: r.receiptNameUsed,
+                                receiptTZUsed: r.receiptTZUsed
                             });
                         } else {
                             u.donationsHistory.push({ amount: amountToCharge, note: "יומי קבוע", status: "failed", failReason: r.data?.error || "תקלה", paymentMethod: isBank?'bank':'cc' });
@@ -320,9 +374,9 @@ cron.schedule('0 8 * * *', async () => {
                 try {
                     let r;
                     if(isBank) {
-                         r = { success: true, paymentMethod: 'bank' }; 
+                          r = { success: true, paymentMethod: 'bank' }; 
                     } else {
-                         r = await chargeCreditCard(u, totalToCharge, "חיוב סל ממתין");
+                          r = await chargeCreditCard(u, totalToCharge, "חיוב סל ממתין");
                     }
 
                     if (r.success) {
@@ -334,7 +388,9 @@ cron.schedule('0 8 * * *', async () => {
                                 status: "success", 
                                 date: new Date(), 
                                 paymentMethod: r.paymentMethod,
-                                receiptUrl: r.receiptUrl // Save receipt
+                                receiptUrl: r.receiptUrl,
+                                receiptNameUsed: r.receiptNameUsed,
+                                receiptTZUsed: r.receiptTZUsed
                             }); 
                         });
                         u.pendingDonations = []; 
