@@ -131,12 +131,16 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
     const safePhone = (user.phone || "0500000000").replace(/\D/g, '');
     let uniqueId = user.tz && user.tz.length > 5 ? user.tz : safePhone;
     
-    // Fixed: Details is always empty string now
+    // Receipt Info Logic
+    const receiptName = user.receiptName || user.name || "Torem";
+    const receiptTZ = user.receiptTZ || uniqueId;
+
     let tranData = {
         Total: amountInAgorot, Currency: 1, ParamJ: "J4", TransactionType: "debit", CreditType: 1,
         ProjectNumber: "00001", Phone: safePhone, FirstName: user.name || "Torem", LastName: " ",
         Mail: user.email || "no@mail.com", ClientApiIdentity: uniqueId, Id: uniqueId, 
-        Details: "" // <--- MODIFIED HERE: Always send empty string
+        Details: "", // Always empty per request
+        ReceiptName: receiptName // <--- ADDED: To match Bank logic
     };
 
     let finalExpiry = "", currentCardDigits = "";
@@ -183,7 +187,9 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
         token: res.data.Token, 
         finalExpiry, currentCardDigits, 
         paymentMethod: 'cc',
-        receiptUrl: receiptUrl
+        receiptUrl: receiptUrl,
+        receiptNameUsed: receiptName, // <--- RETURNED
+        receiptTZUsed: receiptTZ      // <--- RETURNED
     };
 }
 
@@ -191,6 +197,8 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
 async function createBankObligation(user, amount, note) {
     if (!user.bankDetails || !user.bankDetails.accountId) throw new Error("חסרים פרטי בנק");
     
+    const receiptName = user.receiptName || user.name || "Donor";
+
     const bankPayload = {
         ClientApiIdentity: null, 
         Signature: null,
@@ -207,7 +215,7 @@ async function createBankObligation(user, amount, note) {
         LastName: null,
         ProjectNumber: "1",
         Mail: user.email || "no@mail.com",
-        ReceiptName: user.receiptName || user.name || "",
+        ReceiptName: receiptName, // Already existed
         ReceiptFor: "",
         TransactionDate: new Date().toISOString().split('T')[0],
         NumPayment: 9999 
@@ -238,7 +246,9 @@ async function createBankObligation(user, amount, note) {
         success: isSuccess,
         data: res.data,
         paymentMethod: 'bank',
-        receiptUrl: receiptUrl
+        receiptUrl: receiptUrl,
+        receiptNameUsed: receiptName, // <--- RETURNED
+        receiptTZUsed: ""
     };
 }
 
@@ -293,7 +303,9 @@ cron.schedule('0 8 * * *', async () => {
                                 note: "יומי קבוע", 
                                 status: "success", 
                                 paymentMethod: r.paymentMethod,
-                                receiptUrl: r.receiptUrl
+                                receiptUrl: r.receiptUrl,
+                                receiptNameUsed: r.receiptNameUsed,
+                                receiptTZUsed: r.receiptTZUsed
                             });
                         } else {
                             u.donationsHistory.push({ amount: amountToCharge, note: "יומי קבוע", status: "failed", failReason: r.data?.error || "תקלה", paymentMethod: isBank?'bank':'cc' });
@@ -332,7 +344,9 @@ cron.schedule('0 8 * * *', async () => {
                                 status: "success", 
                                 date: new Date(), 
                                 paymentMethod: r.paymentMethod,
-                                receiptUrl: r.receiptUrl 
+                                receiptUrl: r.receiptUrl,
+                                receiptNameUsed: r.receiptNameUsed,
+                                receiptTZUsed: r.receiptTZUsed
                             }); 
                         });
                         u.pendingDonations = []; 
