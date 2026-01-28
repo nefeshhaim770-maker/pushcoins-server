@@ -91,7 +91,7 @@ const userSchema = new mongoose.Schema({
         amount: Number, date: { type: Date, default: Date.now }, note: String, 
         status: String, failReason: String, isGoal: { type: Boolean, default: false }, 
         paymentMethod: String, receiptNameUsed: String, receiptTZUsed: String,
-        receiptUrl: String // Added to store receipt link
+        receiptUrl: String
     }],
     pendingDonations: [{ amount: Number, date: { type: Date, default: Date.now }, note: String }],
     tempCode: String
@@ -131,10 +131,12 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
     const safePhone = (user.phone || "0500000000").replace(/\D/g, '');
     let uniqueId = user.tz && user.tz.length > 5 ? user.tz : safePhone;
     
+    // Fixed: Details is always empty string now
     let tranData = {
         Total: amountInAgorot, Currency: 1, ParamJ: "J4", TransactionType: "debit", CreditType: 1,
         ProjectNumber: "00001", Phone: safePhone, FirstName: user.name || "Torem", LastName: " ",
-        Mail: user.email || "no@mail.com", ClientApiIdentity: uniqueId, Id: uniqueId, Details: note || ""
+        Mail: user.email || "no@mail.com", ClientApiIdentity: uniqueId, Id: uniqueId, 
+        Details: "" // <--- MODIFIED HERE: Always send empty string
     };
 
     let finalExpiry = "", currentCardDigits = "";
@@ -169,9 +171,6 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
 
     const isSuccess = res.data.RequestResult?.Status === true || res.data.Status === true;
 
-    // Extract Receipt URL if available
-    // Kesher usually returns 'CopyDoc' or 'OriginalDoc' for the receipt PDF link
-    // Also checking inside DocumentsDetails array as per provided JSON structure
     let receiptUrl = res.data.CopyDoc || res.data.OriginalDoc || null;
     
     if (!receiptUrl && res.data.DocumentsDetails && res.data.DocumentsDetails.DocumentDetails && res.data.DocumentsDetails.DocumentDetails.length > 0) {
@@ -184,11 +183,11 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
         token: res.data.Token, 
         finalExpiry, currentCardDigits, 
         paymentMethod: 'cc',
-        receiptUrl: receiptUrl // Pass back the receipt URL
+        receiptUrl: receiptUrl
     };
 }
 
-// --- Bank Obligation (EXACTLY MATCHING YOUR CURL) ---
+// --- Bank Obligation ---
 async function createBankObligation(user, amount, note) {
     if (!user.bankDetails || !user.bankDetails.accountId) throw new Error("חסרים פרטי בנק");
     
@@ -196,8 +195,8 @@ async function createBankObligation(user, amount, note) {
         ClientApiIdentity: null, 
         Signature: null,
         Account: parseInt(user.bankDetails.accountId), 
-        Branch: parseInt(user.bankDetails.branchId),   
-        Bank: parseInt(user.bankDetails.bankId),       
+        Branch: parseInt(user.bankDetails.branchId),    
+        Bank: parseInt(user.bankDetails.bankId),        
         Address: "Israel",
         City: null,
         Total: parseFloat(amount), 
@@ -230,7 +229,6 @@ async function createBankObligation(user, amount, note) {
     
     const isSuccess = !res.data.error && (res.data.status !== 'error');
     
-    // Check for receipt URL in bank response too
     let receiptUrl = res.data.CopyDoc || res.data.OriginalDoc || null;
     if (!receiptUrl && res.data.DocumentsDetails && res.data.DocumentsDetails.DocumentDetails && res.data.DocumentsDetails.DocumentDetails.length > 0) {
         receiptUrl = res.data.DocumentsDetails.DocumentDetails[0].PdfLinkCopy || res.data.DocumentsDetails.DocumentDetails[0].PdfLink;
@@ -283,7 +281,7 @@ cron.schedule('0 8 * * *', async () => {
                     try {
                         let r;
                         if(isBank) {
-                            r = { success: true, paymentMethod: 'bank' }; // Simulated for cron (usually file based)
+                            r = { success: true, paymentMethod: 'bank' }; 
                         } else {
                             r = await chargeCreditCard(u, amountToCharge, "הוראת קבע יומית");
                         }
@@ -295,7 +293,7 @@ cron.schedule('0 8 * * *', async () => {
                                 note: "יומי קבוע", 
                                 status: "success", 
                                 paymentMethod: r.paymentMethod,
-                                receiptUrl: r.receiptUrl // Save receipt if available
+                                receiptUrl: r.receiptUrl
                             });
                         } else {
                             u.donationsHistory.push({ amount: amountToCharge, note: "יומי קבוע", status: "failed", failReason: r.data?.error || "תקלה", paymentMethod: isBank?'bank':'cc' });
@@ -320,9 +318,9 @@ cron.schedule('0 8 * * *', async () => {
                 try {
                     let r;
                     if(isBank) {
-                         r = { success: true, paymentMethod: 'bank' }; 
+                          r = { success: true, paymentMethod: 'bank' }; 
                     } else {
-                         r = await chargeCreditCard(u, totalToCharge, "חיוב סל ממתין");
+                          r = await chargeCreditCard(u, totalToCharge, "חיוב סל ממתין");
                     }
 
                     if (r.success) {
@@ -334,7 +332,7 @@ cron.schedule('0 8 * * *', async () => {
                                 status: "success", 
                                 date: new Date(), 
                                 paymentMethod: r.paymentMethod,
-                                receiptUrl: r.receiptUrl // Save receipt
+                                receiptUrl: r.receiptUrl 
                             }); 
                         });
                         u.pendingDonations = []; 
