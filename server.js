@@ -140,6 +140,12 @@ async function getReceiptFromKesher(transactionNum) {
             format: "json"
         }, { validateStatus: () => true });
 
+        // Add protection against null response
+        if (!res.data) {
+            console.log("⚠️ Receipt API returned empty data");
+            return null;
+        }
+
         // Try to extract PDF link from GetTranData response
         let link = res.data.CopyDoc || res.data.OriginalDoc || null;
         if (!link && res.data.DocumentsDetails && res.data.DocumentsDetails.DocumentDetails && res.data.DocumentsDetails.DocumentDetails.length > 0) {
@@ -202,8 +208,9 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
 
     const isSuccess = res.data.RequestResult?.Status === true || res.data.Status === true;
 
-    // Identify Transaction ID
-    const transId = res.data.TransactionId || res.data.RequestResult?.TransactionId || res.data.Id;
+    // Identify Transaction ID - Corrected logic to avoid grabbing User ID (uniqueId)
+    // We prioritize the inner TransactionId which is the actual system ID
+    const transId = res.data.RequestResult?.TransactionId || res.data.TransactionId;
     
     let receiptUrl = res.data.CopyDoc || res.data.OriginalDoc || null;
     if (!receiptUrl && res.data.DocumentsDetails && res.data.DocumentsDetails.DocumentDetails && res.data.DocumentsDetails.DocumentDetails.length > 0) {
@@ -211,6 +218,7 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
     }
 
     // Explicit request: Call GetTranData to ensure receipt is fetched
+    // Only if we found a valid Transaction ID (not the user ID)
     if (isSuccess && transId) {
         const extraReceiptUrl = await getReceiptFromKesher(transId);
         if (extraReceiptUrl) receiptUrl = extraReceiptUrl;
@@ -273,7 +281,7 @@ async function createBankObligation(user, amount, note) {
     const isSuccess = !res.data.error && (res.data.status !== 'error');
     
     // Identify Transaction ID (if returned by Bank Obligation)
-    const transId = res.data.TransactionId || res.data.RequestResult?.TransactionId || res.data.Id;
+    const transId = res.data.RequestResult?.TransactionId || res.data.TransactionId;
 
     let receiptUrl = res.data.CopyDoc || res.data.OriginalDoc || null;
     if (!receiptUrl && res.data.DocumentsDetails && res.data.DocumentsDetails.DocumentDetails && res.data.DocumentsDetails.DocumentDetails.length > 0) {
