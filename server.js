@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const admin = require('firebase-admin');
 const cron = require('node-cron');
 const path = require('path');
+const { PDFDocument } = require('pdf-lib'); // Required: npm install pdf-lib
 const app = express();
 
 app.use(express.json({ limit: '10mb' }));
@@ -70,7 +71,7 @@ const userSchema = new mongoose.Schema({
     tz: String,
     receiptName: { type: String, default: "" },
     receiptTZ: { type: String, default: "" },
-    receiptMode: { type: Number, default: 0 }, 
+    receiptMode: { type: Number, default: 0 }, // 0=User Name, 1=Receipt Details, 2=Ask
     maaserActive: { type: Boolean, default: false },
     maaserRate: { type: Number, default: 10 },
     maaserIncome: { type: Number, default: 0 },
@@ -99,7 +100,7 @@ const userSchema = new mongoose.Schema({
         paymentMethod: String, 
         receiptNameUsed: String, 
         receiptTZUsed: String,
-        receiptUrl: String // Stores the PDF link
+        receiptUrl: String 
     }],
     pendingDonations: [{ amount: Number, date: { type: Date, default: Date.now }, note: String }],
     tempCode: String
@@ -133,64 +134,57 @@ async function getActiveToken(user) {
 
 function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
-// --- Helper: Robust Receipt Extraction ---
 function searchForReceiptLink(data) {
     if (!data) return null;
-    
-    // Parse if string
-    if (typeof data === 'string') {
-        try { data = JSON.parse(data); } catch(e) {}
-    }
+    if (typeof data === 'string') { try { data = JSON.parse(data); } catch(e) {} }
 
-    // 1. Check known specific path from your logs
+    // 1. Check known specific path
     if (data.DocumentsDetails && data.DocumentsDetails.DocumentDetails) {
         const docs = Array.isArray(data.DocumentsDetails.DocumentDetails) 
             ? data.DocumentsDetails.DocumentDetails 
             : [data.DocumentsDetails.DocumentDetails];
         if (docs.length > 0) {
-            // Prefer Copy if available
-            if (docs[0].PdfLinkCopy) return docs[0].PdfLinkCopy;
-            if (docs[0].PdfLink) return docs[0].PdfLink;
+            if (docs[0].PdfLinkCopy && docs[0].PdfLinkCopy.startsWith('http')) return docs[0].PdfLinkCopy;
+            if (docs[0].PdfLink && docs[0].PdfLink.startsWith('http')) return docs[0].PdfLink;
         }
     }
-
     // 2. Check root level
-    if (data.CopyDoc) return data.CopyDoc;
-    if (data.OriginalDoc) return data.OriginalDoc;
-
-    // 3. Deep search fallback
+    if (data.CopyDoc && typeof data.CopyDoc === 'string' && data.CopyDoc.startsWith('http')) return data.CopyDoc;
+    if (data.OriginalDoc && typeof data.OriginalDoc === 'string' && data.OriginalDoc.startsWith('http')) return data.OriginalDoc;
+    
+    // 3. Deep search
     let found = null;
     function walk(obj) {
         if (found) return;
         if (typeof obj !== 'object' || obj === null) return;
-        
         if (obj.PdfLinkCopy && typeof obj.PdfLinkCopy === 'string' && obj.PdfLinkCopy.startsWith('http')) { found = obj.PdfLinkCopy; return; }
         if (obj.PdfLink && typeof obj.PdfLink === 'string' && obj.PdfLink.startsWith('http')) { found = obj.PdfLink; return; }
-        
-        for (let k in obj) {
-            if (typeof obj[k] === 'object') walk(obj[k]);
-        }
+        for (let k in obj) { if (typeof obj[k] === 'object') walk(obj[k]); }
     }
     walk(data);
     return found;
 }
 
-// --- Credit Card Charge ---
-async function chargeCreditCard(user, amount, note, creditDetails = null) {
+// --- Charge Functions ---
+
+async function chargeCreditCard(user, amount, note, creditDetails = null, customReceiptName = null) {
     const amountInAgorot = Math.round(parseFloat(amount) * 100);
     const safePhone = (user.phone || "0500000000").replace(/\D/g, '');
     let uniqueId = user.tz && user.tz.length > 5 ? user.tz : safePhone;
     
-    // Correct Name Logic: Prefer ReceiptName if set, otherwise User Name
+    // Logic for Receipt Name
     let finalReceiptName = user.name || "Torem";
-    if (user.receiptName && user.receiptName.trim() !== "") {
-        finalReceiptName = user.receiptName;
+    if (customReceiptName) {
+        finalReceiptName = customReceiptName; // Override from Mode 2
+    } else if (user.receiptMode === 1 && user.receiptName) {
+        finalReceiptName = user.receiptName; // Mode 1: Always use receipt details
     }
+    // Mode 0 falls back to user.name (initialized above)
     
     let tranData = {
         Total: amountInAgorot, Currency: 1, ParamJ: "J4", TransactionType: "debit", CreditType: 1,
         ProjectNumber: "00001", Phone: safePhone, 
-        FirstName: finalReceiptName, // Use preferred receipt name
+        FirstName: finalReceiptName, 
         LastName: " ",
         Mail: user.email || "no@mail.com", ClientApiIdentity: uniqueId, Id: uniqueId, Details: note || ""
     };
@@ -216,20 +210,20 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
     }
 
     const sortedTran = sortObjectKeys(tranData);
-    console.log(`🚀 Sending CC Charge:`, JSON.stringify(sortedTran));
-
     const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
         Json: { userName: '2181420WS2087', password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', func: "SendTransaction", format: "json", tran: sortedTran },
         format: "json"
     }, { validateStatus: () => true });
 
-    console.log(`📩 CC Response:`, JSON.stringify(res.data));
+    // DELAY AS REQUESTED
+    if (res.data.RequestResult?.Status === true || res.data.Status === true) {
+        console.log("⏳ Waiting 10s for receipt generation...");
+        await new Promise(resolve => setTimeout(resolve, 10000));
+    }
 
     const isSuccess = res.data.RequestResult?.Status === true || res.data.Status === true;
     const receiptUrl = searchForReceiptLink(res.data);
     
-    console.log(`🧾 Receipt Found? ${receiptUrl || 'NONE'}`);
-
     return { 
         success: isSuccess, 
         data: res.data, 
@@ -237,33 +231,34 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
         finalExpiry, currentCardDigits, 
         paymentMethod: 'cc',
         receiptUrl: receiptUrl,
-        receiptNameUsed: finalReceiptName // Pass back used name
+        receiptNameUsed: finalReceiptName
     };
 }
 
-// --- Bank Obligation (SendBankObligation) ---
-async function createBankObligation(user, amount, note, isRecurring = false) {
+async function createBankObligation(user, amount, note, isRecurring = false, customReceiptName = null) {
     if (!user.bankDetails || !user.bankDetails.accountId) throw new Error("חסרים פרטי בנק");
     
     // Check existing mandate
     if (user.bankDetails.isSetup && user.bankDetails.status === 'active') {
-        console.log(`🏦 Bank mandate exists. Recording transaction locally.`);
-        // Note: If you want to force charge via API on existing mandate, you'd need a different call.
-        // For now, assuming local record for Masav file.
+        console.log(`🏦 Bank mandate exists.`);
         return {
             success: true,
             data: { message: "Existing mandate used" },
             paymentMethod: 'bank',
-            receiptUrl: null // No immediate receipt for local record
+            receiptUrl: null 
         };
     }
 
     const totalAmount = parseFloat(amount); 
     
-    // Correct Name Logic: Prefer ReceiptName if set, otherwise Owner Name, otherwise User Name
+    // Logic for Receipt Name
     let finalReceiptName = user.bankDetails.ownerName || user.name || "Donor";
-    if (user.receiptName && user.receiptName.trim() !== "") {
+    if (customReceiptName) {
+        finalReceiptName = customReceiptName;
+    } else if (user.receiptMode === 1 && user.receiptName) {
         finalReceiptName = user.receiptName;
+    } else if (user.receiptMode === 0) {
+        finalReceiptName = user.name; // Explicitly use User Name for Mode 0
     }
 
     const bankPayload = {
@@ -278,14 +273,14 @@ async function createBankObligation(user, amount, note, isRecurring = false) {
         Currency: 1,
         Phone: (user.phone || "00000000").replace(/\D/g, ''),
         Comment1: note || "",
-        FirstName: finalReceiptName, // Use preferred receipt name
+        FirstName: finalReceiptName,
         LastName: null,
         ProjectNumber: "1",
         Mail: user.email || "no@mail.com",
-        ReceiptName: finalReceiptName, // Ensure ReceiptName field is also populated
+        ReceiptName: finalReceiptName, 
         ReceiptFor: "",
         TransactionDate: new Date().toISOString().split('T')[0],
-        NumPayment: 9999,
+        NumPayment: isRecurring ? 9999 : 1, // 1 for one-time
         UserId: user.bankDetails.ownerID || user.tz || "000000000" 
     };
 
@@ -301,7 +296,11 @@ async function createBankObligation(user, amount, note, isRecurring = false) {
         format: "json"
     }, { validateStatus: () => true });
 
-    console.log("Kesher Bank Response:", JSON.stringify(res.data));
+    // DELAY AS REQUESTED
+    if (!res.data.error && res.data.status !== 'error') {
+        console.log("⏳ Waiting 10s for receipt/setup...");
+        await new Promise(resolve => setTimeout(resolve, 10000));
+    }
     
     const isSuccess = !res.data.error && (res.data.status !== 'error');
     const receiptUrl = searchForReceiptLink(res.data);
@@ -322,22 +321,22 @@ async function createBankObligation(user, amount, note, isRecurring = false) {
 }
 
 // Unified Charge Router
-async function performCharge(user, amount, note, forceCC = false, creditDetails = null) {
-    // If Bank preferred AND no specific credit details provided, use Bank
-    if (user.preferredPaymentMethod === 'bank' && !creditDetails && !forceCC) {
+async function performCharge(user, amount, note, forceCC = false, creditDetails = null, customReceiptName = null) {
+    if (forceCC || user.preferredPaymentMethod === 'cc' || creditDetails) {
+        return await chargeCreditCard(user, amount, note, creditDetails, customReceiptName);
+    } else if (user.preferredPaymentMethod === 'bank') {
          if (!user.bankDetails || user.bankDetails.status !== 'active') throw new Error("אין הרשאה בנקאית מאושרת");
          const isRecurring = (note && note.includes("קבוע"));
-         // FIX 1: Direct to createBankObligation, NOT chargeCreditCard
-         return await createBankObligation(user, amount, note, isRecurring);
-    } 
-    // Otherwise default to CC
-    else {
-        return await chargeCreditCard(user, amount, note, creditDetails);
+         // Fix: If bank, call createBankObligation (which handles setup/charge logic)
+         return await createBankObligation(user, amount, note, isRecurring, customReceiptName);
+    } else {
+        throw new Error("לא נבחר אמצעי תשלום");
     }
 }
 
 // --- Cron Job ---
 cron.schedule('0 8 * * *', async () => {
+    const today = new Date().getDate(); 
     const users = await User.find({}); 
     for (const u of users) {
         let saveUser = false;
@@ -360,9 +359,8 @@ cron.schedule('0 8 * * *', async () => {
             if (u.recurringImmediate === true || u.billingPreference === 0) {
                 if(canCharge) {
                     try {
-                        // FIX: Use performCharge to route correctly
+                        // Use performCharge to respect bank setting
                         const r = await performCharge(u, amountToCharge, "הוראת קבע יומית"); 
-
                         if (r.success) {
                             u.totalDonated += amountToCharge;
                             u.donationsHistory.push({ 
@@ -389,9 +387,7 @@ cron.schedule('0 8 * * *', async () => {
 
             if (totalToCharge > 0 && canCharge) {
                 try {
-                     // FIX: Use performCharge to route correctly
                     const r = await performCharge(u, totalToCharge, "חיוב סל ממתין");
-
                     if (r.success) {
                         u.totalDonated += totalToCharge;
                         u.pendingDonations.forEach(d => { 
@@ -504,7 +500,48 @@ app.post('/update-code', async (req, res) => { let { email, phone, code } = req.
 app.post('/send-verification', async (req, res) => { try { await axios.post('https://api.emailjs.com/api/v1.0/email/send', { service_id: 'service_8f6h188', template_id: 'template_tzbq0k4', user_id: 'yLYooSdg891aL7etD', template_params: { email: req.body.email, code: req.body.code }, accessToken: "b-Dz-J0Iq_yJvCfqX5Iw3" }); res.json({ success: true }); } catch(e) { res.json({ success: false }); } });
 app.post('/verify-auth', async (req, res) => { let { email, phone, code } = req.body; if(code === 'check') return res.json({ success: true }); let u = await User.findOne(email ? { email: email.toLowerCase().trim() } : { phone: phone.replace(/\D/g, '').trim() }); if (u && String(u.tempCode).trim() === String(code).trim()) res.json({ success: true, user: u }); else res.json({ success: false }); });
 app.post('/login-by-id', async (req, res) => { try { let user = await User.findById(req.body.userId); if(user) { if ((!user.cards || user.cards.length === 0) && user.token) { user.cards.push({ token: user.token, lastDigits: user.lastCardDigits, expiry: user.lastExpiry, active: true }); user.token = ""; await user.save(); } res.json({ success: true, user }); } else res.json({ success: false }); } catch(e) { res.json({ success: false }); } });
-app.post('/donate', async (req, res) => { const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin, isGoalDonation, useReceiptDetails } = req.body; let u = await User.findById(userId); if (u.securityPin && u.securityPin.trim() !== "") { if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד שגוי" }); } let shouldChargeNow = (isGoalDonation === true) || (forceImmediate === true) ? true : (u.billingPreference === 0 && forceImmediate !== false); if (shouldChargeNow) { try { if (u.preferredPaymentMethod === 'bank' && u.bankDetails.dailyLimit > 0 && parseFloat(amount) > u.bankDetails.dailyLimit) return res.json({ success: false, error: "חריגה מתקרה יומית" }); const r = await performCharge(u, amount, note, false, ccDetails); if (r.success) { u.totalDonated += parseFloat(amount); u.donationsHistory.push({ amount: parseFloat(amount), note, date: new Date(), status: 'success', isGoal: isGoalDonation === true, receiptNameUsed: r.receiptNameUsed, receiptTZUsed: r.receiptTZUsed, paymentMethod: r.paymentMethod, receiptUrl: r.receiptUrl }); await u.save(); if (isGoalDonation) await GlobalGoal.findOneAndUpdate({ id: 'main_goal' }, { $inc: { currentAmount: parseFloat(amount) } }); res.json({ success: true, message: "תרומה התקבלה!" }); } else res.json({ success: false, error: r.data?.Description || r.data?.error || "סירוב" }); } catch(e) { res.json({ success: false, error: e.message }); } } else { u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() }); await u.save(); res.json({ success: true, message: "נוסף לסל" }); } });
+
+// Donate Route - Updates for correct bank logic and receipt name
+app.post('/donate', async (req, res) => { 
+    const { userId, amount, useToken, note, forceImmediate, ccDetails, providedPin, isGoalDonation, useReceiptDetails, customReceiptName } = req.body; 
+    let u = await User.findById(userId); 
+    if (u.securityPin && u.securityPin.trim() !== "") { if (String(providedPin).trim() !== String(u.securityPin).trim()) return res.json({ success: false, error: "קוד שגוי" }); } 
+    
+    // Payment Logic
+    let shouldChargeNow = (isGoalDonation === true) || (forceImmediate === true) ? true : (u.billingPreference === 0 && forceImmediate !== false);
+    if (shouldChargeNow) {
+        try {
+            // Check Bank Limit
+            if (u.preferredPaymentMethod === 'bank' && u.bankDetails.dailyLimit > 0 && parseFloat(amount) > u.bankDetails.dailyLimit) {
+                return res.json({ success: false, error: "חריגה מתקרה יומית" });
+            }
+            // Pass customReceiptName
+            const r = await performCharge(u, amount, note, false, ccDetails, customReceiptName);
+            if (r.success) {
+                u.totalDonated += parseFloat(amount);
+                u.donationsHistory.push({ 
+                    amount: parseFloat(amount), 
+                    note, 
+                    date: new Date(), 
+                    status: 'success', 
+                    isGoal: isGoalDonation === true, 
+                    receiptNameUsed: r.receiptNameUsed, 
+                    receiptTZUsed: r.receiptTZUsed, 
+                    paymentMethod: r.paymentMethod, 
+                    receiptUrl: r.receiptUrl 
+                });
+                await u.save();
+                if (isGoalDonation) await GlobalGoal.findOneAndUpdate({ id: 'main_goal' }, { $inc: { currentAmount: parseFloat(amount) } });
+                res.json({ success: true, message: "תרומה התקבלה!" });
+            } else res.json({ success: false, error: r.data?.Description || r.data?.error || "סירוב" });
+        } catch(e) { res.json({ success: false, error: e.message }); }
+    } else {
+        u.pendingDonations.push({ amount: parseFloat(amount), note, date: new Date() });
+        await u.save();
+        res.json({ success: true, message: "נוסף לסל" });
+    }
+});
+
 app.post('/delete-pending', async (req, res) => { const u = await User.findById(req.body.userId); if (u.canRemoveFromBasket === false) return res.json({ success: false, error: "ננעל" }); await User.findByIdAndUpdate(req.body.userId, { $pull: { pendingDonations: { _id: req.body.donationId } } }); res.json({ success: true }); });
 app.post('/admin/update-profile', async (req, res) => { try { const { userId, name, phone, email, tz, billingPreference, recurringDailyAmount, securityPin, recurringImmediate, newCardDetails, canRemoveFromBasket, activeCardId, deleteCardId, addManualCardData, receiptName, receiptTZ, receiptMode, maaserActive, maaserRate, maaserIncome, showTaxWidget, preferredPaymentMethod } = req.body; let u = await User.findById(userId); if (deleteCardId) { u.cards = u.cards.filter(c => c._id.toString() !== deleteCardId); if (!u.cards.some(c => c.active) && u.cards.length > 0) u.cards[0].active = true; } if (activeCardId) u.cards.forEach(c => c.active = (c._id.toString() === activeCardId)); if (newCardDetails && newCardDetails.num) { try { const r = await chargeCreditCard(u, 0.1, "בדיקה", newCardDetails); if (r.success || r.token) { u.cards.forEach(c => c.active = false); u.cards.push({ token: fixToken(r.token), lastDigits: r.currentCardDigits, expiry: r.finalExpiry, active: true }); if(r.success) { u.totalDonated += 0.1; u.donationsHistory.push({ amount: 0.1, note: "בדיקה", status: 'success', date: new Date() }); } } else return res.json({ success: false, error: "אימות נכשל" }); } catch(e) { return res.json({ success: false, error: e.message }); } } if (addManualCardData) { u.cards.forEach(c => c.active = false); u.cards.push({ token: fixToken(addManualCardData.token), lastDigits: addManualCardData.lastDigits, expiry: addManualCardData.expiry, active: true }); } if(name) u.name = name; if(phone) u.phone = phone; if(email) u.email = email; if(tz) u.tz = tz; u.billingPreference = parseInt(billingPreference)||0; u.recurringDailyAmount = parseInt(recurringDailyAmount)||0; u.recurringImmediate = recurringImmediate===true; u.securityPin = securityPin; u.canRemoveFromBasket = canRemoveFromBasket; if(receiptName !== undefined) u.receiptName = receiptName; if(receiptTZ !== undefined) u.receiptTZ = receiptTZ; if(receiptMode !== undefined) u.receiptMode = parseInt(receiptMode); if(maaserActive !== undefined) u.maaserActive = maaserActive; if(maaserRate !== undefined) u.maaserRate = parseInt(maaserRate); if(maaserIncome !== undefined) u.maaserIncome = parseInt(maaserIncome); if(showTaxWidget !== undefined) u.showTaxWidget = showTaxWidget; if(preferredPaymentMethod) u.preferredPaymentMethod = preferredPaymentMethod; await u.save(); res.json({ success: true }); } catch(e) { res.status(500).json({ success: false, error: e.message }); } });
 const PASS = "admin1234";
@@ -522,8 +559,8 @@ app.post('/admin/send-push', async (req, res) => { if(req.body.password !== PASS
 app.post('/save-push-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { fcmToken: req.body.token }); res.json({ success: true }); });
 app.post('/reset-token', async (req, res) => { await User.findByIdAndUpdate(req.body.userId, { token: "", lastCardDigits: "" }); res.json({ success: true }); });
 
-// NEW ENDPOINT: Download Receipts List
-app.post('/user/download-receipts', async (req, res) => {
+// NEW ENDPOINT: Merge Receipts
+app.post('/user/download-receipts-merged', async (req, res) => {
     try {
         const { userId, fromDate, toDate } = req.body;
         const u = await User.findById(userId);
@@ -533,11 +570,31 @@ app.post('/user/download-receipts', async (req, res) => {
         let end = toDate ? new Date(toDate) : new Date();
         end.setHours(23, 59, 59, 999);
 
-        const links = u.donationsHistory
+        // Filter links
+        const urls = u.donationsHistory
             .filter(d => d.status === 'success' && d.receiptUrl && new Date(d.date) >= start && new Date(d.date) <= end)
-            .map(d => ({ date: new Date(d.date).toLocaleDateString(), amount: d.amount, url: d.receiptUrl }));
+            .map(d => d.receiptUrl);
             
-        res.json({ success: true, links });
+        if (urls.length === 0) return res.json({ success: false, error: "No receipts found" });
+
+        // Merge Logic using pdf-lib
+        const mergedPdf = await PDFDocument.create();
+        for (const url of urls) {
+            try {
+                const pdfBytes = await axios.get(url, { responseType: 'arraybuffer' });
+                const pdf = await PDFDocument.load(pdfBytes.data);
+                const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+                copiedPages.forEach((page) => mergedPdf.addPage(page));
+            } catch (err) {
+                console.error("Error merging PDF:", url, err.message);
+            }
+        }
+        
+        const mergedPdfBytes = await mergedPdf.save();
+        const base64Pdf = Buffer.from(mergedPdfBytes).toString('base64');
+        
+        res.json({ success: true, pdfBase64: base64Pdf });
+
     } catch(e) { res.json({ success: false, error: e.message }); }
 });
 
