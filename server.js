@@ -210,7 +210,8 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
 
     // Identify Transaction ID - Corrected logic to avoid grabbing User ID (uniqueId)
     // We prioritize the inner TransactionId which is the actual system ID
-    const transId = res.data.RequestResult?.TransactionId || res.data.TransactionId;
+    // Added res.data.NumTransaction based on user log
+    const transId = res.data.RequestResult?.TransactionId || res.data.TransactionId || res.data.NumTransaction;
     
     let receiptUrl = res.data.CopyDoc || res.data.OriginalDoc || null;
     if (!receiptUrl && res.data.DocumentsDetails && res.data.DocumentsDetails.DocumentDetails && res.data.DocumentsDetails.DocumentDetails.length > 0) {
@@ -281,7 +282,8 @@ async function createBankObligation(user, amount, note) {
     const isSuccess = !res.data.error && (res.data.status !== 'error');
     
     // Identify Transaction ID (if returned by Bank Obligation)
-    const transId = res.data.RequestResult?.TransactionId || res.data.TransactionId;
+    // Added res.data.NumTransaction here too just in case
+    const transId = res.data.RequestResult?.TransactionId || res.data.TransactionId || res.data.NumTransaction;
 
     let receiptUrl = res.data.CopyDoc || res.data.OriginalDoc || null;
     if (!receiptUrl && res.data.DocumentsDetails && res.data.DocumentsDetails.DocumentDetails && res.data.DocumentsDetails.DocumentDetails.length > 0) {
