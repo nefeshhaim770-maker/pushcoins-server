@@ -55,7 +55,7 @@ const bankDetailsSchema = new mongoose.Schema({
     signature: String,
     authFile: String,
     submissionType: String,
-    status: { type: String, default: 'none' }, // none, pending, active, rejected
+    status: { type: String, default: 'none' }, 
     dailyLimit: { type: Number, default: 0 }, 
     validUntil: { type: Date }, 
     approvedDate: Date,
@@ -133,31 +133,46 @@ async function getActiveToken(user) {
 
 function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
-// --- Helper: Specific Receipt Extraction based on your Log ---
-function getReceiptLinkFromResponse(data) {
+// --- Helper: Robust Receipt Extraction ---
+function searchForReceiptLink(data) {
     if (!data) return null;
-    console.log("🔍 Scanning for receipt in response...");
+    
+    // Parse if string
+    if (typeof data === 'string') {
+        try { data = JSON.parse(data); } catch(e) {}
+    }
 
-    // 1. Exact path from your provided JSON log:
-    // DocumentsDetails -> DocumentDetails (Array) -> [0] -> PdfLinkCopy / PdfLink
+    // 1. Check known specific path from your logs
     if (data.DocumentsDetails && data.DocumentsDetails.DocumentDetails) {
         const docs = Array.isArray(data.DocumentsDetails.DocumentDetails) 
             ? data.DocumentsDetails.DocumentDetails 
             : [data.DocumentsDetails.DocumentDetails];
-            
         if (docs.length > 0) {
-            const doc = docs[0];
-            // Prefer Copy if available, else original
-            if (doc.PdfLinkCopy && doc.PdfLinkCopy.startsWith('http')) return doc.PdfLinkCopy;
-            if (doc.PdfLink && doc.PdfLink.startsWith('http')) return doc.PdfLink;
+            // Prefer Copy if available
+            if (docs[0].PdfLinkCopy) return docs[0].PdfLinkCopy;
+            if (docs[0].PdfLink) return docs[0].PdfLink;
         }
     }
 
-    // 2. Root level fallbacks (Common in older Kesher versions)
-    if (data.CopyDoc && typeof data.CopyDoc === 'string' && data.CopyDoc.startsWith('http')) return data.CopyDoc;
-    if (data.OriginalDoc && typeof data.OriginalDoc === 'string' && data.OriginalDoc.startsWith('http')) return data.OriginalDoc;
-    
-    return null;
+    // 2. Check root level
+    if (data.CopyDoc) return data.CopyDoc;
+    if (data.OriginalDoc) return data.OriginalDoc;
+
+    // 3. Deep search fallback
+    let found = null;
+    function walk(obj) {
+        if (found) return;
+        if (typeof obj !== 'object' || obj === null) return;
+        
+        if (obj.PdfLinkCopy && typeof obj.PdfLinkCopy === 'string' && obj.PdfLinkCopy.startsWith('http')) { found = obj.PdfLinkCopy; return; }
+        if (obj.PdfLink && typeof obj.PdfLink === 'string' && obj.PdfLink.startsWith('http')) { found = obj.PdfLink; return; }
+        
+        for (let k in obj) {
+            if (typeof obj[k] === 'object') walk(obj[k]);
+        }
+    }
+    walk(data);
+    return found;
 }
 
 // --- Credit Card Charge ---
@@ -193,20 +208,19 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
     }
 
     const sortedTran = sortObjectKeys(tranData);
-    console.log(`🚀 Sending CC Charge for ${user.name}:`, JSON.stringify(sortedTran));
+    console.log(`🚀 Sending CC Charge:`, JSON.stringify(sortedTran));
 
     const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
         Json: { userName: '2181420WS2087', password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', func: "SendTransaction", format: "json", tran: sortedTran },
         format: "json"
     }, { validateStatus: () => true });
 
-    console.log(`📩 CC Response for ${user.name}:`, JSON.stringify(res.data));
+    console.log(`📩 CC Response:`, JSON.stringify(res.data));
 
     const isSuccess = res.data.RequestResult?.Status === true || res.data.Status === true;
-    const receiptUrl = getReceiptLinkFromResponse(res.data);
+    const receiptUrl = searchForReceiptLink(res.data);
     
-    if (receiptUrl) console.log(`✅ Receipt Link Found: ${receiptUrl}`);
-    else console.log(`⚠️ No Receipt Link Found in response`);
+    console.log(`🧾 Receipt Found: ${receiptUrl || 'NONE'}`);
 
     return { 
         success: isSuccess, 
@@ -218,22 +232,21 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
     };
 }
 
-// --- Bank Obligation (SendBankObligation) ---
+// --- Bank Obligation ---
 async function createBankObligation(user, amount, note, isRecurring = false) {
     if (!user.bankDetails || !user.bankDetails.accountId) throw new Error("חסרים פרטי בנק");
     
-    // Check existing mandate to avoid spamming setup
+    // Check existing
     if (user.bankDetails.isSetup && user.bankDetails.status === 'active') {
-        console.log(`🏦 Bank mandate exists. Recording transaction locally.`);
+        console.log(`🏦 Bank mandate exists. Recording locally.`);
         return {
             success: true,
             data: { message: "Existing mandate used" },
             paymentMethod: 'bank',
-            receiptUrl: null // No immediate receipt for local record
+            receiptUrl: null
         };
     }
 
-    // New Mandate Setup
     const totalAmount = parseFloat(amount); 
 
     const bankPayload = {
@@ -256,7 +269,7 @@ async function createBankObligation(user, amount, note, isRecurring = false) {
         ReceiptFor: "",
         TransactionDate: new Date().toISOString().split('T')[0],
         NumPayment: 9999,
-        UserId: user.bankDetails.ownerID || user.tz || "000000000" // FIXED: UserId
+        UserId: user.bankDetails.ownerID || user.tz || "000000000" 
     };
 
     console.log(`🏦 Sending Bank Payload:`, JSON.stringify(bankPayload));
@@ -274,7 +287,7 @@ async function createBankObligation(user, amount, note, isRecurring = false) {
     console.log("Kesher Bank Response:", JSON.stringify(res.data));
     
     const isSuccess = !res.data.error && (res.data.status !== 'error');
-    const receiptUrl = getReceiptLinkFromResponse(res.data);
+    const receiptUrl = searchForReceiptLink(res.data);
 
     if(isSuccess) {
         user.bankDetails.isSetup = true;
