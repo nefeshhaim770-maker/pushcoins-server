@@ -99,7 +99,7 @@ const userSchema = new mongoose.Schema({
         paymentMethod: String, 
         receiptNameUsed: String, 
         receiptTZUsed: String,
-        receiptUrl: String // Stores receipt link
+        receiptUrl: String // THIS STORES THE PDF LINK
     }],
     pendingDonations: [{ amount: Number, date: { type: Date, default: Date.now }, note: String }],
     tempCode: String
@@ -133,17 +133,25 @@ async function getActiveToken(user) {
 
 function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
-// --- Helper: Extract Receipt URL ---
-function getReceiptLinkFromResponse(data) {
+// --- Helper: Robust Receipt Extraction ---
+function extractReceiptUrl(data) {
     if (!data) return null;
-    // Prioritize CopyDoc (usually PDF), then OriginalDoc, then nested
-    if (data.CopyDoc) return data.CopyDoc;
-    if (data.OriginalDoc) return data.OriginalDoc;
-    
-    if (data.DocumentsDetails && data.DocumentsDetails.DocumentDetails && Array.isArray(data.DocumentsDetails.DocumentDetails)) {
-        const docs = data.DocumentsDetails.DocumentDetails;
+    console.log("🔍 Extracting Receipt from:", JSON.stringify(data).substring(0, 200) + "...");
+
+    // 1. Direct fields (Common in older Kesher versions)
+    if (data.CopyDoc && data.CopyDoc.startsWith('http')) return data.CopyDoc;
+    if (data.OriginalDoc && data.OriginalDoc.startsWith('http')) return data.OriginalDoc;
+
+    // 2. Nested DocumentsDetails (As per your screenshot)
+    if (data.DocumentsDetails && data.DocumentsDetails.DocumentDetails) {
+        const docs = Array.isArray(data.DocumentsDetails.DocumentDetails) 
+            ? data.DocumentsDetails.DocumentDetails 
+            : [data.DocumentsDetails.DocumentDetails]; // Handle if single object
+            
         if (docs.length > 0) {
-            return docs[0].PdfLinkCopy || docs[0].PdfLink;
+            const doc = docs[0];
+            if (doc.PdfLinkCopy && doc.PdfLinkCopy.startsWith('http')) return doc.PdfLinkCopy;
+            if (doc.PdfLink && doc.PdfLink.startsWith('http')) return doc.PdfLink;
         }
     }
     return null;
@@ -182,17 +190,16 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
     }
 
     const sortedTran = sortObjectKeys(tranData);
-    console.log(`🚀 CC Charge:`, JSON.stringify(sortedTran));
-
+    
     const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
         Json: { userName: '2181420WS2087', password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', func: "SendTransaction", format: "json", tran: sortedTran },
         format: "json"
     }, { validateStatus: () => true });
 
-    console.log(`📩 CC Response:`, JSON.stringify(res.data));
-
     const isSuccess = res.data.RequestResult?.Status === true || res.data.Status === true;
-    const receiptUrl = getReceiptLinkFromResponse(res.data);
+    const receiptUrl = extractReceiptUrl(res.data);
+    
+    console.log(`🧾 Receipt Found? ${receiptUrl ? 'YES' : 'NO'}`);
 
     return { 
         success: isSuccess, 
@@ -204,25 +211,21 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
     };
 }
 
-// --- Bank Obligation (SendBankObligation) ---
+// --- Bank Obligation ---
 async function createBankObligation(user, amount, note, isRecurring = false) {
     if (!user.bankDetails || !user.bankDetails.accountId) throw new Error("חסרים פרטי בנק");
     
-    // Check existing mandate to avoid spamming setup
+    // Check existing
     if (user.bankDetails.isSetup && user.bankDetails.status === 'active') {
         console.log(`🏦 Bank mandate exists. Recording transaction locally.`);
         return {
             success: true,
             data: { message: "Existing mandate used" },
             paymentMethod: 'bank',
-            receiptUrl: null // No immediate receipt for local record
+            receiptUrl: null 
         };
     }
 
-    // New Mandate Setup
-    // Ensure amount is float for API (usually Kesher takes float here) or Agorot? 
-    // Based on your previous success with "Total: 500" in CURL, I assume it's float for this func.
-    // If it fails with small amount, try *100.
     const totalAmount = parseFloat(amount); 
 
     const bankPayload = {
@@ -263,7 +266,7 @@ async function createBankObligation(user, amount, note, isRecurring = false) {
     console.log("Kesher Bank Response:", JSON.stringify(res.data));
     
     const isSuccess = !res.data.error && (res.data.status !== 'error');
-    const receiptUrl = getReceiptLinkFromResponse(res.data);
+    const receiptUrl = extractReceiptUrl(res.data);
 
     if(isSuccess) {
         user.bankDetails.isSetup = true;
