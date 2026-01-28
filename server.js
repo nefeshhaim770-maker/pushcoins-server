@@ -133,36 +133,31 @@ async function getActiveToken(user) {
 
 function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
-// --- Helper: Robust Receipt Extraction ---
-function searchForReceiptLink(data) {
+// --- Helper: Specific Receipt Extraction based on your Log ---
+function getReceiptLinkFromResponse(data) {
     if (!data) return null;
-    let found = null;
-    
-    // Recursive search for keys like 'CopyDoc', 'OriginalDoc', 'PdfLink'
-    function walk(obj) {
-        if (found) return; // Stop if found
-        if (typeof obj !== 'object' || obj === null) return;
-        
-        // Priority checks
-        if (obj.CopyDoc && typeof obj.CopyDoc === 'string' && obj.CopyDoc.startsWith('http')) { found = obj.CopyDoc; return; }
-        if (obj.OriginalDoc && typeof obj.OriginalDoc === 'string' && obj.OriginalDoc.startsWith('http')) { found = obj.OriginalDoc; return; }
-        if (obj.PdfLinkCopy && typeof obj.PdfLinkCopy === 'string' && obj.PdfLinkCopy.startsWith('http')) { found = obj.PdfLinkCopy; return; }
-        if (obj.PdfLink && typeof obj.PdfLink === 'string' && obj.PdfLink.startsWith('http')) { found = obj.PdfLink; return; }
-        
-        // Generic search for ezcount links in strings
-        for (let k in obj) {
-            if (typeof obj[k] === 'string' && obj[k].includes('ezcount.co.il') && obj[k].includes('documents/get')) {
-                found = obj[k];
-                return;
-            }
-            if (typeof obj[k] === 'object') {
-                walk(obj[k]);
-            }
+    console.log("🔍 Scanning for receipt in response...");
+
+    // 1. Exact path from your provided JSON log:
+    // DocumentsDetails -> DocumentDetails (Array) -> [0] -> PdfLinkCopy / PdfLink
+    if (data.DocumentsDetails && data.DocumentsDetails.DocumentDetails) {
+        const docs = Array.isArray(data.DocumentsDetails.DocumentDetails) 
+            ? data.DocumentsDetails.DocumentDetails 
+            : [data.DocumentsDetails.DocumentDetails];
+            
+        if (docs.length > 0) {
+            const doc = docs[0];
+            // Prefer Copy if available, else original
+            if (doc.PdfLinkCopy && doc.PdfLinkCopy.startsWith('http')) return doc.PdfLinkCopy;
+            if (doc.PdfLink && doc.PdfLink.startsWith('http')) return doc.PdfLink;
         }
     }
+
+    // 2. Root level fallbacks (Common in older Kesher versions)
+    if (data.CopyDoc && typeof data.CopyDoc === 'string' && data.CopyDoc.startsWith('http')) return data.CopyDoc;
+    if (data.OriginalDoc && typeof data.OriginalDoc === 'string' && data.OriginalDoc.startsWith('http')) return data.OriginalDoc;
     
-    walk(data);
-    return found;
+    return null;
 }
 
 // --- Credit Card Charge ---
@@ -198,18 +193,20 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
     }
 
     const sortedTran = sortObjectKeys(tranData);
-    console.log(`🚀 Sending CC Charge:`, JSON.stringify(sortedTran));
+    console.log(`🚀 Sending CC Charge for ${user.name}:`, JSON.stringify(sortedTran));
 
     const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
         Json: { userName: '2181420WS2087', password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', func: "SendTransaction", format: "json", tran: sortedTran },
         format: "json"
     }, { validateStatus: () => true });
 
-    console.log(`📩 CC Response:`, JSON.stringify(res.data));
+    console.log(`📩 CC Response for ${user.name}:`, JSON.stringify(res.data));
 
     const isSuccess = res.data.RequestResult?.Status === true || res.data.Status === true;
-    const receiptUrl = searchForReceiptLink(res.data);
-    console.log(`🧾 Receipt Found? ${receiptUrl}`);
+    const receiptUrl = getReceiptLinkFromResponse(res.data);
+    
+    if (receiptUrl) console.log(`✅ Receipt Link Found: ${receiptUrl}`);
+    else console.log(`⚠️ No Receipt Link Found in response`);
 
     return { 
         success: isSuccess, 
@@ -225,7 +222,7 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
 async function createBankObligation(user, amount, note, isRecurring = false) {
     if (!user.bankDetails || !user.bankDetails.accountId) throw new Error("חסרים פרטי בנק");
     
-    // Check existing mandate
+    // Check existing mandate to avoid spamming setup
     if (user.bankDetails.isSetup && user.bankDetails.status === 'active') {
         console.log(`🏦 Bank mandate exists. Recording transaction locally.`);
         return {
@@ -277,7 +274,7 @@ async function createBankObligation(user, amount, note, isRecurring = false) {
     console.log("Kesher Bank Response:", JSON.stringify(res.data));
     
     const isSuccess = !res.data.error && (res.data.status !== 'error');
-    const receiptUrl = searchForReceiptLink(res.data);
+    const receiptUrl = getReceiptLinkFromResponse(res.data);
 
     if(isSuccess) {
         user.bankDetails.isSetup = true;
@@ -308,6 +305,7 @@ async function performCharge(user, amount, note, forceCC = false, creditDetails 
 
 // --- Cron Job ---
 cron.schedule('0 8 * * *', async () => {
+    const today = new Date().getDate(); 
     const users = await User.find({}); 
     for (const u of users) {
         let saveUser = false;
@@ -356,7 +354,12 @@ cron.schedule('0 8 * * *', async () => {
         }
         
         // Basket Processing
-        if ((parseInt(u.billingPreference) === new Date().getDate() || parseInt(u.billingPreference) === 0) && u.pendingDonations.length > 0) {
+        const prefDay = parseInt(u.billingPreference);
+        const currentDay = parseInt(today);
+        const isChargeDay = (prefDay === currentDay);
+        const isImmediateUser = (prefDay === 0);
+
+        if ((isChargeDay || isImmediateUser) && u.pendingDonations.length > 0) {
             let totalToCharge = 0; u.pendingDonations.forEach(d => totalToCharge += d.amount);
             if (isBank && u.bankDetails.dailyLimit > 0 && totalToCharge > u.bankDetails.dailyLimit) canCharge = false; 
 
