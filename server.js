@@ -55,7 +55,7 @@ const bankDetailsSchema = new mongoose.Schema({
     signature: String,
     authFile: String,
     submissionType: String,
-    status: { type: String, default: 'none' }, 
+    status: { type: String, default: 'none' }, // none, pending, active, rejected
     dailyLimit: { type: Number, default: 0 }, 
     validUntil: { type: Date }, 
     approvedDate: Date,
@@ -90,16 +90,10 @@ const userSchema = new mongoose.Schema({
     securityPin: { type: String, default: "" },
     fcmToken: { type: String, default: "" },
     donationsHistory: [{ 
-        amount: Number, 
-        date: { type: Date, default: Date.now }, 
-        note: String, 
-        status: String, 
-        failReason: String, 
-        isGoal: { type: Boolean, default: false }, 
-        paymentMethod: String, 
-        receiptNameUsed: String, 
-        receiptTZUsed: String,
-        receiptUrl: String // THIS STORES THE PDF LINK
+        amount: Number, date: { type: Date, default: Date.now }, note: String, 
+        status: String, failReason: String, isGoal: { type: Boolean, default: false }, 
+        paymentMethod: String, receiptNameUsed: String, receiptTZUsed: String,
+        receiptUrl: String // Link to Receipt
     }],
     pendingDonations: [{ amount: Number, date: { type: Date, default: Date.now }, note: String }],
     tempCode: String
@@ -133,28 +127,49 @@ async function getActiveToken(user) {
 
 function sortObjectKeys(obj) { return Object.keys(obj).sort().reduce((r, k) => { r[k] = obj[k]; return r; }, {}); }
 
-// --- Helper: Robust Receipt Extraction ---
-function extractReceiptUrl(data) {
+// --- SMART RECEIPT FINDER ---
+// Recursively searches the entire response object for a receipt URL
+function searchForReceiptLink(data) {
     if (!data) return null;
-    console.log("🔍 Extracting Receipt from:", JSON.stringify(data).substring(0, 200) + "...");
+    let foundLink = null;
 
-    // 1. Direct fields (Common in older Kesher versions)
-    if (data.CopyDoc && data.CopyDoc.startsWith('http')) return data.CopyDoc;
-    if (data.OriginalDoc && data.OriginalDoc.startsWith('http')) return data.OriginalDoc;
+    function traverse(obj) {
+        if (foundLink) return; // Stop if found
+        if (typeof obj !== 'object' || obj === null) return;
 
-    // 2. Nested DocumentsDetails (As per your screenshot)
-    if (data.DocumentsDetails && data.DocumentsDetails.DocumentDetails) {
-        const docs = Array.isArray(data.DocumentsDetails.DocumentDetails) 
-            ? data.DocumentsDetails.DocumentDetails 
-            : [data.DocumentsDetails.DocumentDetails]; // Handle if single object
-            
-        if (docs.length > 0) {
-            const doc = docs[0];
-            if (doc.PdfLinkCopy && doc.PdfLinkCopy.startsWith('http')) return doc.PdfLinkCopy;
-            if (doc.PdfLink && doc.PdfLink.startsWith('http')) return doc.PdfLink;
+        // Check keys in current object
+        if (obj.CopyDoc && typeof obj.CopyDoc === 'string' && obj.CopyDoc.includes('http')) {
+            foundLink = obj.CopyDoc;
+            return;
+        }
+        if (obj.OriginalDoc && typeof obj.OriginalDoc === 'string' && obj.OriginalDoc.includes('http')) {
+            foundLink = obj.OriginalDoc;
+            return;
+        }
+        if (obj.PdfLinkCopy && typeof obj.PdfLinkCopy === 'string' && obj.PdfLinkCopy.includes('http')) {
+            foundLink = obj.PdfLinkCopy;
+            return;
+        }
+        if (obj.PdfLink && typeof obj.PdfLink === 'string' && obj.PdfLink.includes('http')) {
+            foundLink = obj.PdfLink;
+            return;
+        }
+
+        // Generic search for ezcount links if specific keys miss
+        for (let key in obj) {
+            const val = obj[key];
+            if (typeof val === 'string' && val.includes('ezcount.co.il') && val.includes('documents/get')) {
+                foundLink = val;
+                return;
+            }
+            if (typeof val === 'object') {
+                traverse(val);
+            }
         }
     }
-    return null;
+
+    traverse(data);
+    return foundLink;
 }
 
 // --- Credit Card Charge ---
@@ -190,16 +205,14 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
     }
 
     const sortedTran = sortObjectKeys(tranData);
-    
     const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
         Json: { userName: '2181420WS2087', password: 'WVmO1iterNb33AbWLzMjJEyVnEQbskSZqyel5T61Hb5qdwR0gl', func: "SendTransaction", format: "json", tran: sortedTran },
         format: "json"
     }, { validateStatus: () => true });
 
     const isSuccess = res.data.RequestResult?.Status === true || res.data.Status === true;
-    const receiptUrl = extractReceiptUrl(res.data);
-    
-    console.log(`🧾 Receipt Found? ${receiptUrl ? 'YES' : 'NO'}`);
+    const receiptUrl = searchForReceiptLink(res.data);
+    console.log(`🧾 CC Receipt found: ${receiptUrl}`);
 
     return { 
         success: isSuccess, 
@@ -207,7 +220,7 @@ async function chargeCreditCard(user, amount, note, creditDetails = null) {
         token: res.data.Token, 
         finalExpiry, currentCardDigits, 
         paymentMethod: 'cc',
-        receiptUrl: receiptUrl
+        receiptUrl
     };
 }
 
@@ -217,17 +230,15 @@ async function createBankObligation(user, amount, note, isRecurring = false) {
     
     // Check existing
     if (user.bankDetails.isSetup && user.bankDetails.status === 'active') {
-        console.log(`🏦 Bank mandate exists. Recording transaction locally.`);
         return {
             success: true,
             data: { message: "Existing mandate used" },
             paymentMethod: 'bank',
-            receiptUrl: null 
+            receiptUrl: null
         };
     }
 
     const totalAmount = parseFloat(amount); 
-
     const bankPayload = {
         ClientApiIdentity: null, 
         Signature: null,
@@ -251,7 +262,7 @@ async function createBankObligation(user, amount, note, isRecurring = false) {
         UserId: user.bankDetails.ownerID || user.tz || "000000000" 
     };
 
-    console.log(`🏦 Sending Bank Payload:`, JSON.stringify(bankPayload));
+    console.log(`🏦 Sending Bank Payload...`);
 
     const res = await axios.post('https://kesherhk.info/ConnectToKesher/ConnectToKesher', {
         Json: { 
@@ -266,7 +277,7 @@ async function createBankObligation(user, amount, note, isRecurring = false) {
     console.log("Kesher Bank Response:", JSON.stringify(res.data));
     
     const isSuccess = !res.data.error && (res.data.status !== 'error');
-    const receiptUrl = extractReceiptUrl(res.data);
+    const receiptUrl = searchForReceiptLink(res.data);
 
     if(isSuccess) {
         user.bankDetails.isSetup = true;
@@ -278,7 +289,7 @@ async function createBankObligation(user, amount, note, isRecurring = false) {
         success: isSuccess,
         data: res.data,
         paymentMethod: 'bank',
-        receiptUrl: receiptUrl
+        receiptUrl
     };
 }
 
@@ -297,7 +308,6 @@ async function performCharge(user, amount, note, forceCC = false, creditDetails 
 
 // --- Cron Job ---
 cron.schedule('0 8 * * *', async () => {
-    const today = new Date().getDate(); 
     const users = await User.find({}); 
     for (const u of users) {
         let saveUser = false;
@@ -346,12 +356,7 @@ cron.schedule('0 8 * * *', async () => {
         }
         
         // Basket Processing
-        const prefDay = parseInt(u.billingPreference);
-        const currentDay = parseInt(today);
-        const isChargeDay = (prefDay === currentDay);
-        const isImmediateUser = (prefDay === 0);
-
-        if ((isChargeDay || isImmediateUser) && u.pendingDonations.length > 0) {
+        if ((parseInt(u.billingPreference) === new Date().getDate() || parseInt(u.billingPreference) === 0) && u.pendingDonations.length > 0) {
             let totalToCharge = 0; u.pendingDonations.forEach(d => totalToCharge += d.amount);
             if (isBank && u.bankDetails.dailyLimit > 0 && totalToCharge > u.bankDetails.dailyLimit) canCharge = false; 
 
