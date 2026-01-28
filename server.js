@@ -131,7 +131,7 @@ async function getReceiptFromKesher(transactionNum) {
     
     // Add delay to allow Kesher to generate the PDF
     const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-    await delay(3000); // Wait 3 seconds
+    await delay(10000); // Wait 10 seconds
 
     try {
         const payload = {
@@ -249,8 +249,12 @@ async function createBankObligation(user, amount, note) {
     
     const receiptName = user.receiptName || user.name || "Donor";
 
+    const safePhone = (user.phone || "00000000").replace(/\D/g, '');
+    let uniqueId = user.tz && user.tz.length > 5 ? user.tz : safePhone;
+
     const bankPayload = {
-        ClientApiIdentity: null, 
+        ClientApiIdentity: uniqueId, 
+        Id: uniqueId,
         Signature: null,
         Account: parseInt(user.bankDetails.accountId), 
         Branch: parseInt(user.bankDetails.branchId),    
@@ -259,7 +263,7 @@ async function createBankObligation(user, amount, note) {
         City: null,
         Total: parseFloat(amount), 
         Currency: 1,
-        Phone: (user.phone || "00000000").replace(/\D/g, ''),
+        Phone: safePhone,
         Comment1: note || "",
         FirstName: user.bankDetails.ownerName || user.name || "Donor",
         LastName: null,
